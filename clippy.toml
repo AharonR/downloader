@@ -1,0 +1,11 @@
+# Clippy configuration for the Downloader project
+# See: https://doc.rust-lang.org/clippy/configuration.html
+
+# Preserve public API stability
+avoid-breaking-exported-api = true
+
+# Allow slightly longer type complexity for async code
+type-complexity-threshold = 300
+
+# Standard MSRV - Rust 2024 edition
+msrv = "1.85.0"
