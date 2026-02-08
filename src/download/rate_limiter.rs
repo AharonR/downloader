@@ -85,7 +85,7 @@ pub struct RateLimiter {
     disabled: bool,
 
     /// Per-domain state tracking.
-    /// Uses Arc to allow cloning the state and releasing the DashMap lock
+    /// Uses Arc to allow cloning the state and releasing the `DashMap` lock
     /// before awaiting on the inner Mutex (prevents shard lock across await).
     domains: DashMap<String, Arc<DomainState>>,
 }
@@ -114,6 +114,7 @@ impl DomainState {
     }
 
     /// Adds to the cumulative delay and returns the new total.
+    #[allow(clippy::cast_possible_truncation)]
     fn add_cumulative_delay(&self, delay: Duration) -> Duration {
         let delay_ms = delay.as_millis() as u64;
         let new_total = self
@@ -233,7 +234,7 @@ impl RateLimiter {
             let elapsed = last_request.elapsed();
 
             if elapsed < self.default_delay {
-                let delay = self.default_delay - elapsed;
+                let delay = self.default_delay.saturating_sub(elapsed);
                 let cumulative = state.add_cumulative_delay(delay);
 
                 debug!(
@@ -320,7 +321,7 @@ impl RateLimiter {
 pub fn extract_domain(url: &str) -> String {
     url::Url::parse(url)
         .ok()
-        .and_then(|u| u.host_str().map(|h| h.to_lowercase()))
+        .and_then(|u| u.host_str().map(str::to_lowercase))
         .unwrap_or_else(|| "unknown".to_string())
 }
 
@@ -363,6 +364,7 @@ pub fn parse_retry_after(header_value: &str) -> Option<Duration> {
             return None;
         }
 
+        #[allow(clippy::cast_sign_loss)]
         let duration = Duration::from_secs(seconds as u64);
 
         // Cap at maximum
@@ -383,27 +385,24 @@ pub fn parse_retry_after(header_value: &str) -> Option<Duration> {
         let now = std::time::SystemTime::now();
 
         // Calculate duration until the specified time
-        match datetime.duration_since(now) {
-            Ok(duration) => {
-                // Cap at maximum
-                if duration > MAX_RETRY_AFTER {
-                    warn!(
-                        delay_secs = duration.as_secs(),
-                        max_secs = MAX_RETRY_AFTER.as_secs(),
-                        "Retry-After date exceeds maximum, capping at 1 hour"
-                    );
-                    return Some(MAX_RETRY_AFTER);
-                }
-                Some(duration)
-            }
-            Err(_) => {
-                // Date is in the past
-                debug!(
-                    header_value,
-                    "Retry-After date is in the past, returning zero"
+        if let Ok(duration) = datetime.duration_since(now) {
+            // Cap at maximum
+            if duration > MAX_RETRY_AFTER {
+                warn!(
+                    delay_secs = duration.as_secs(),
+                    max_secs = MAX_RETRY_AFTER.as_secs(),
+                    "Retry-After date exceeds maximum, capping at 1 hour"
                 );
-                Some(Duration::ZERO)
+                return Some(MAX_RETRY_AFTER);
             }
+            Some(duration)
+        } else {
+            // Date is in the past
+            debug!(
+                header_value,
+                "Retry-After date is in the past, returning zero"
+            );
+            Some(Duration::ZERO)
         }
     } else {
         debug!(header_value, "unparseable Retry-After value");

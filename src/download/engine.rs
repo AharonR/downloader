@@ -331,8 +331,12 @@ impl DownloadEngine {
                             attempts,
                             "download failed after all attempts"
                         );
-                        // Best-effort status update with retry count
-                        if let Err(qe) = queue.mark_failed(item.id, &e.to_string()).await {
+                        // Persist actual retry attempts (attempts includes initial try).
+                        let retry_count = i64::from(attempts.saturating_sub(1));
+                        if let Err(qe) = queue
+                            .mark_failed(item.id, &e.to_string(), retry_count)
+                            .await
+                        {
                             warn!(item_id = item.id, error = %qe, "failed to mark item failed");
                         }
                         stats.increment_failed();

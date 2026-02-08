@@ -133,7 +133,7 @@ async fn test_mark_completed() {
 }
 
 #[tokio::test]
-async fn test_mark_failed_increments_retry_count() {
+async fn test_mark_failed_sets_retry_count() {
     let (db, _temp_dir) = setup_test_db().await;
     let queue = Queue::new(db);
 
@@ -144,7 +144,7 @@ async fn test_mark_failed_increments_retry_count() {
     queue.dequeue().await.unwrap();
 
     queue
-        .mark_failed(id, "Connection timeout")
+        .mark_failed(id, "Connection timeout", 1)
         .await
         .expect("Failed to mark failed");
 
@@ -156,7 +156,7 @@ async fn test_mark_failed_increments_retry_count() {
     // Mark failed again
     queue.requeue(id).await.unwrap();
     queue.dequeue().await.unwrap();
-    queue.mark_failed(id, "Server error").await.unwrap();
+    queue.mark_failed(id, "Server error", 2).await.unwrap();
 
     let item = queue.get(id).await.unwrap().unwrap();
     assert_eq!(item.retry_count, 2);
@@ -196,7 +196,7 @@ async fn test_mark_failed_nonexistent_returns_error() {
     let (db, _temp_dir) = setup_test_db().await;
     let queue = Queue::new(db);
 
-    let result = queue.mark_failed(99999, "error").await;
+    let result = queue.mark_failed(99999, "error", 1).await;
     assert!(matches!(result, Err(QueueError::ItemNotFound(99999))));
 }
 
@@ -511,7 +511,7 @@ async fn test_long_url_and_error_message() {
 
     let id = queue.enqueue(&long_url, "direct_url", None).await.unwrap();
     queue.dequeue().await.unwrap();
-    queue.mark_failed(id, &long_error).await.unwrap();
+    queue.mark_failed(id, &long_error, 1).await.unwrap();
 
     let item = queue.get(id).await.unwrap().unwrap();
     assert_eq!(item.url, long_url);

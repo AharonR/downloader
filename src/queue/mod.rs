@@ -148,24 +148,23 @@ impl Queue {
         Ok(())
     }
 
-    /// Marks an item as failed with an error message.
-    ///
-    /// Increments the retry count and stores the error message.
+    /// Marks an item as failed with an error message and retry count.
     ///
     /// # Errors
     ///
     /// Returns [`QueueError::ItemNotFound`] if no item exists with the given ID.
     /// Returns [`QueueError::Database`] if the update fails.
-    #[instrument(skip(self), fields(error = %error))]
-    pub async fn mark_failed(&self, id: i64, error: &str) -> Result<()> {
+    #[instrument(skip(self), fields(error = %error, retry_count))]
+    pub async fn mark_failed(&self, id: i64, error: &str, retry_count: i64) -> Result<()> {
         let result = sqlx::query(
             r"UPDATE queue
               SET status = 'failed',
-                  retry_count = retry_count + 1,
+                  retry_count = ?,
                   last_error = ?,
                   updated_at = datetime('now')
               WHERE id = ?",
         )
+        .bind(retry_count)
         .bind(error)
         .bind(id)
         .execute(self.db.pool())

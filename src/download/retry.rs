@@ -168,7 +168,7 @@ impl RetryPolicy {
         }
     }
 
-    /// Creates a policy with a custom max_attempts, using defaults for other settings.
+    /// Creates a policy with a custom `max_attempts`, using defaults for other settings.
     #[must_use]
     pub fn with_max_attempts(max_attempts: u32) -> Self {
         Self {
@@ -240,29 +240,35 @@ impl RetryPolicy {
     /// Calculates the delay for a retry attempt with exponential backoff and jitter.
     ///
     /// Formula: `min(base_delay * multiplier^attempt, max_delay) + jitter`
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss
+    )]
     fn calculate_delay(&self, attempt: u32) -> Duration {
         let base_ms = self.base_delay.as_millis() as f64;
-        let multiplier = self.backoff_multiplier as f64;
+        let multiplier = f64::from(self.backoff_multiplier);
 
         // Exponential: base * multiplier^attempt
         // attempt is 0-indexed for the exponent (attempt 1 = 2^0 = 1x base)
-        let exponent = (attempt - 1) as f64;
+        let exponent = f64::from(attempt - 1);
         let delay_ms = base_ms * multiplier.powf(exponent);
 
         // Cap at max_delay
         let capped_ms = delay_ms.min(self.max_delay.as_millis() as f64);
 
         // Add jitter
-        let jitter = self.calculate_jitter();
+        let jitter = Self::calculate_jitter();
 
         Duration::from_millis(capped_ms as u64) + jitter
     }
 
-    /// Generates random jitter between 0 and MAX_JITTER.
+    /// Generates random jitter between 0 and `MAX_JITTER`.
     ///
     /// Jitter helps prevent thundering herd when multiple downloads
     /// fail simultaneously and retry at the same time.
-    fn calculate_jitter(&self) -> Duration {
+    #[allow(clippy::cast_possible_truncation)]
+    fn calculate_jitter() -> Duration {
         let mut rng = rand::thread_rng();
         let jitter_ms = rng.gen_range(0..=MAX_JITTER.as_millis() as u64);
         Duration::from_millis(jitter_ms)
@@ -281,7 +287,7 @@ impl RetryPolicy {
 /// | 404 | Permanent | Not found - resource doesn't exist |
 /// | 408 | Transient | Request timeout - may succeed |
 /// | 410 | Permanent | Gone - permanently removed |
-/// | 429 | RateLimited | Rate limited - retry with backoff |
+/// | 429 | `RateLimited` | Rate limited - retry with backoff |
 /// | 451 | Permanent | Legal block - won't succeed |
 /// | 500 | Transient | Server error - may be temporary |
 /// | 502 | Transient | Bad gateway - proxy issue |
@@ -313,9 +319,7 @@ pub fn classify_error(error: &DownloadError) -> FailureType {
             }
         }
 
-        DownloadError::Io { .. } => FailureType::Permanent,
-
-        DownloadError::InvalidUrl { .. } => FailureType::Permanent,
+        DownloadError::Io { .. } | DownloadError::InvalidUrl { .. } => FailureType::Permanent,
     }
 }
 
@@ -451,10 +455,9 @@ mod tests {
 
     #[test]
     fn test_jitter_within_bounds() {
-        let policy = RetryPolicy::default();
         // Test 100 samples to verify bounds
         for _ in 0..100 {
-            let jitter = policy.calculate_jitter();
+            let jitter = RetryPolicy::calculate_jitter();
             assert!(
                 jitter <= MAX_JITTER,
                 "Jitter {} exceeds max",
@@ -465,8 +468,7 @@ mod tests {
 
     #[test]
     fn test_jitter_distribution() {
-        let policy = RetryPolicy::default();
-        let samples: Vec<Duration> = (0..100).map(|_| policy.calculate_jitter()).collect();
+        let samples: Vec<Duration> = (0..100).map(|_| RetryPolicy::calculate_jitter()).collect();
 
         // All samples in valid range
         assert!(samples.iter().all(|d| d.as_millis() <= 500));

@@ -31,6 +31,10 @@ pub struct Args {
     /// Minimum delay between requests to same domain in milliseconds (0 to disable, max 60000)
     #[arg(short = 'l', long, default_value_t = 1000, value_parser = clap::value_parser!(u64).range(0..=60000))]
     pub rate_limit: u64,
+
+    /// URLs to download (reads from stdin if not provided).
+    /// Flags may appear before or after URLs. Use `--` to pass a URL that starts with `-`.
+    pub urls: Vec<String>,
 }
 
 #[cfg(test)]
@@ -222,5 +226,67 @@ mod tests {
         assert_eq!(args.concurrency, 20);
         assert_eq!(args.max_retries, 5);
         assert_eq!(args.rate_limit, 2000);
+    }
+
+    // ==================== Positional URL Parsing ====================
+
+    #[test]
+    fn test_cli_flag_after_url_is_parsed_as_flag() {
+        let args = Args::try_parse_from(["downloader", "https://a.com/file.pdf", "-q"]).unwrap();
+        assert!(args.quiet);
+        assert_eq!(args.urls, vec!["https://a.com/file.pdf"]);
+    }
+
+    #[test]
+    fn test_cli_flag_before_url_is_parsed_as_flag() {
+        let args = Args::try_parse_from(["downloader", "-q", "https://a.com/file.pdf"]).unwrap();
+        assert!(args.quiet);
+        assert_eq!(args.urls, vec!["https://a.com/file.pdf"]);
+    }
+
+    #[test]
+    fn test_cli_flag_between_urls_is_parsed_as_flag() {
+        let args = Args::try_parse_from([
+            "downloader",
+            "https://a.com/file.pdf",
+            "-r",
+            "5",
+            "https://b.com/file.pdf",
+        ])
+        .unwrap();
+        assert_eq!(args.max_retries, 5);
+        assert_eq!(
+            args.urls,
+            vec!["https://a.com/file.pdf", "https://b.com/file.pdf"]
+        );
+    }
+
+    #[test]
+    fn test_cli_long_flag_after_url_is_parsed_as_flag() {
+        let args = Args::try_parse_from([
+            "downloader",
+            "https://a.com/file.pdf",
+            "--concurrency",
+            "20",
+        ])
+        .unwrap();
+        assert_eq!(args.concurrency, 20);
+        assert_eq!(args.urls, vec!["https://a.com/file.pdf"]);
+    }
+
+    #[test]
+    fn test_cli_invalid_flag_after_url_returns_error() {
+        let result =
+            Args::try_parse_from(["downloader", "https://a.com/file.pdf", "--invalid-flag"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn test_cli_separator_allows_dash_prefixed_url() {
+        let args = Args::try_parse_from(["downloader", "--", "-q"]).unwrap();
+        assert!(!args.quiet);
+        assert_eq!(args.urls, vec!["-q"]);
     }
 }

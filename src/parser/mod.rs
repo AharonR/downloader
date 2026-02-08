@@ -95,9 +95,14 @@ pub fn parse_input(input: &str) -> ParseResult {
             Err(e) => {
                 error_count += 1;
                 debug!(error = %e, "URL extraction error");
-                // Extract the URL from the error for logging
-                if let ParseError::InvalidUrl { url, .. } = &e {
-                    result.add_skipped(url.clone());
+                // Extract the URL from the error for the skipped list
+                match &e {
+                    ParseError::InvalidUrl { url, .. } => {
+                        result.add_skipped(url.clone());
+                    }
+                    ParseError::UrlTooLong { url_preview, .. } => {
+                        result.add_skipped(url_preview.clone());
+                    }
                 }
             }
         }

@@ -851,12 +851,10 @@ async fn test_retry_count_persisted_in_database() -> Result<(), Box<dyn std::err
     assert_eq!(stats.failed(), 1);
     assert_eq!(stats.retried(), 2); // 2 retries (3 attempts total)
 
-    // Verify retry_count persisted in database
+    // Verify actual retry_count persisted in database
     let item = queue.get(id).await?.unwrap();
     assert_eq!(item.status(), QueueStatus::Failed);
-    // Note: Current mark_failed increments retry_count by 1 each call
-    // With our implementation, we call it once at the end with final error
-    assert!(item.retry_count >= 1);
+    assert_eq!(item.retry_count, 2); // 3 attempts total => 2 retries
     Ok(())
 }
 

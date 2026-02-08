@@ -1,6 +1,6 @@
 //! Database connection and schema management.
 //!
-//! This module provides SQLite database connectivity with:
+//! This module provides `SQLite` database connectivity with:
 //! - Connection pool management
 //! - WAL mode for concurrent reads
 //! - Automatic migration execution
@@ -25,11 +25,11 @@ use thiserror::Error;
 use tracing::instrument;
 
 /// Default maximum number of connections in the pool.
-/// Kept low for SQLite since it uses file-level locking.
+/// Kept low for `SQLite` since it uses file-level locking.
 const DEFAULT_MAX_CONNECTIONS: u32 = 5;
 
-/// SQLite busy timeout in milliseconds.
-/// Connections will wait this long before returning SQLITE_BUSY.
+/// `SQLite` busy timeout in milliseconds.
+/// Connections will wait this long before returning `SQLITE_BUSY`.
 const BUSY_TIMEOUT_MS: u32 = 5000;
 
 /// Database-related errors.
@@ -46,7 +46,7 @@ pub enum DbError {
 
 /// Database connection wrapper with connection pool.
 ///
-/// Handles SQLite connection pooling, WAL mode configuration,
+/// Handles `SQLite` connection pooling, WAL mode configuration,
 /// and automatic migration execution.
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -63,7 +63,7 @@ impl Database {
     ///
     /// # Arguments
     ///
-    /// * `db_path` - Path to the SQLite database file
+    /// * `db_path` - Path to the `SQLite` database file
     ///
     /// # Errors
     ///

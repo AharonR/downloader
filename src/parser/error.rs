@@ -35,7 +35,7 @@ pub enum ParseError {
 }
 
 impl ParseError {
-    /// Creates an InvalidUrl error for a non-web URL scheme.
+    /// Creates an `InvalidUrl` error for a non-web URL scheme.
     #[must_use]
     pub fn unsupported_scheme(url: &str, scheme: &str) -> Self {
         Self::InvalidUrl {
@@ -45,7 +45,7 @@ impl ParseError {
         }
     }
 
-    /// Creates an InvalidUrl error for a malformed URL.
+    /// Creates an `InvalidUrl` error for a malformed URL.
     #[must_use]
     pub fn malformed(url: &str, parse_error: &str) -> Self {
         Self::InvalidUrl {
@@ -55,7 +55,7 @@ impl ParseError {
         }
     }
 
-    /// Creates an InvalidUrl error for a URL without a host.
+    /// Creates an `InvalidUrl` error for a URL without a host.
     #[must_use]
     pub fn no_host(url: &str) -> Self {
         Self::InvalidUrl {
@@ -65,7 +65,7 @@ impl ParseError {
         }
     }
 
-    /// Creates a UrlTooLong error for URLs exceeding the maximum length.
+    /// Creates a `UrlTooLong` error for URLs exceeding the maximum length.
     #[must_use]
     pub fn too_long(url: &str) -> Self {
         Self::UrlTooLong {

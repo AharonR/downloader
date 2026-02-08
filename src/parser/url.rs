@@ -7,14 +7,15 @@ use tracing::{debug, trace};
 use url::Url;
 
 use super::error::{MAX_URL_LENGTH, ParseError};
-use super::input::{InputType, ParsedItem};
+use super::input::ParsedItem;
 
 /// Regex pattern for finding URLs in text.
 /// Matches http:// and https:// URLs, capturing until whitespace or common delimiters.
+#[allow(clippy::expect_used)]
 static URL_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     // Match http:// or https:// followed by non-whitespace, non-angle-bracket, non-quote chars
     // This handles URLs embedded in text, HTML, markdown, etc.
-    Regex::new(r#"https?://[^\s<>"'\)\]]+"#).expect("URL regex is valid") // Static pattern, safe to panic
+    Regex::new(r#"https?://[^\s<>"'\]]+"#).expect("URL regex is valid") // Static pattern, safe to panic
 });
 
 /// Result type for URL extraction operations.
@@ -88,8 +89,7 @@ fn clean_url_trailing(url: &str) -> &str {
                         let after_dot = &result[dot_pos + 1..];
                         let ext_len = after_dot.len();
                         // Valid extensions are 1-5 chars, all alphanumeric
-                        if ext_len >= 1
-                            && ext_len <= 5
+                        if (1..=5).contains(&ext_len)
                             && after_dot.chars().all(|c| c.is_ascii_alphanumeric())
                         {
                             break; // Keep the dot, it's likely part of filename
@@ -120,7 +120,7 @@ fn clean_url_trailing(url: &str) -> &str {
 /// Validates a URL string and normalizes it.
 ///
 /// # Validation rules:
-/// - Must not exceed MAX_URL_LENGTH (2000 chars)
+/// - Must not exceed `MAX_URL_LENGTH` (2000 chars)
 /// - Must be parseable by the `url` crate
 /// - Must use http or https scheme (no ftp, file, etc.)
 /// - Must have a host (domain or IP)
@@ -151,6 +151,7 @@ fn validate_url(raw: &str) -> Result<String, ParseError> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use super::super::input::InputType;
     use super::*;
 
     // ==================== AC1: HTTP/HTTPS URL Extraction ====================

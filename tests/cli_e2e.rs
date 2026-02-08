@@ -1,4 +1,5 @@
 //! End-to-end CLI tests for the downloader binary.
+#![allow(deprecated)]
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -52,4 +53,45 @@ fn test_binary_verbose_flag_accepted() {
 fn test_binary_quiet_flag_accepted() {
     let mut cmd = Command::cargo_bin("downloader").unwrap();
     cmd.arg("-q").assert().success();
+}
+
+/// Test that piped stdin with no valid URLs exits cleanly.
+#[test]
+fn test_binary_stdin_no_urls_exits_cleanly() {
+    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    cmd.write_stdin("no urls here, just text")
+        .assert()
+        .success();
+}
+
+/// Test that piped stdin with valid URLs is accepted (no crash).
+#[test]
+fn test_binary_stdin_with_invalid_domain_exits_cleanly() {
+    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    // Use TEST-NET-1 address expected to be unreachable in normal environments.
+    cmd.write_stdin("https://192.0.2.1/test.pdf")
+        .arg("-q")
+        .assert()
+        .success();
+}
+
+/// Test that invalid URLs from stdin are handled without any network I/O.
+#[test]
+fn test_binary_stdin_with_invalid_url_exits_cleanly() {
+    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    // Exceeds parser MAX_URL_LENGTH, so it is always rejected before download.
+    let long_url = format!("https://example.com/{}", "a".repeat(2100));
+    cmd.write_stdin(long_url).arg("-q").assert().success();
+}
+
+/// Test that flags after positional URLs are parsed as flags, not URLs.
+#[test]
+fn test_binary_flag_after_positional_url_is_parsed_as_flag() {
+    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    // Non-URL positional token avoids network I/O while still exercising flag ordering.
+    cmd.arg("not-a-url-token")
+        .arg("-q")
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }

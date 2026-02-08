@@ -58,7 +58,13 @@ impl HttpClient {
     /// - Connect timeout: 30 seconds
     /// - Read timeout: 5 minutes (for large files)
     /// - Gzip decompression: enabled
+    ///
+    /// # Panics
+    ///
+    /// Panics if the HTTP client builder fails to build with the static
+    /// configuration. This should never happen in practice.
     #[must_use]
+    #[allow(clippy::expect_used)]
     pub fn new() -> Self {
         // Static configuration - safe to use expect() here per project rules
         let client = Client::builder()
@@ -124,7 +130,7 @@ impl HttpClient {
                 .headers()
                 .get(RETRY_AFTER)
                 .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
 
             return Err(DownloadError::http_status_with_retry_after(
                 url,
@@ -216,8 +222,8 @@ fn extract_filename(response: &reqwest::Response, url: &Url) -> String {
     }
 
     // Fall back to URL path
-    if let Some(segments) = url.path_segments() {
-        if let Some(last) = segments.last() {
+    if let Some(mut segments) = url.path_segments() {
+        if let Some(last) = segments.next_back() {
             if !last.is_empty() {
                 // URL decode the filename
                 let decoded = urlencoding::decode(last).unwrap_or_else(|e| {
@@ -272,9 +278,9 @@ fn parse_content_disposition(header: &str) -> Option<String> {
         let value = header[start..].trim();
 
         // Handle quoted filename
-        if value.starts_with('"') {
-            if let Some(end) = value[1..].find('"') {
-                return Some(value[1..=end].to_string());
+        if let Some(stripped) = value.strip_prefix('"') {
+            if let Some(end) = stripped.find('"') {
+                return Some(stripped[..end].to_string());
             }
         } else {
             // Unquoted - take until ; or end
