@@ -1505,7 +1505,7 @@ fn test_binary_malformed_input_surfaces_skipped_output() {
         .arg("-v")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Skipped unrecognized input"));
+        .stderr(predicate::str::contains("Skipped unrecognized input"));
 }
 
 /// Test that fully unresolved parsed input returns a failure instead of silent success.
@@ -1535,10 +1535,10 @@ fn test_auth_capture_accepts_netscape_input() {
         .write_stdin(".example.com\tTRUE\t/\tFALSE\t4102444800\tsession\tabc123\n")
         .assert()
         .success()
-        .stdout(predicate::str::contains(
+        .stderr(predicate::str::contains(
             "Install a cookie export extension",
         ))
-        .stdout(predicate::str::contains("Cookies captured for 1 domains"));
+        .stderr(predicate::str::contains("Cookies captured for 1 domains"));
 }
 
 /// Test that `auth` without subcommand fails with clap usage guidance.
@@ -1670,7 +1670,7 @@ fn test_auth_capture_accepts_json_input() {
         )
         .assert()
         .success()
-        .stdout(predicate::str::contains("Cookies captured for 1 domains"));
+        .stderr(predicate::str::contains("Cookies captured for 1 domains"));
 }
 
 /// Test that expired-only cookie capture input fails validation.
@@ -1699,7 +1699,7 @@ fn test_auth_capture_save_cookies_persists_file() {
         .write_stdin(".example.com\tTRUE\t/\tFALSE\t4102444800\tsession\tabc123\n")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Saved encrypted cookies"));
+        .stderr(predicate::str::contains("Saved encrypted cookies"));
 
     assert!(
         expected_path.exists(),
@@ -1725,7 +1725,7 @@ fn test_auth_clear_removes_persisted_file() {
         .args(["auth", "clear"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Cleared persisted auth cookies"));
+        .stderr(predicate::str::contains("Cleared persisted auth cookies"));
 
     assert!(
         !cookie_file.exists(),
@@ -1758,7 +1758,7 @@ fn test_persisted_cookies_auto_loaded_in_download_mode() {
         .arg("not-a-url-token")
         .assert()
         .success()
-        .stdout(predicate::str::contains(
+        .stderr(predicate::str::contains(
             "Loaded encrypted persisted cookies",
         ));
 }
