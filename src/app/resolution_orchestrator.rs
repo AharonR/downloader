@@ -7,10 +7,9 @@ use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use downloader_core::{
-    InputType, Queue, QueueMetadata, ResolveContext,
+    InputType, Queue, QueueMetadata, ResolveContext, TopicExtractor,
     build_default_resolver_registry, build_preferred_filename, extract_reference_confidence,
     load_custom_topics, match_custom_topics, normalize_topics, parse_input,
-    TopicExtractor,
 };
 use tracing::{debug, info, warn};
 
@@ -185,10 +184,7 @@ pub(crate) async fn run_resolution(
             .then(|| extract_reference_confidence(&item.raw));
 
         let queue_metadata = QueueMetadata {
-            suggested_filename: Some(build_preferred_filename(
-                &queue_value,
-                &resolved.metadata,
-            )),
+            suggested_filename: Some(build_preferred_filename(&queue_value, &resolved.metadata)),
             title: resolved.metadata.get("title").cloned(),
             authors: resolved.metadata.get("authors").cloned(),
             year: resolved.metadata.get("year").cloned(),

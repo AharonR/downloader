@@ -559,9 +559,18 @@ async fn regression_springer_sends_shared_user_agent() {
         .get("user-agent")
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
-    assert!(ua.contains("downloader"), "UA must identify as downloader: {ua}");
-    assert!(ua.contains("research-tool"), "UA must use shared resolver format: {ua}");
-    assert!(!ua.contains("springer"), "UA must not contain resolver name (shared UA): {ua}");
+    assert!(
+        ua.contains("downloader"),
+        "UA must identify as downloader: {ua}"
+    );
+    assert!(
+        ua.contains("research-tool"),
+        "UA must use shared resolver format: {ua}"
+    );
+    assert!(
+        !ua.contains("springer"),
+        "UA must not contain resolver name (shared UA): {ua}"
+    );
 }
 
 #[tokio::test]

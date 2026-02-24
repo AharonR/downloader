@@ -8,10 +8,13 @@ use anyhow::Result;
 
 use crate::app::{config_runtime, terminal};
 use crate::cli::{AuthCommand, Cli, Command, ConfigCommand};
-use crate::{commands, ProcessExit};
+use crate::{ProcessExit, commands};
 
 /// If `cli` has a top-level command, run it and return `Some(exit)`; otherwise return `None`.
-pub(crate) async fn try_dispatch(cli: &Cli, cli_sources: &config_runtime::CliValueSources) -> Result<Option<ProcessExit>> {
+pub(crate) async fn try_dispatch(
+    cli: &Cli,
+    cli_sources: &config_runtime::CliValueSources,
+) -> Result<Option<ProcessExit>> {
     let Some(command) = &cli.command else {
         return Ok(None);
     };
@@ -51,9 +54,9 @@ pub(crate) async fn try_dispatch(cli: &Cli, cli_sources: &config_runtime::CliVal
 #[cfg(test)]
 mod tests {
     use super::try_dispatch;
-    use clap::Parser;
     use crate::app::config_runtime;
     use crate::cli::Cli;
+    use clap::Parser;
 
     /// When no top-level command is present, try_dispatch returns None so runtime continues to download flow.
     #[tokio::test]

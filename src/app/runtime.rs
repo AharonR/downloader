@@ -2,18 +2,19 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::{self, IsTerminal};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Result, bail};
 use downloader_core::QueueStatus;
 use tracing::{debug, info, warn};
 
 use crate::app::{
-    command_dispatcher, config_manager, config_runtime, context, download_orchestrator, exit_handler,
-    input_processor, progress_manager, queue_manager, resolution_orchestrator, terminal,
+    command_dispatcher, config_manager, config_runtime, context, download_orchestrator,
+    exit_handler, input_processor, progress_manager, queue_manager, resolution_orchestrator,
+    terminal,
 };
-use crate::{commands, ProcessExit, output, project};
+use crate::{ProcessExit, commands, output, project};
 
 pub(crate) async fn run_downloader() -> Result<ProcessExit> {
     let (cli, cli_sources) = config_runtime::parse_cli_with_sources();
@@ -135,12 +136,9 @@ pub(crate) async fn run_downloader() -> Result<ProcessExit> {
     let (progress_handle, progress_stop) =
         progress_manager::spawn_progress_ui(use_spinner, Arc::clone(&queue), total_queued);
 
-    let stats = download_orchestrator::run_download(
-        &ctx,
-        Arc::clone(&queue),
-        Arc::clone(&interrupted),
-    )
-    .await?;
+    let stats =
+        download_orchestrator::run_download(&ctx, Arc::clone(&queue), Arc::clone(&interrupted))
+            .await?;
 
     progress_stop.store(true, Ordering::SeqCst);
     if let Some(handle) = progress_handle {
@@ -182,9 +180,13 @@ pub(crate) async fn run_downloader() -> Result<ProcessExit> {
     }
 
     if ctx.args.project.is_some() {
-        project::append_project_download_log(queue.as_ref(), &ctx.output_dir, history_start_id).await?;
+        project::append_project_download_log(queue.as_ref(), &ctx.output_dir, history_start_id)
+            .await?;
         project::append_project_index(queue.as_ref(), &ctx.output_dir, &completed_before).await?;
     }
 
-    Ok(exit_handler::determine_exit_outcome(stats.completed(), stats.failed()))
+    Ok(exit_handler::determine_exit_outcome(
+        stats.completed(),
+        stats.failed(),
+    ))
 }

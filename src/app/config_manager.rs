@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::app::config_runtime::{self, CliValueSources, HttpTimeoutSettings};
 use crate::app_config::load_default_file_config;
 use crate::cli::{Cli, DownloadArgs};
-use downloader_core::{configure_resolver_http_timeouts, DatabaseOptions};
+use downloader_core::{DatabaseOptions, configure_resolver_http_timeouts};
 
 /// Resolved configuration bundle used to build RunContext.
 /// Its fields are copied into RunContext in runtime; ResolvedConfig is not stored in RunContext.
@@ -17,10 +17,7 @@ pub(crate) struct ResolvedConfig {
 
 /// Load file config, merge CLI overrides, resolve HTTP timeouts and DB options, apply resolver timeouts.
 /// Single entry point that returns a resolved config bundle.
-pub(crate) fn resolve_config(
-    cli: &Cli,
-    cli_sources: &CliValueSources,
-) -> Result<ResolvedConfig> {
+pub(crate) fn resolve_config(cli: &Cli, cli_sources: &CliValueSources) -> Result<ResolvedConfig> {
     let loaded_config = load_default_file_config()?;
     let args = config_runtime::apply_config_defaults(
         cli.download.clone(),
@@ -56,18 +53,22 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let prev = std::env::var_os("XDG_CONFIG_HOME");
         // SAFETY: test isolates env change and restores on drop.
-        unsafe { std::env::set_var("XDG_CONFIG_HOME", temp.path()); }
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", temp.path());
+        }
         let _restore = RestoreEnv::new("XDG_CONFIG_HOME", prev);
 
         let cli = Cli::try_parse_from(["downloader"]).unwrap();
         let sources = CliValueSources::default();
         let resolved = resolve_config(&cli, &sources);
-        assert!(resolved.is_ok(), "resolve_config should succeed with no config file");
+        assert!(
+            resolved.is_ok(),
+            "resolve_config should succeed with no config file"
+        );
         let r = resolved.unwrap();
 
         assert_eq!(
-            r.args.concurrency,
-            DEFAULT_CONCURRENCY as u8,
+            r.args.concurrency, DEFAULT_CONCURRENCY as u8,
             "concurrency should be default when no config"
         );
         assert_eq!(

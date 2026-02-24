@@ -80,65 +80,65 @@ pub(crate) fn apply_config_defaults(
     file_config: Option<&FileConfig>,
 ) -> Result<DownloadArgs> {
     if let Some(file_config) = file_config {
-    if !cli_sources.output_dir
-        && args.output_dir.is_none()
-        && let Some(output_dir) = &file_config.output_dir
-    {
-        args.output_dir = Some(output_dir.clone());
-    }
+        if !cli_sources.output_dir
+            && args.output_dir.is_none()
+            && let Some(output_dir) = &file_config.output_dir
+        {
+            args.output_dir = Some(output_dir.clone());
+        }
 
-    if !cli_sources.concurrency
-        && let Some(concurrency) = file_config.concurrency
-    {
-        args.concurrency = concurrency;
-    }
+        if !cli_sources.concurrency
+            && let Some(concurrency) = file_config.concurrency
+        {
+            args.concurrency = concurrency;
+        }
 
-    if !cli_sources.rate_limit
-        && let Some(rate_limit) = file_config.rate_limit
-    {
-        args.rate_limit = rate_limit;
-    }
+        if !cli_sources.rate_limit
+            && let Some(rate_limit) = file_config.rate_limit
+        {
+            args.rate_limit = rate_limit;
+        }
 
-    if !cli_sources.respectful
-        && let Some(respectful) = file_config.respectful
-    {
-        args.respectful = respectful;
-    }
+        if !cli_sources.respectful
+            && let Some(respectful) = file_config.respectful
+        {
+            args.respectful = respectful;
+        }
 
-    if !cli_sources.check_robots
-        && let Some(check_robots) = file_config.check_robots
-    {
-        args.check_robots = check_robots;
-    }
+        if !cli_sources.check_robots
+            && let Some(check_robots) = file_config.check_robots
+        {
+            args.check_robots = check_robots;
+        }
 
-    if !cli_sources.verbose
-        && !cli_sources.quiet
-        && !cli_sources.debug
-        && let Some(verbosity) = file_config.verbosity
-    {
-        apply_config_verbosity(&mut args, verbosity);
-    }
+        if !cli_sources.verbose
+            && !cli_sources.quiet
+            && !cli_sources.debug
+            && let Some(verbosity) = file_config.verbosity
+        {
+            apply_config_verbosity(&mut args, verbosity);
+        }
 
-    if !cli_sources.detect_topics
-        && !args.detect_topics
-        && let Some(detect_topics) = file_config.detect_topics
-    {
-        args.detect_topics = detect_topics;
-    }
+        if !cli_sources.detect_topics
+            && !args.detect_topics
+            && let Some(detect_topics) = file_config.detect_topics
+        {
+            args.detect_topics = detect_topics;
+        }
 
-    if !cli_sources.topics_file
-        && args.topics_file.is_none()
-        && let Some(topics_file) = &file_config.topics_file
-    {
-        args.topics_file = Some(topics_file.clone());
-    }
+        if !cli_sources.topics_file
+            && args.topics_file.is_none()
+            && let Some(topics_file) = &file_config.topics_file
+        {
+            args.topics_file = Some(topics_file.clone());
+        }
 
-    if !cli_sources.sidecar
-        && !args.sidecar
-        && let Some(sidecar) = file_config.sidecar
-    {
-        args.sidecar = sidecar;
-    }
+        if !cli_sources.sidecar
+            && !args.sidecar
+            && let Some(sidecar) = file_config.sidecar
+        {
+            args.sidecar = sidecar;
+        }
     }
 
     // When --respectful is set, override concurrency, rate_limit, max_retries (plan: respectful wins).

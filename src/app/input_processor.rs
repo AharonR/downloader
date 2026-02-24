@@ -57,9 +57,9 @@ pub(crate) fn process_input(
 #[cfg(test)]
 mod tests {
     use super::process_input;
+    use crate::cli::Cli;
     use clap::Parser;
     use std::io::IsTerminal;
-    use crate::cli::Cli;
 
     /// With empty urls and when stdin is not read (terminal) or read and empty,
     /// input_text is None. When stdin is terminal we don't read it so we only assert input_text.is_none().
@@ -72,7 +72,10 @@ mod tests {
         if std::io::stdin().is_terminal() {
             let (_, input_text, piped_stdin_was_empty) = process_input(&args).unwrap();
             assert!(input_text.is_none());
-            assert!(!piped_stdin_was_empty, "when stdin is terminal we do not read it, so piped_stdin_was_empty must be false");
+            assert!(
+                !piped_stdin_was_empty,
+                "when stdin is terminal we do not read it, so piped_stdin_was_empty must be false"
+            );
         }
         // When stdin is non-terminal, process_input would read stdin (and in cargo test might block). So we only run the empty-args path when stdin is terminal.
     }
@@ -88,7 +91,10 @@ mod tests {
         let (_, input_text, piped_stdin_was_empty) = process_input(&args).unwrap();
         let text = input_text.expect("input_text should be Some when urls non-empty");
         assert!(text.contains("https://example.com/foo"));
-        assert!(!piped_stdin_was_empty, "stdin not read when urls provided and terminal");
+        assert!(
+            !piped_stdin_was_empty,
+            "stdin not read when urls provided and terminal"
+        );
     }
 
     /// process_input returns Err when first URL is "auth" (reject_misplaced_auth_namespace).
@@ -99,7 +105,10 @@ mod tests {
         let args = cli.download;
         assert_eq!(args.urls.as_slice(), ["auth"]);
         let result = process_input(&args);
-        assert!(result.is_err(), "process_input should error when first URL is 'auth'");
+        assert!(
+            result.is_err(),
+            "process_input should error when first URL is 'auth'"
+        );
     }
 
     /// process_input returns Err when --save-cookies is set without --cookies (ensure_save_cookies_usage).

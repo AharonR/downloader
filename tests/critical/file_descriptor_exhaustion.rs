@@ -41,7 +41,10 @@ async fn p1_low_fd_limit_graceful_or_skip() {
         .await
         .expect("count");
     assert!(pending >= 0, "queue should remain consistent");
-    assert!(enqueued >= 1, "at least one enqueue should succeed when DB is open");
+    assert!(
+        enqueued >= 1,
+        "at least one enqueue should succeed when DB is open"
+    );
 }
 
 #[cfg(not(unix))]

@@ -1,16 +1,16 @@
 //! Build HTTP client and download engine, then process the queue.
 //! Maps engine errors to anyhow with context for CI diagnostics.
 
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use tracing::debug;
 use downloader_core::{
     DownloadEngine, HttpClient, Queue, QueueProcessingOptions, RateLimiter, RetryPolicy,
     RobotsCache,
 };
+use tracing::debug;
 
 use crate::app::context::RunContext;
 

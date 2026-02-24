@@ -1,7 +1,7 @@
 //! Progress UI (spinner) for download runs.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use downloader_core::{Queue, QueueStatus};
@@ -42,7 +42,10 @@ fn spawn_spinner_inner(
                 .count_by_status(QueueStatus::Completed)
                 .await
                 .unwrap_or(0);
-            let failed = queue.count_by_status(QueueStatus::Failed).await.unwrap_or(0);
+            let failed = queue
+                .count_by_status(QueueStatus::Failed)
+                .await
+                .unwrap_or(0);
             let in_progress_items = queue.get_in_progress().await.unwrap_or_default();
 
             let done = usize::try_from(completed.saturating_add(failed)).unwrap_or(0);
@@ -73,9 +76,9 @@ fn spawn_spinner_inner(
 #[cfg(test)]
 mod tests {
     use super::spawn_progress_ui;
-    use std::sync::atomic::Ordering;
-    use std::sync::Arc;
     use downloader_core::{Database, Queue};
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
 
     #[tokio::test]
     async fn spawn_progress_ui_when_disabled_returns_none_handle_and_stop_already_true() {
@@ -85,7 +88,10 @@ mod tests {
         let (handle, stop) = spawn_progress_ui(false, queue, 1);
 
         assert!(handle.is_none());
-        assert!(stop.load(Ordering::SeqCst), "stop signal should be true when spinner disabled");
+        assert!(
+            stop.load(Ordering::SeqCst),
+            "stop signal should be true when spinner disabled"
+        );
     }
 
     #[tokio::test]
@@ -95,8 +101,14 @@ mod tests {
 
         let (handle, stop) = spawn_progress_ui(true, queue, 1);
 
-        assert!(handle.is_some(), "handle should be Some when spinner enabled");
-        assert!(!stop.load(Ordering::SeqCst), "stop should be false initially");
+        assert!(
+            handle.is_some(),
+            "handle should be Some when spinner enabled"
+        );
+        assert!(
+            !stop.load(Ordering::SeqCst),
+            "stop should be false initially"
+        );
 
         stop.store(true, Ordering::SeqCst);
         let join_handle = handle.unwrap();

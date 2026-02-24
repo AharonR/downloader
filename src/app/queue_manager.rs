@@ -44,10 +44,9 @@ mod tests {
     async fn create_queue_with_temp_dir_returns_queue_and_history_id() {
         let temp = TempDir::new().unwrap();
         let output_dir = temp.path();
-        let (queue, history_start_id) =
-            create_queue(output_dir, &DatabaseOptions::default())
-                .await
-                .expect("create_queue should succeed");
+        let (queue, history_start_id) = create_queue(output_dir, &DatabaseOptions::default())
+            .await
+            .expect("create_queue should succeed");
 
         // Queue is usable (e.g. list pending)
         let pending = queue.list_by_status(QueueStatus::Pending).await.unwrap();

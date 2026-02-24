@@ -7,9 +7,9 @@ use tracing::{info, warn};
 
 use crate::queue::{Queue, QueueItem, QueueRepository};
 
-use crate::{RobotsCache, RobotsDecision, origin_for_robots};
 use super::persistence::{persist_download_failure, persist_download_success};
 use super::{DownloadStats, HttpClient, RateLimiter, RetryPolicy, download_with_retry};
+use crate::{RobotsCache, RobotsDecision, origin_for_robots};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn process_download_item(

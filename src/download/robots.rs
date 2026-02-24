@@ -57,12 +57,9 @@ impl RobotsCache {
         let now = SystemTime::now();
         // map_or(true, ...) is the stable replacement for Option::is_none_or (not yet stabilized); allow avoids clippy suggesting is_none_or.
         #[allow(clippy::unnecessary_map_or)]
-        let need_fetch = self
-            .cache
-            .get(origin)
-            .map_or(true, |c| {
-                now.duration_since(c.fetched_at).unwrap_or(Duration::MAX) > ROBOTS_TTL
-            });
+        let need_fetch = self.cache.get(origin).map_or(true, |c| {
+            now.duration_since(c.fetched_at).unwrap_or(Duration::MAX) > ROBOTS_TTL
+        });
 
         if need_fetch {
             let body = fetch_robots_txt(origin, client).await?;
@@ -76,10 +73,7 @@ impl RobotsCache {
             );
         }
 
-        let entry = self
-            .cache
-            .get(origin)
-            .ok_or(RobotsError::CacheMissing)?;
+        let entry = self.cache.get(origin).ok_or(RobotsError::CacheMissing)?;
         let allowed = !entry
             .disallowed_prefixes
             .iter()
@@ -104,7 +98,10 @@ fn path_from_url(url: &str) -> Result<String, RobotsError> {
 }
 
 async fn fetch_robots_txt(origin: &str, client: &HttpClient) -> Result<String, RobotsError> {
-    let robots_url = format!("{}robots.txt", origin.trim_end_matches('/').to_string() + "/");
+    let robots_url = format!(
+        "{}robots.txt",
+        origin.trim_end_matches('/').to_string() + "/"
+    );
     let response = client
         .inner()
         .get(&robots_url)
@@ -207,9 +204,7 @@ mod tests {
 
     #[test]
     fn test_parse_disallow_star() {
-        let r = parse_disallow_rules(
-            "User-agent: *\nDisallow: /api/\nDisallow: /private/\n",
-        );
+        let r = parse_disallow_rules("User-agent: *\nDisallow: /api/\nDisallow: /private/\n");
         assert!(r.contains(&"/api/".to_string()));
         assert!(r.contains(&"/private/".to_string()));
     }

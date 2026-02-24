@@ -630,9 +630,20 @@ mod tests {
     /// When --respectful is set, effective concurrency, rate_limit, max_retries are overridden.
     #[test]
     fn test_apply_config_defaults_respectful_overrides_c_l_r() {
-        use crate::app::config_runtime::{RESPECTFUL_CONCURRENCY, RESPECTFUL_MAX_RETRIES, RESPECTFUL_RATE_LIMIT_MS};
+        use crate::app::config_runtime::{
+            RESPECTFUL_CONCURRENCY, RESPECTFUL_MAX_RETRIES, RESPECTFUL_RATE_LIMIT_MS,
+        };
 
-        let args = parse_download_args(["downloader", "--respectful", "-c", "20", "-l", "1000", "-r", "5"]);
+        let args = parse_download_args([
+            "downloader",
+            "--respectful",
+            "-c",
+            "20",
+            "-l",
+            "1000",
+            "-r",
+            "5",
+        ]);
         let sources = CliValueSources {
             respectful: true,
             concurrency: true,

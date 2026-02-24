@@ -229,8 +229,14 @@ mod tests {
 
     #[test]
     fn test_extract_year_from_str() {
-        assert_eq!(extract_year_from_str("Published in 2023."), Some("2023".to_string()));
-        assert_eq!(extract_year_from_str("1999-01-15"), Some("1999".to_string()));
+        assert_eq!(
+            extract_year_from_str("Published in 2023."),
+            Some("2023".to_string())
+        );
+        assert_eq!(
+            extract_year_from_str("1999-01-15"),
+            Some("1999".to_string())
+        );
         assert_eq!(extract_year_from_str("no year"), None);
     }
 

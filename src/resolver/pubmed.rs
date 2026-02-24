@@ -15,7 +15,7 @@ use crate::parser::InputType;
 
 use super::http_client::{build_resolver_http_client, standard_user_agent};
 use super::utils::{
-    absolutize_url, CITATION_PDF_RE, compile_static_regex, hosts_match, parse_host_or_fallback,
+    CITATION_PDF_RE, absolutize_url, compile_static_regex, hosts_match, parse_host_or_fallback,
 };
 use super::{ResolveContext, ResolveError, ResolveStep, ResolvedUrl, Resolver, ResolverPriority};
 

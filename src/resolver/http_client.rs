@@ -189,16 +189,23 @@ mod tests {
     /// When adding a new resolver that calls `standard_user_agent`, add its name here.
     /// Excludes "crossref" (until product decision) and "direct" (DirectResolver is a
     /// passthrough and does not use an HTTP client / standard_user_agent).
-    const NON_CROSSREF_RESOLVER_NAMES: &[&str] = &["arxiv", "pubmed", "ieee", "springer", "sciencedirect"];
+    const NON_CROSSREF_RESOLVER_NAMES: &[&str] =
+        &["arxiv", "pubmed", "ieee", "springer", "sciencedirect"];
 
     #[test]
     fn test_standard_user_agent_single_shared_format() {
         let ua_first = standard_user_agent(NON_CROSSREF_RESOLVER_NAMES[0]);
         for name in NON_CROSSREF_RESOLVER_NAMES {
             let ua = standard_user_agent(name);
-            assert_eq!(ua, ua_first, "all resolvers must share same UA (got different for {name})");
+            assert_eq!(
+                ua, ua_first,
+                "all resolvers must share same UA (got different for {name})"
+            );
             assert!(ua.contains("downloader/"), "UA must contain downloader/");
-            assert!(ua.contains("research-tool"), "UA must contain research-tool");
+            assert!(
+                ua.contains("research-tool"),
+                "UA must contain research-tool"
+            );
             assert!(ua.contains("github.com"), "UA must contain project URL");
             assert!(
                 !ua.contains(name),

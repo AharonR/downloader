@@ -21,8 +21,8 @@ use crate::parser::InputType;
 
 use super::http_client::{build_resolver_http_client, standard_user_agent};
 use super::utils::{
-    absolutize_url, auth_requirement, extract_year_from_str, is_auth_required_status,
-    canonical_host, compile_static_regex, hosts_match, looks_like_doi, parse_host_or_fallback,
+    absolutize_url, auth_requirement, canonical_host, compile_static_regex, extract_year_from_str,
+    hosts_match, is_auth_required_status, looks_like_doi, parse_host_or_fallback,
 };
 use super::{ResolveContext, ResolveError, ResolveStep, ResolvedUrl, Resolver, ResolverPriority};
 

@@ -46,8 +46,8 @@ pub use db::{Database, DatabaseOptions};
 pub use download::{
     DEFAULT_CONCURRENCY, DEFAULT_MAX_RETRIES, DownloadEngine, DownloadFileResult, DownloadStats,
     EngineError, FailureType, HttpClient, QueueProcessingOptions, RateLimiter, RetryDecision,
-    RetryPolicy, RobotsCache, RobotsDecision, RobotsError, build_preferred_filename, classify_error,
-    origin_for_robots,
+    RetryPolicy, RobotsCache, RobotsDecision, RobotsError, build_preferred_filename,
+    classify_error, origin_for_robots,
 };
 pub use parser::{
     Confidence, ConfidenceFactors, InputType, ParseResult, ParseTypeCounts, ParsedItem,
