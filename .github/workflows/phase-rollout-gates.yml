@@ -38,6 +38,9 @@ jobs:
       - name: Clippy gate
         run: cargo clippy -- -D warnings
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
       - name: Security audit
         run: cargo audit
 
