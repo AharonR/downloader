@@ -1,4 +1,4 @@
-# generated: 2026-02-01
+# generated: 2026-02-09
 # project: Downloader
 # project_key: downloader
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-02-01
+generated: 2026-02-09
 project: Downloader
 project_key: downloader
 tracking_system: file-system
@@ -50,71 +50,96 @@ development_status:
   1-5-concurrent-downloads: done
   1-6-retry-with-exponential-backoff: done
   1-7-per-domain-rate-limiting: done
-  epic-1-retrospective: optional
+  epic-1-retrospective: done
 
   # Epic 2: Smart Reference Resolution - "I can paste DOIs and references"
-  epic-2: backlog
-  2-1-doi-detection-validation: backlog
-  2-2-resolver-trait-registry: backlog
-  2-3-crossref-doi-resolution: backlog
-  2-4-reference-string-parsing: backlog
-  2-5-bibliography-extraction: backlog
-  2-6-bibtex-format-support: backlog
-  2-7-mixed-format-input-handling: backlog
-  epic-2-retrospective: optional
+  epic-2: done
+  2-1-doi-detection-validation: done
+  2-2-resolver-trait-registry: done
+  2-3-crossref-doi-resolution: done
+  2-4-reference-string-parsing: done
+  2-5-bibliography-extraction: done
+  2-6-bibtex-format-support: done
+  2-7-mixed-format-input-handling: done
+  epic-2-retrospective: done
 
   # Epic 3: Reliable Batch Processing - "I can walk away and trust it works"
-  epic-3: backlog
-  3-1-input-parsing-feedback: backlog
-  3-2-progress-spinner-display: backlog
-  3-3-in-place-status-updates: backlog
-  3-4-completion-summary: backlog
-  3-5-graceful-interrupt-handling: backlog
-  3-6-resumable-downloads: backlog
-  epic-3-retrospective: optional
+  epic-3: done
+  3-1-input-parsing-feedback: done
+  3-2-progress-spinner-display: done
+  3-3-in-place-status-updates: done
+  3-4-completion-summary: done
+  3-5-graceful-interrupt-handling: done
+  3-6-resumable-downloads: done
+  epic-3-retrospective: done
 
   # Epic 4: Authenticated Downloads - "I can download from my subscriptions"
-  epic-4: backlog
-  4-1-auth-required-detection: backlog
-  4-2-cookie-file-input: backlog
-  4-3-browser-cookie-capture: backlog
-  4-4-secure-cookie-storage: backlog
-  4-5-sciencedirect-resolver: backlog
-  epic-4-retrospective: optional
+  epic-4: done
+  4-1-auth-required-detection: done
+  4-2-cookie-file-input: done
+  4-3-browser-cookie-capture: done
+  4-4-secure-cookie-storage: done
+  4-5-sciencedirect-resolver: done
+  epic-4-retrospective: done
 
   # Epic 5: Organized Output - "My downloads are organized automatically"
-  epic-5: backlog
-  5-1-project-folder-creation: backlog
-  5-2-sub-project-organization: backlog
-  5-3-metadata-based-file-naming: backlog
-  5-4-project-index-generation: backlog
-  epic-5-retrospective: optional
+  epic-5: done
+  5-1-project-folder-creation: done
+  5-2-sub-project-organization: done
+  5-3-metadata-based-file-naming: done
+  5-4-project-index-generation: done
+  epic-5-retrospective: done
 
   # Epic 6: Download History - "I can see what I've downloaded"
-  epic-6: backlog
-  6-1-download-attempt-logging: backlog
-  6-2-failure-logging-with-details: backlog
-  6-3-per-project-download-log: backlog
-  6-4-history-query-command: backlog
-  epic-6-retrospective: optional
+  epic-6: done
+  6-1-download-attempt-logging: done
+  6-2-failure-logging-with-details: done
+  6-3-per-project-download-log: done
+  6-4-history-query-command: done
+  epic-6-retrospective: done
 
   # Epic 7: Professional CLI - "The tool feels polished and helpful"
-  epic-7: backlog
-  7-1-stdin-piped-input: backlog
-  7-2-dry-run-mode: backlog
-  7-3-configuration-file: backlog
-  7-4-no-input-help-display: backlog
-  7-5-what-why-fix-error-pattern: backlog
-  7-6-verbosity-levels: backlog
-  7-7-exit-codes: backlog
-  7-8-terminal-compatibility: backlog
-  epic-7-retrospective: optional
+  epic-7: done
+  7-1-stdin-piped-input: done
+  7-2-dry-run-mode: done
+  7-3-configuration-file: done
+  7-4-no-input-help-display: done
+  7-5-what-why-fix-error-pattern: done
+  7-6-verbosity-levels: done
+  7-7-exit-codes: done
+  7-8-terminal-compatibility: done
+  epic-7-retrospective: done
 
   # Epic 8: Polish & Enhancements - "Everything works even better"
-  epic-8: backlog
-  8-1-topic-auto-detection: backlog
-  8-2-json-ld-sidecar-files: backlog
-  8-3-parsing-confidence-tracking: backlog
-  8-4-query-past-downloads: backlog
-  8-5-additional-site-resolvers: backlog
-  epic-8-retrospective: optional
+  epic-8: done
+  8-1-topic-auto-detection: done
+  8-2-json-ld-sidecar-files: done
+  8-3-parsing-confidence-tracking: done
+  8-4-query-past-downloads: done
+  8-5-additional-site-resolvers: done
+  epic-8-retrospective: done
+
+# NFR Assessment Gate
+nfr_assessment_status: CONCERNS
+nfr_assessment_file: _bmad-output/nfr-assessment.md
+nfr_assessment_date: '2026-02-23'
+nfr_gate_blockers: []
+nfr_gate_resolved:
+  - 'Maintainability FIXED: 0 clippy errors (cargo clippy -- -D warnings exits 0)'
+  - 'Maintainability FIXED: 0 unit test failures (564 pass)'
+  - 'Security FIXED: cargo audit exits 0 (bytes+time patched; rsa+number_prefix accepted with rationale)'
+  - 'Security FIXED: cargo audit step added to phase-rollout-gates.yml CI'
+nfr_gate_high_priority:
+  - 'Maintainability CONCERNS: add test coverage tooling (cargo llvm-cov) — next sprint'
+  - 'Performance CONCERNS: no download throughput benchmark yet — next sprint'
+nfr_gate_waived:
+  - 'ci-burn-in (no CI run history yet — instrumentation story required)'
+  - 'availability (CLI tool, not a service)'
+  - 'disaster-recovery (single-user local tool)'
+nfr_next_action: 'Add cargo llvm-cov coverage reporting and download throughput benchmark'
+
+# Project Retrospective
+project_retrospective_status: done
+project_retrospective_file: _bmad-output/implementation-artifacts/project-retro-2026-02-23.md
+project_retrospective_date: '2026-02-23'
+project_retrospective_supersedes: _bmad-output/implementation-artifacts/project-retro-2026-02-18.md

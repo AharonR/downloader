@@ -26,11 +26,30 @@ use tracing::instrument;
 
 /// Default maximum number of connections in the pool.
 /// Kept low for `SQLite` since it uses file-level locking.
-const DEFAULT_MAX_CONNECTIONS: u32 = 5;
+pub const DEFAULT_MAX_CONNECTIONS: u32 = 5;
 
-/// `SQLite` busy timeout in milliseconds.
+/// Default `SQLite` busy timeout in milliseconds.
 /// Connections will wait this long before returning `SQLITE_BUSY`.
-const BUSY_TIMEOUT_MS: u32 = 5000;
+pub const DEFAULT_BUSY_TIMEOUT_MS: u32 = 5000;
+
+/// Optional database connection settings (pool size, busy timeout).
+/// Used by [`Database::new_with_options`].
+#[derive(Debug, Clone)]
+pub struct DatabaseOptions {
+    /// Maximum connections in the pool (1..=20 for `SQLite`).
+    pub max_connections: u32,
+    /// Busy timeout in milliseconds.
+    pub busy_timeout_ms: u32,
+}
+
+impl Default for DatabaseOptions {
+    fn default() -> Self {
+        Self {
+            max_connections: DEFAULT_MAX_CONNECTIONS,
+            busy_timeout_ms: DEFAULT_BUSY_TIMEOUT_MS,
+        }
+    }
+}
 
 /// Database-related errors.
 #[derive(Error, Debug)]
@@ -71,10 +90,24 @@ impl Database {
     /// or `DbError::Migration` if migrations fail.
     #[instrument(skip(db_path), fields(path = %db_path.display()))]
     pub async fn new(db_path: &Path) -> Result<Self, DbError> {
+        Self::new_with_options(db_path, &DatabaseOptions::default()).await
+    }
+
+    /// Creates a new database connection with explicit pool and timeout options.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DbError::Connection` if the connection fails,
+    /// or `DbError::Migration` if migrations fail.
+    #[instrument(skip(db_path, options), fields(path = %db_path.display()))]
+    pub async fn new_with_options(
+        db_path: &Path,
+        options: &DatabaseOptions,
+    ) -> Result<Self, DbError> {
         let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
 
         let pool = SqlitePoolOptions::new()
-            .max_connections(DEFAULT_MAX_CONNECTIONS)
+            .max_connections(options.max_connections)
             .connect(&db_url)
             .await?;
 
@@ -84,7 +117,7 @@ impl Database {
             .await?;
 
         // Set busy timeout to avoid immediate lock errors
-        sqlx::query(&format!("PRAGMA busy_timeout={BUSY_TIMEOUT_MS}"))
+        sqlx::query(&format!("PRAGMA busy_timeout={}", options.busy_timeout_ms))
             .execute(&pool)
             .await?;
 
@@ -155,6 +188,8 @@ impl Database {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use sqlx::Row;
+
     use super::*;
 
     #[tokio::test]
@@ -178,6 +213,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_database_queue_dequeue_composite_index_exists() {
+        let db = Database::new_in_memory().await.unwrap();
+        let rows = sqlx::query("PRAGMA index_list('queue')")
+            .fetch_all(db.pool())
+            .await
+            .unwrap();
+
+        let has_index = rows.iter().any(|row| {
+            row.try_get::<String, _>("name")
+                .map(|name| name == "idx_queue_status_priority_created")
+                .unwrap_or(false)
+        });
+        assert!(
+            has_index,
+            "expected idx_queue_status_priority_created migration index to exist"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_database_dequeue_query_plan_uses_composite_index() {
+        let db = Database::new_in_memory().await.unwrap();
+        // Seed a few rows so planner has realistic table stats.
+        for i in 0..50 {
+            let status = if i % 3 == 0 { "completed" } else { "pending" };
+            sqlx::query("INSERT INTO queue (url, source_type, status, priority, created_at) VALUES (?, 'direct_url', ?, ?, datetime('now'))")
+                .bind(format!("https://example.com/{i}"))
+                .bind(status)
+                .bind(i % 10)
+                .execute(db.pool())
+                .await
+                .unwrap();
+        }
+        sqlx::query("ANALYZE").execute(db.pool()).await.unwrap();
+
+        let plan_rows = sqlx::query(
+            "EXPLAIN QUERY PLAN SELECT id FROM queue WHERE status='pending' ORDER BY priority DESC, created_at ASC LIMIT 1",
+        )
+        .fetch_all(db.pool())
+        .await
+        .unwrap();
+
+        let uses_composite = plan_rows.iter().any(|row| {
+            row.try_get::<String, _>(3)
+                .map(|detail| detail.contains("idx_queue_status_priority_created"))
+                .unwrap_or(false)
+        });
+        assert!(
+            uses_composite,
+            "expected dequeue query plan to use idx_queue_status_priority_created"
+        );
+    }
+
+    #[tokio::test]
     async fn test_database_download_log_table_exists() {
         let db = Database::new_in_memory().await.unwrap();
 
@@ -195,6 +283,129 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_database_download_log_metadata_columns_exist() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let result = sqlx::query(
+            r"INSERT INTO download_log (
+                url,
+                status,
+                started_at,
+                title,
+                authors,
+                doi
+              )
+              VALUES (
+                'https://example.com/metadata.pdf',
+                'success',
+                datetime('now'),
+                'Metadata Title',
+                'Doe, Jane',
+                '10.1234/example'
+              )",
+        )
+        .execute(db.pool())
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "Download log metadata columns should exist after migration"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_database_download_log_failure_detail_columns_exist() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let result = sqlx::query(
+            r"INSERT INTO download_log (
+                url,
+                status,
+                started_at,
+                error_message,
+                error_type,
+                retry_count,
+                last_retry_at,
+                original_input
+              )
+              VALUES (
+                'https://example.com/failure.pdf',
+                'failed',
+                datetime('now'),
+                'HTTP 404
+  Suggestion: Verify URL',
+                'not_found',
+                2,
+                datetime('now'),
+                '10.1000/original'
+              )",
+        )
+        .execute(db.pool())
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "Download log failure detail columns should exist after migration"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_database_queue_parse_confidence_columns_exist() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let result = sqlx::query(
+            r#"INSERT INTO queue (
+                url,
+                source_type,
+                parse_confidence,
+                parse_confidence_factors
+              )
+              VALUES (
+                'https://example.com/reference',
+                'reference',
+                'low',
+                '{"has_authors":false,"has_year":true,"has_title":false,"author_count":0}'
+              )"#,
+        )
+        .execute(db.pool())
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "Queue parse confidence columns should exist after migration"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_database_download_log_parse_confidence_columns_exist() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let result = sqlx::query(
+            r#"INSERT INTO download_log (
+                url,
+                status,
+                started_at,
+                parse_confidence,
+                parse_confidence_factors
+              )
+              VALUES (
+                'https://example.com/reference',
+                'success',
+                datetime('now'),
+                'medium',
+                '{"has_authors":true,"has_year":true,"has_title":false,"author_count":1}'
+              )"#,
+        )
+        .execute(db.pool())
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "Download log parse confidence columns should exist after migration"
+        );
+    }
+
+    #[tokio::test]
     async fn test_database_with_tempfile() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("test.db");
@@ -206,6 +417,27 @@ mod tests {
         let db = db.unwrap();
         let is_wal = db.is_wal_enabled().await.unwrap();
         assert!(is_wal, "WAL mode should be enabled for file-based database");
+    }
+
+    #[tokio::test]
+    async fn test_database_new_with_options() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("options.db");
+        let options = DatabaseOptions {
+            max_connections: 2,
+            busy_timeout_ms: 1000,
+        };
+
+        let db = Database::new_with_options(&db_path, &options).await;
+        assert!(db.is_ok(), "new_with_options should succeed");
+        let db = db.unwrap();
+        let is_wal = db.is_wal_enabled().await.unwrap();
+        assert!(is_wal, "WAL mode should be enabled");
+        // Verify pool works
+        let _: (i64,) = sqlx::query_as("SELECT 1")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

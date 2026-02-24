@@ -1,6 +1,6 @@
 # Story 1.7: Per-Domain Rate Limiting
 
-Status: review
+Status: done
 
 ## Story
 

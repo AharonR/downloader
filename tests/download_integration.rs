@@ -9,9 +9,12 @@ use tempfile::TempDir;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+mod support;
+use support::socket_guard::start_mock_server_or_skip;
+
 /// Helper to create a mock server with a file endpoint.
-async fn setup_mock_file(path_str: &str, content: &[u8]) -> MockServer {
-    let mock_server = MockServer::start().await;
+async fn setup_mock_file(path_str: &str, content: &[u8]) -> Option<MockServer> {
+    let mock_server = start_mock_server_or_skip().await?;
 
     Mock::given(method("GET"))
         .and(path(path_str))
@@ -19,14 +22,16 @@ async fn setup_mock_file(path_str: &str, content: &[u8]) -> MockServer {
         .mount(&mock_server)
         .await;
 
-    mock_server
+    Some(mock_server)
 }
 
 #[tokio::test]
 async fn test_download_full_flow_preserves_content() {
     // Setup
     let content = b"This is the complete file content for testing.\nLine 2.\nLine 3.";
-    let mock_server = setup_mock_file("/document.pdf", content).await;
+    let Some(mock_server) = setup_mock_file("/document.pdf", content).await else {
+        return;
+    };
     let temp_dir = TempDir::new().expect("failed to create temp dir");
 
     // Execute
@@ -53,7 +58,9 @@ async fn test_download_full_flow_preserves_content() {
 
 #[tokio::test]
 async fn test_download_uses_content_disposition_filename() {
-    let mock_server = MockServer::start().await;
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
     let temp_dir = TempDir::new().expect("failed to create temp dir");
 
     Mock::given(method("GET"))
@@ -83,7 +90,9 @@ async fn test_download_uses_content_disposition_filename() {
 
 #[tokio::test]
 async fn test_download_extracts_filename_from_url() {
-    let mock_server = setup_mock_file("/papers/research-2024.pdf", b"content").await;
+    let Some(mock_server) = setup_mock_file("/papers/research-2024.pdf", b"content").await else {
+        return;
+    };
     let temp_dir = TempDir::new().expect("failed to create temp dir");
 
     let client = HttpClient::new();
@@ -106,7 +115,9 @@ async fn test_download_extracts_filename_from_url() {
 
 #[tokio::test]
 async fn test_download_handles_404_gracefully() {
-    let mock_server = MockServer::start().await;
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
     let temp_dir = TempDir::new().expect("failed to create temp dir");
 
     Mock::given(method("GET"))
@@ -135,7 +146,9 @@ async fn test_download_handles_404_gracefully() {
 
 #[tokio::test]
 async fn test_download_handles_500_error() {
-    let mock_server = MockServer::start().await;
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
     let temp_dir = TempDir::new().expect("failed to create temp dir");
 
     Mock::given(method("GET"))
@@ -159,7 +172,9 @@ async fn test_download_handles_500_error() {
 
 #[tokio::test]
 async fn test_download_handles_duplicate_filenames() {
-    let mock_server = setup_mock_file("/doc.pdf", b"content").await;
+    let Some(mock_server) = setup_mock_file("/doc.pdf", b"content").await else {
+        return;
+    };
     let temp_dir = TempDir::new().expect("failed to create temp dir");
 
     // Create existing file
@@ -200,7 +215,9 @@ async fn test_download_rejects_invalid_url() {
 
 #[tokio::test]
 async fn test_download_client_is_reusable() {
-    let mock_server = MockServer::start().await;
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
     let temp_dir = TempDir::new().expect("failed to create temp dir");
 
     Mock::given(method("GET"))
@@ -237,7 +254,9 @@ async fn test_download_client_is_reusable() {
 
 #[tokio::test]
 async fn test_download_to_nonexistent_directory_fails() {
-    let mock_server = setup_mock_file("/file.txt", b"content").await;
+    let Some(mock_server) = setup_mock_file("/file.txt", b"content").await else {
+        return;
+    };
     let nonexistent = Path::new("/this/path/definitely/does/not/exist/anywhere");
 
     let client = HttpClient::new();

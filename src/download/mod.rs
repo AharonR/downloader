@@ -28,15 +28,22 @@
 //! ```
 
 mod client;
+mod constants;
 mod engine;
 mod error;
+mod filename;
 pub mod rate_limiter;
+mod robots;
 mod retry;
 
-pub use client::HttpClient;
-pub use engine::{DEFAULT_CONCURRENCY, DownloadEngine, DownloadStats, EngineError};
+pub use client::{BROWSER_USER_AGENT, DownloadFileResult, HttpClient};
+pub use engine::{
+    DEFAULT_CONCURRENCY, DownloadEngine, DownloadStats, EngineError, QueueProcessingOptions,
+};
 pub use error::DownloadError;
+pub use filename::build_preferred_filename;
 pub use rate_limiter::{RateLimiter, extract_domain, parse_retry_after};
+pub use robots::{RobotsCache, RobotsDecision, RobotsError, origin_for_robots};
 pub use retry::{DEFAULT_MAX_RETRIES, FailureType, RetryDecision, RetryPolicy, classify_error};
 
 // Note: Per project-context.md, we do NOT define module-local Result aliases.

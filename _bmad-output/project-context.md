@@ -152,6 +152,12 @@ use crate::error::{Error, Result};
 - Configure timeouts at client level, not per-request
 - Use `.error_for_status()` to convert 4xx/5xx to errors
 - Stream large downloads: `.bytes_stream()` not `.bytes()`
+- **Real-world deployment considerations (CRITICAL):**
+  - NEVER use `.no_proxy()` - institutional users require proxy support
+  - ALWAYS set a User-Agent - sites block requests without proper identification
+  - Pattern: `User-Agent: Downloader/x.y.z (github.com/user/repo)`
+  - Test HTTP client configuration against real-world scenarios (proxies, bot detection, rate limits)
+  - These are not optional "nice-to-haves" - they are deployment blockers
 
 ### sqlx Database
 - All queries compile-time checked via `sqlx::query!` macro
@@ -274,7 +280,7 @@ group_imports = "StdExternalCrate"
 - Examples in doc comments for non-obvious functions
 
 ### File Length Guidelines
-- Single file: max ~500 lines (split if larger)
+- Single file: max ~500 lines of implementation code (split if larger); inline `#[cfg(test)]` modules are excluded from this count
 - Single function: max ~50 lines (extract helpers)
 - Exception: generated code, test fixtures
 

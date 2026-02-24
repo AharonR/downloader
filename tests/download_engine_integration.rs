@@ -8,11 +8,25 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use downloader_core::{
-    Database, DownloadEngine, HttpClient, Queue, QueueStatus, RateLimiter, RetryPolicy,
+    Database, DownloadAttemptQuery, DownloadAttemptStatus, DownloadEngine, DownloadErrorType,
+    HttpClient, Queue, QueueMetadata, QueueProcessingOptions, QueueStatus, RateLimiter,
+    RetryPolicy,
 };
 use tempfile::TempDir;
 use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
+use wiremock::{Mock, Respond, ResponseTemplate};
+
+mod support;
+use support::socket_guard::{socket_skip_return, start_mock_server_or_skip};
+
+macro_rules! require_mock_server {
+    () => {{
+        let Some(mock_server) = start_mock_server_or_skip().await else {
+            return socket_skip_return();
+        };
+        mock_server
+    }};
+}
 
 /// Helper to create a test database with migrations applied.
 ///
@@ -56,6 +70,14 @@ fn create_engine_no_retry(
     )
 }
 
+/// Helper to create an engine with explicit retry policy tuning.
+fn create_engine_with_policy(
+    concurrency: usize,
+    policy: RetryPolicy,
+) -> Result<DownloadEngine, downloader_core::EngineError> {
+    DownloadEngine::new(concurrency, policy, test_rate_limiter())
+}
+
 // ==================== Empty Queue Tests ====================
 
 #[tokio::test]
@@ -86,7 +108,7 @@ async fn test_process_queue_single_item_success() -> Result<(), Box<dyn std::err
     let queue = Queue::new(db);
 
     // Setup mock server
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
     Mock::given(method("GET"))
         .and(path("/file.txt"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(b"content"))
@@ -118,12 +140,181 @@ async fn test_process_queue_single_item_success() -> Result<(), Box<dyn std::err
 }
 
 #[tokio::test]
+async fn test_process_queue_interruptible_with_options_generates_sidecar_when_enabled()
+-> Result<(), Box<dyn std::error::Error>> {
+    use std::sync::atomic::AtomicBool;
+
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/paper.pdf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"pdf-content"))
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/paper.pdf", mock_server.uri());
+    let id = queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let output_dir = TempDir::new()?;
+    let interrupted = Arc::new(AtomicBool::new(false));
+
+    let stats = engine
+        .process_queue_interruptible_with_options(
+            &queue,
+            &client,
+            output_dir.path(),
+            interrupted,
+            QueueProcessingOptions {
+                generate_sidecars: true,
+                ..QueueProcessingOptions::default()
+            },
+        )
+        .await?;
+
+    assert_eq!(stats.completed(), 1);
+    let item = queue.get(id).await?.expect("queued item should exist");
+    let saved_path = item
+        .saved_path
+        .expect("completed item should have saved path");
+    let mut sidecar_path = std::path::PathBuf::from(saved_path);
+    sidecar_path.set_extension("json");
+    assert!(
+        sidecar_path.exists(),
+        "sidecar should be created when enabled"
+    );
+
+    let content = std::fs::read_to_string(&sidecar_path)?;
+    assert!(content.contains("\"@context\": \"https://schema.org\""));
+    assert!(content.contains("\"@type\": \"ScholarlyArticle\""));
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_process_queue_interruptible_with_options_skips_sidecar_when_disabled()
+-> Result<(), Box<dyn std::error::Error>> {
+    use std::sync::atomic::AtomicBool;
+
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/paper-disabled.pdf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"pdf-content"))
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/paper-disabled.pdf", mock_server.uri());
+    let id = queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let output_dir = TempDir::new()?;
+    let interrupted = Arc::new(AtomicBool::new(false));
+
+    let stats = engine
+        .process_queue_interruptible_with_options(
+            &queue,
+            &client,
+            output_dir.path(),
+            interrupted,
+            QueueProcessingOptions {
+                generate_sidecars: false,
+                ..QueueProcessingOptions::default()
+            },
+        )
+        .await?;
+
+    assert_eq!(stats.completed(), 1);
+    let item = queue.get(id).await?.expect("queued item should exist");
+    let saved_path = item
+        .saved_path
+        .expect("completed item should have saved path");
+    let mut sidecar_path = std::path::PathBuf::from(saved_path);
+    sidecar_path.set_extension("json");
+    assert!(
+        !sidecar_path.exists(),
+        "sidecar should not be created when disabled"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_process_queue_success_writes_download_log_row()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/logged-success.pdf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"pdf-bytes"))
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/logged-success.pdf", mock_server.uri());
+    let metadata = QueueMetadata {
+        suggested_filename: Some("Logged_2026_Test.pdf".to_string()),
+        title: Some("Logged Success".to_string()),
+        authors: Some("Author, A".to_string()),
+        year: Some("2026".to_string()),
+        doi: Some("10.1234/logged".to_string()),
+        topics: None,
+        parse_confidence: Some("low".to_string()),
+        parse_confidence_factors: Some(
+            r#"{"has_authors":false,"has_year":true,"has_title":false,"author_count":0}"#
+                .to_string(),
+        ),
+    };
+    queue
+        .enqueue_with_metadata(&url, "doi", Some("10.1234/logged"), Some(&metadata))
+        .await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let output_dir = TempDir::new()?;
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+
+    assert_eq!(stats.completed(), 1);
+
+    let rows = queue
+        .query_download_attempts(&DownloadAttemptQuery::default())
+        .await?;
+    assert_eq!(rows.len(), 1, "exactly one history row expected");
+    let row = &rows[0];
+    assert_eq!(row.status(), DownloadAttemptStatus::Success);
+    assert_eq!(row.url, url);
+    assert_eq!(row.title.as_deref(), Some("Logged Success"));
+    assert_eq!(row.authors.as_deref(), Some("Author, A"));
+    assert_eq!(row.doi.as_deref(), Some("10.1234/logged"));
+    assert_eq!(row.parse_confidence.as_deref(), Some("low"));
+    assert_eq!(
+        row.parse_confidence_factors.as_deref(),
+        Some(r#"{"has_authors":false,"has_year":true,"has_title":false,"author_count":0}"#)
+    );
+    assert!(
+        row.file_path
+            .as_deref()
+            .is_some_and(|value| value.ends_with(".pdf")),
+        "success row should persist file_path"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_process_queue_single_item_failure() -> Result<(), Box<dyn std::error::Error>> {
     let (db, _temp_dir) = setup_test_db().await?;
     let queue = Queue::new(db);
 
     // Setup mock server that returns 404 (permanent error - no retry)
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
     Mock::given(method("GET"))
         .and(path("/not-found.txt"))
         .respond_with(ResponseTemplate::new(404))
@@ -157,6 +348,269 @@ async fn test_process_queue_single_item_failure() -> Result<(), Box<dyn std::err
     Ok(())
 }
 
+#[tokio::test]
+async fn test_process_queue_failure_writes_download_log_row()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/logged-failure.pdf"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/logged-failure.pdf", mock_server.uri());
+    queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let output_dir = TempDir::new()?;
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+
+    assert_eq!(stats.failed(), 1);
+
+    let mut query = DownloadAttemptQuery::default();
+    query.status = Some(DownloadAttemptStatus::Failed);
+    let rows = queue.query_download_attempts(&query).await?;
+    assert_eq!(rows.len(), 1, "one failed history row expected");
+    let row = &rows[0];
+    assert_eq!(row.status(), DownloadAttemptStatus::Failed);
+    assert_eq!(row.url, url);
+    assert!(
+        row.file_path.is_none(),
+        "failed row should not have file path"
+    );
+    assert!(
+        row.error_message
+            .as_deref()
+            .is_some_and(|value| value.contains("HTTP 404")),
+        "failed row should capture HTTP error"
+    );
+    assert_eq!(
+        row.http_status,
+        Some(404),
+        "failed row should capture HTTP status code"
+    );
+    assert_eq!(
+        row.error_type(),
+        Some(DownloadErrorType::NotFound),
+        "failed row should categorize 404 as not_found"
+    );
+    assert_eq!(row.retry_count, 0, "404 should not be retried");
+    assert!(
+        row.last_retry_at.is_none(),
+        "no retries means no last_retry_at timestamp"
+    );
+    assert_eq!(
+        row.original_input.as_deref(),
+        Some(url.as_str()),
+        "original input should fallback to source URL when queue input is direct"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_process_queue_failure_propagates_parse_confidence_to_download_log()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/reference-failure.pdf"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/reference-failure.pdf", mock_server.uri());
+    let metadata = QueueMetadata {
+        suggested_filename: Some("Reference_Failure.pdf".to_string()),
+        title: Some("Reference Failure".to_string()),
+        authors: Some("Author, B".to_string()),
+        year: Some("2026".to_string()),
+        doi: None,
+        topics: None,
+        parse_confidence: Some("low".to_string()),
+        parse_confidence_factors: Some(
+            r#"{"has_authors":false,"has_year":true,"has_title":false,"author_count":0}"#
+                .to_string(),
+        ),
+    };
+    queue
+        .enqueue_with_metadata(&url, "reference", Some("Weak reference"), Some(&metadata))
+        .await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let output_dir = TempDir::new()?;
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+    assert_eq!(stats.failed(), 1);
+
+    let mut query = DownloadAttemptQuery::default();
+    query.status = Some(DownloadAttemptStatus::Failed);
+    let rows = queue.query_download_attempts(&query).await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].parse_confidence.as_deref(), Some("low"));
+    assert_eq!(
+        rows[0].parse_confidence_factors.as_deref(),
+        Some(r#"{"has_authors":false,"has_year":true,"has_title":false,"author_count":0}"#)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_process_queue_failure_auth_classification() -> Result<(), Box<dyn std::error::Error>>
+{
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/auth-required.pdf"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/auth-required.pdf", mock_server.uri());
+    queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let output_dir = TempDir::new()?;
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+    assert_eq!(stats.failed(), 1);
+
+    let mut query = DownloadAttemptQuery::default();
+    query.status = Some(DownloadAttemptStatus::Failed);
+    let rows = queue.query_download_attempts(&query).await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].error_type(), Some(DownloadErrorType::Auth));
+    assert!(
+        rows[0]
+            .error_message
+            .as_deref()
+            .is_some_and(|value| value.contains("Suggestion:")),
+        "auth failure row should include actionable suggestion"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_process_queue_failure_network_classification()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let url = "http://127.0.0.1:1/network-failure.pdf";
+    queue.enqueue(url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let output_dir = TempDir::new()?;
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+    assert_eq!(stats.failed(), 1);
+
+    let mut query = DownloadAttemptQuery::default();
+    query.status = Some(DownloadAttemptStatus::Failed);
+    let rows = queue.query_download_attempts(&query).await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].error_type(), Some(DownloadErrorType::Network));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_process_queue_failure_persists_retry_count_and_last_retry_at()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/retry-fail.pdf"))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(2)
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/retry-fail.pdf", mock_server.uri());
+    queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let retry_policy = RetryPolicy::new(2, Duration::from_millis(1), Duration::from_millis(1), 1.0);
+    let engine = create_engine_with_policy(1, retry_policy)?;
+    let output_dir = TempDir::new()?;
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+    assert_eq!(stats.failed(), 1);
+    assert_eq!(stats.retried(), 1);
+
+    let mut query = DownloadAttemptQuery::default();
+    query.status = Some(DownloadAttemptStatus::Failed);
+    let rows = queue.query_download_attempts(&query).await?;
+    assert_eq!(rows.len(), 1);
+    let row = &rows[0];
+    assert_eq!(row.retry_count, 1);
+    assert!(
+        row.last_retry_at.is_some(),
+        "failed row with retries should persist last_retry_at"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_process_queue_failure_preserves_original_input_for_doi()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/doi-failure.pdf"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/doi-failure.pdf", mock_server.uri());
+    queue
+        .enqueue(&url, "doi", Some("10.4242/original-doi"))
+        .await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let output_dir = TempDir::new()?;
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+    assert_eq!(stats.failed(), 1);
+
+    let mut query = DownloadAttemptQuery::default();
+    query.status = Some(DownloadAttemptStatus::Failed);
+    let rows = queue.query_download_attempts(&query).await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].original_input.as_deref(),
+        Some("10.4242/original-doi")
+    );
+
+    Ok(())
+}
+
 // ==================== Mixed Success/Failure Tests ====================
 
 #[tokio::test]
@@ -165,7 +619,7 @@ async fn test_process_queue_mixed_success_and_failure() -> Result<(), Box<dyn st
     let queue = Queue::new(db);
 
     // Setup mock server
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // 3 successful endpoints
     for i in 1..=3 {
@@ -294,7 +748,7 @@ async fn test_semaphore_limits_concurrent_downloads() -> Result<(), Box<dyn std:
     let peak = Arc::new(AtomicUsize::new(0));
 
     // Setup mock server with concurrency-tracking responder
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // Use a longer delay (100ms) to ensure overlap between requests
     let responder = ConcurrencyTrackingResponder::new(
@@ -350,7 +804,7 @@ async fn test_one_download_failure_does_not_affect_others() -> Result<(), Box<dy
     let queue = Queue::new(db);
 
     // Setup mock server
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // First item will fail
     Mock::given(method("GET"))
@@ -412,7 +866,7 @@ async fn test_all_items_reach_terminal_state() -> Result<(), Box<dyn std::error:
     let queue = Queue::new(db);
 
     // Setup mock with varied responses - use 404 for failures to avoid retries
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     Mock::given(method("GET"))
         .and(path("/ok.txt"))
@@ -484,7 +938,7 @@ async fn test_status_updates_dont_interfere_with_each_other()
     let queue = Queue::new(db);
 
     // Setup mock server with delays to ensure concurrent updates
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // Multiple items with varying response times
     for i in 0..5 {
@@ -541,7 +995,7 @@ async fn test_retry_succeeds_after_transient_failure() -> Result<(), Box<dyn std
     let (db, _temp_dir) = setup_test_db().await?;
     let queue = Queue::new(db);
 
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // First request returns 503 (transient), second returns 200 (success)
     Mock::given(method("GET"))
@@ -586,7 +1040,7 @@ async fn test_permanent_error_does_not_retry() -> Result<(), Box<dyn std::error:
     let (db, _temp_dir) = setup_test_db().await?;
     let queue = Queue::new(db);
 
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // 404 is permanent - should NOT retry
     Mock::given(method("GET"))
@@ -621,7 +1075,7 @@ async fn test_401_does_not_retry() -> Result<(), Box<dyn std::error::Error>> {
     let (db, _temp_dir) = setup_test_db().await?;
     let queue = Queue::new(db);
 
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // 401 is NeedsAuth - should NOT retry (until Epic 4)
     Mock::given(method("GET"))
@@ -648,6 +1102,12 @@ async fn test_401_does_not_retry() -> Result<(), Box<dyn std::error::Error>> {
 
     let item = queue.get(id).await?.unwrap();
     assert_eq!(item.status(), QueueStatus::Failed);
+    // Verify the error message has [AUTH] prefix
+    let err_msg = item.last_error.as_deref().unwrap_or("");
+    assert!(
+        err_msg.starts_with("[AUTH]"),
+        "Expected [AUTH] prefix in error, got: {err_msg}"
+    );
     Ok(())
 }
 
@@ -656,13 +1116,13 @@ async fn test_403_does_not_retry() -> Result<(), Box<dyn std::error::Error>> {
     let (db, _temp_dir) = setup_test_db().await?;
     let queue = Queue::new(db);
 
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
-    // 403 is NeedsAuth - should NOT retry (until Epic 4)
+    // 403 triggers a single browser User-Agent fallback retry before giving up.
     Mock::given(method("GET"))
         .and(path("/forbidden.pdf"))
         .respond_with(ResponseTemplate::new(403))
-        .expect(1) // Should only be called once
+        .expect(2) // Initial request + one browser UA retry
         .mount(&mock_server)
         .await;
 
@@ -679,10 +1139,16 @@ async fn test_403_does_not_retry() -> Result<(), Box<dyn std::error::Error>> {
 
     assert_eq!(stats.completed(), 0);
     assert_eq!(stats.failed(), 1);
-    assert_eq!(stats.retried(), 0);
+    assert_eq!(stats.retried(), 1); // one browser UA retry
 
     let item = queue.get(id).await?.unwrap();
     assert_eq!(item.status(), QueueStatus::Failed);
+    // 403 now produces AuthRequired with [AUTH] prefix
+    let err_msg = item.last_error.as_deref().unwrap_or("");
+    assert!(
+        err_msg.starts_with("[AUTH]"),
+        "Expected [AUTH] prefix in 403 error, got: {err_msg}"
+    );
     Ok(())
 }
 
@@ -691,7 +1157,7 @@ async fn test_429_triggers_retry_with_backoff() -> Result<(), Box<dyn std::error
     let (db, _temp_dir) = setup_test_db().await?;
     let queue = Queue::new(db);
 
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // First request returns 429 (rate limited), second returns 200 (success)
     Mock::given(method("GET"))
@@ -733,7 +1199,7 @@ async fn test_429_respects_retry_after_header() -> Result<(), Box<dyn std::error
     let (db, _temp_dir) = setup_test_db().await?;
     let queue = Queue::new(db);
 
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // First request returns 429 with Retry-After header
     Mock::given(method("GET"))
@@ -788,7 +1254,7 @@ async fn test_max_retries_exhausted_marks_item_failed() -> Result<(), Box<dyn st
     let (db, _temp_dir) = setup_test_db().await?;
     let queue = Queue::new(db);
 
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // Always return 503 (transient) - should retry until max_attempts
     Mock::given(method("GET"))
@@ -826,7 +1292,7 @@ async fn test_retry_count_persisted_in_database() -> Result<(), Box<dyn std::err
     let (db, _temp_dir) = setup_test_db().await?;
     let queue = Queue::new(db);
 
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // Always return 503 - retry until exhausted
     Mock::given(method("GET"))
@@ -865,7 +1331,7 @@ async fn test_rate_limiter_delays_same_domain_requests() -> Result<(), Box<dyn s
     let (db, _temp_dir) = setup_test_db().await?;
     let queue = Queue::new(db);
 
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // Setup 3 endpoints on the same domain
     for i in 1..=3 {
@@ -915,7 +1381,7 @@ async fn test_rate_limiter_disabled_allows_fast_parallel() -> Result<(), Box<dyn
     let (db, _temp_dir) = setup_test_db().await?;
     let queue = Queue::new(db);
 
-    let mock_server = MockServer::start().await;
+    let mock_server = require_mock_server!();
 
     // Setup 3 endpoints with 50ms delay each
     for i in 1..=3 {
@@ -957,6 +1423,767 @@ async fn test_rate_limiter_disabled_allows_fast_parallel() -> Result<(), Box<dyn
         elapsed < Duration::from_millis(200),
         "Disabled rate limiter should allow parallel requests, elapsed: {:?}",
         elapsed
+    );
+
+    Ok(())
+}
+
+// ==================== Interrupt Handling Tests ====================
+
+#[tokio::test]
+async fn test_interrupt_stops_claiming_new_work() -> Result<(), Box<dyn std::error::Error>> {
+    use std::sync::atomic::AtomicBool;
+
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+    let mock_server = require_mock_server!();
+
+    // Setup slow responses so items stay in-flight
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_bytes(b"content")
+                .set_delay(Duration::from_millis(200)),
+        )
+        .mount(&mock_server)
+        .await;
+
+    // Enqueue 10 items
+    for i in 0..10 {
+        let url = format!("{}/file{}.txt", mock_server.uri(), i);
+        queue.enqueue(&url, "direct_url", None).await?;
+    }
+
+    let client = HttpClient::new();
+    // Low concurrency so items queue up
+    let engine = DownloadEngine::new(2, RetryPolicy::with_max_attempts(1), test_rate_limiter())?;
+    let output_dir = TempDir::new()?;
+
+    // Set interrupt flag after a short delay
+    let interrupted = Arc::new(AtomicBool::new(false));
+    let interrupted_clone = Arc::clone(&interrupted);
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        interrupted_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+
+    let stats = engine
+        .process_queue_interruptible(&queue, &client, output_dir.path(), interrupted)
+        .await?;
+
+    // Should have been interrupted
+    assert!(stats.was_interrupted(), "Stats should reflect interruption");
+
+    // Should NOT have processed all 10 items (interrupted mid-batch)
+    assert!(
+        stats.total() < 10,
+        "Should not have completed all items, got {}",
+        stats.total()
+    );
+
+    // Remaining items should still be pending in the queue (available for resume)
+    let pending = queue.count_by_status(QueueStatus::Pending).await?;
+    assert!(
+        pending > 0,
+        "Some items should remain pending for resume, got 0"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_interrupt_flag_before_processing_returns_immediately()
+-> Result<(), Box<dyn std::error::Error>> {
+    use std::sync::atomic::AtomicBool;
+
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+    let mock_server = require_mock_server!();
+
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"content"))
+        .mount(&mock_server)
+        .await;
+
+    for i in 0..5 {
+        let url = format!("{}/file{}.txt", mock_server.uri(), i);
+        queue.enqueue(&url, "direct_url", None).await?;
+    }
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(5)?;
+    let output_dir = TempDir::new()?;
+
+    // Set interrupt flag BEFORE processing starts
+    let interrupted = Arc::new(AtomicBool::new(true));
+
+    let stats = engine
+        .process_queue_interruptible(&queue, &client, output_dir.path(), interrupted)
+        .await?;
+
+    assert!(stats.was_interrupted());
+    assert_eq!(
+        stats.total(),
+        0,
+        "No items should be processed when interrupted before start"
+    );
+
+    // All items should remain pending
+    let pending = queue.count_by_status(QueueStatus::Pending).await?;
+    assert_eq!(pending, 5, "All items should remain pending");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_interrupt_requeues_item_waiting_for_permit() -> Result<(), Box<dyn std::error::Error>>
+{
+    use std::sync::atomic::AtomicBool;
+
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+    let mock_server = require_mock_server!();
+
+    // Very slow response to keep the single permit occupied
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_bytes(b"content")
+                .set_delay(Duration::from_secs(10)),
+        )
+        .mount(&mock_server)
+        .await;
+
+    // Enqueue 3 items. With concurrency=1, the first will occupy the permit
+    // and the second will block on semaphore acquire.
+    for i in 0..3 {
+        let url = format!("{}/file{}.txt", mock_server.uri(), i);
+        queue.enqueue(&url, "direct_url", None).await?;
+    }
+
+    let client = HttpClient::new();
+    let engine = DownloadEngine::new(1, RetryPolicy::with_max_attempts(1), test_rate_limiter())?;
+    let output_dir = TempDir::new()?;
+
+    // Set interrupt after 200ms — first item will be in-flight, second will
+    // be waiting on the semaphore (the requeue path we're testing).
+    let interrupted = Arc::new(AtomicBool::new(false));
+    let interrupted_clone = Arc::clone(&interrupted);
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        interrupted_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+
+    let stats = engine
+        .process_queue_interruptible(&queue, &client, output_dir.path(), interrupted)
+        .await?;
+
+    assert!(stats.was_interrupted());
+
+    // With 3 items and concurrency=1:
+    // - Item 1: dequeued, acquired permit, in-flight (aborted after 5s timeout → in_progress)
+    // - Item 2: dequeued, waiting for permit → requeued to pending by select! interrupt path
+    // - Item 3: never dequeued → stays pending
+    //
+    // If the requeue path didn't work, item 2 would be stuck as in_progress.
+    // The key assertion: at least 2 items are pending (requeued + never-dequeued).
+    let pending = queue.count_by_status(QueueStatus::Pending).await?;
+    assert!(
+        pending >= 2,
+        "Expected at least 2 pending items (1 requeued + 1 never dequeued), got {}",
+        pending
+    );
+
+    // The in-flight aborted task stays in_progress (recovered by reset_in_progress on next run)
+    let in_progress = queue.count_by_status(QueueStatus::InProgress).await?;
+    assert!(
+        in_progress <= 1,
+        "At most 1 item should be in_progress (the aborted in-flight task), got {}",
+        in_progress
+    );
+
+    Ok(())
+}
+
+// ==================== Queue Dedup Tests ====================
+
+#[tokio::test]
+async fn test_has_active_url_detects_pending_duplicate() -> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    queue
+        .enqueue("https://example.com/paper.pdf", "direct_url", None)
+        .await?;
+
+    assert!(
+        queue
+            .has_active_url("https://example.com/paper.pdf")
+            .await?,
+        "Should detect pending URL as active"
+    );
+    assert!(
+        !queue
+            .has_active_url("https://example.com/other.pdf")
+            .await?,
+        "Should not detect absent URL as active"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_has_active_url_detects_in_progress_item() -> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    queue
+        .enqueue("https://example.com/downloading.pdf", "direct_url", None)
+        .await?;
+    // Dequeue transitions the item to in_progress
+    queue.dequeue().await?;
+
+    assert!(
+        queue
+            .has_active_url("https://example.com/downloading.pdf")
+            .await?,
+        "In-progress URL should be considered active"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_has_active_url_ignores_completed_items() -> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let id = queue
+        .enqueue("https://example.com/done.pdf", "direct_url", None)
+        .await?;
+    queue.dequeue().await?;
+    queue.mark_completed(id).await?;
+
+    assert!(
+        !queue.has_active_url("https://example.com/done.pdf").await?,
+        "Completed URL should not be considered active"
+    );
+
+    Ok(())
+}
+
+// ==================== Resume / Range Request Tests ====================
+
+#[tokio::test]
+async fn test_resume_partial_file_sends_range_request() -> Result<(), Box<dyn std::error::Error>> {
+    use wiremock::matchers::header;
+
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+    let mock_server = require_mock_server!();
+
+    // Full content: "AAABBB" (6 bytes). Simulate partial file with first 3 bytes on disk.
+    let output_dir = TempDir::new()?;
+    std::fs::write(output_dir.path().join("resume.bin"), b"AAA")?;
+
+    // HEAD response: supports ranges
+    Mock::given(method("HEAD"))
+        .and(path("/resume.bin"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Accept-Ranges", "bytes")
+                .insert_header("Content-Length", "6"),
+        )
+        .mount(&mock_server)
+        .await;
+
+    // GET with Range header → 206 with remaining bytes
+    Mock::given(method("GET"))
+        .and(path("/resume.bin"))
+        .and(header("Range", "bytes=3-"))
+        .respond_with(
+            ResponseTemplate::new(206)
+                .set_body_bytes(b"BBB")
+                .insert_header("Content-Length", "3"),
+        )
+        .with_priority(1)
+        .mount(&mock_server)
+        .await;
+
+    // GET without Range → 200 full content (fallback)
+    Mock::given(method("GET"))
+        .and(path("/resume.bin"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_bytes(b"AAABBB")
+                .insert_header("Content-Length", "6"),
+        )
+        .with_priority(u8::MAX)
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/resume.bin", mock_server.uri());
+    queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+
+    assert_eq!(stats.completed(), 1, "Download should complete");
+    assert_eq!(stats.failed(), 0);
+
+    // Verify final file content is the full 6 bytes
+    let final_content = std::fs::read(output_dir.path().join("resume.bin"))?;
+    assert_eq!(
+        final_content, b"AAABBB",
+        "Resumed file should have full content"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_resume_server_no_range_support_restarts() -> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+    let mock_server = require_mock_server!();
+
+    // Create partial file on disk
+    let output_dir = TempDir::new()?;
+    std::fs::write(output_dir.path().join("norange.bin"), b"partial")?;
+
+    // HEAD response: no Accept-Ranges header
+    Mock::given(method("HEAD"))
+        .and(path("/norange.bin"))
+        .respond_with(ResponseTemplate::new(200).insert_header("Content-Length", "12"))
+        .mount(&mock_server)
+        .await;
+
+    // GET → 200 full content (server doesn't support ranges)
+    Mock::given(method("GET"))
+        .and(path("/norange.bin"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_bytes(b"full content")
+                .insert_header("Content-Length", "12"),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/norange.bin", mock_server.uri());
+    queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+
+    assert_eq!(stats.completed(), 1);
+
+    // Without range support, the engine writes to a new unique-named file
+    // (since norange.bin already exists and we're not resuming)
+    let files: Vec<_> = std::fs::read_dir(output_dir.path())?
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(
+        files.len(),
+        2,
+        "Should have original partial + new full download"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_progress_metadata_persisted_after_download() -> Result<(), Box<dyn std::error::Error>>
+{
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+    let mock_server = require_mock_server!();
+
+    Mock::given(method("GET"))
+        .and(path("/tracked.pdf"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_bytes(b"tracked content here")
+                .insert_header("Content-Length", "20"),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/tracked.pdf", mock_server.uri());
+    let id = queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let output_dir = TempDir::new()?;
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+
+    assert_eq!(stats.completed(), 1);
+
+    // Verify progress metadata was persisted in queue
+    let item = queue.get(id).await?.unwrap();
+    assert_eq!(item.status(), QueueStatus::Completed);
+    assert!(
+        item.bytes_downloaded > 0,
+        "bytes_downloaded should be recorded, got {}",
+        item.bytes_downloaded
+    );
+
+    Ok(())
+}
+
+// ==================== Resume Integrity Tests ====================
+
+#[tokio::test]
+async fn test_resume_with_mismatched_content_length_fails() -> Result<(), Box<dyn std::error::Error>>
+{
+    use wiremock::matchers::header;
+
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+    let mock_server = require_mock_server!();
+
+    // Partial file: 3 bytes on disk
+    let output_dir = TempDir::new()?;
+    std::fs::write(output_dir.path().join("integrity.bin"), b"AAA")?;
+
+    // HEAD: supports ranges
+    Mock::given(method("HEAD"))
+        .and(path("/integrity.bin"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Accept-Ranges", "bytes")
+                .insert_header("Content-Length", "10"),
+        )
+        .mount(&mock_server)
+        .await;
+
+    // 206 response lies about Content-Length: claims 20 bytes remaining but only sends 3.
+    // This should fail — either as our integrity check or as a transport-level error.
+    Mock::given(method("GET"))
+        .and(path("/integrity.bin"))
+        .and(header("Range", "bytes=3-"))
+        .respond_with(
+            ResponseTemplate::new(206)
+                .set_body_bytes(b"BBB")
+                .insert_header("Content-Length", "20"),
+        )
+        .with_priority(1)
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/integrity.bin", mock_server.uri());
+    queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+
+    // The download should fail (integrity mismatch or transport error)
+    assert_eq!(stats.completed(), 0, "Mismatched resume should not succeed");
+    assert_eq!(stats.failed(), 1);
+
+    Ok(())
+}
+
+// ==================== Auth Detection Tests ====================
+
+#[tokio::test]
+async fn test_login_redirect_detected_as_auth_failure() -> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+    let mock_server = require_mock_server!();
+
+    // Simulate login redirect: PDF URL returns 302 to /login, which returns HTML
+    Mock::given(method("GET"))
+        .and(path("/paper.pdf"))
+        .respond_with(ResponseTemplate::new(302).insert_header(
+            "Location",
+            format!("{}/login?return=/paper.pdf", mock_server.uri()),
+        ))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/login"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "text/html; charset=utf-8")
+                .set_body_bytes(
+                    "<html><body>Please log in to access this resource</body></html>".as_bytes(),
+                ),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/paper.pdf", mock_server.uri());
+    let id = queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let output_dir = TempDir::new()?;
+
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+
+    assert_eq!(stats.completed(), 0);
+    assert_eq!(stats.failed(), 1);
+
+    let item = queue.get(id).await?.unwrap();
+    assert_eq!(item.status(), QueueStatus::Failed);
+    let err_msg = item.last_error.as_deref().unwrap_or("");
+    assert!(
+        err_msg.starts_with("[AUTH]"),
+        "Login redirect should produce [AUTH] error, got: {err_msg}"
+    );
+
+    Ok(())
+}
+
+// ==================== Content-Type Extension Detection Tests ====================
+
+#[tokio::test]
+async fn test_content_type_extension_detection_html() -> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    // Mock server that returns HTML without filename in URL (using root path to trigger fallback)
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/html; charset=utf-8")
+                .set_body_bytes("<html><body>Test</body></html>"),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let url = mock_server.uri();
+    queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine(1)?;
+    let output_dir = TempDir::new()?;
+
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+
+    assert_eq!(stats.completed(), 1);
+
+    // Verify filename has .html extension, not .bin
+    let files: Vec<_> = std::fs::read_dir(output_dir.path())?
+        .filter_map(|e| e.ok())
+        .collect();
+
+    assert_eq!(files.len(), 1);
+    let filename = files[0].file_name();
+    let filename_str = filename.to_string_lossy();
+
+    assert!(
+        filename_str.ends_with(".html"),
+        "Expected .html extension but got: {}",
+        filename_str
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_content_type_extension_detection_json() -> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_bytes(r#"{"status": "ok"}"#),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let url = mock_server.uri();
+    queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine(1)?;
+    let output_dir = TempDir::new()?;
+
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+
+    assert_eq!(stats.completed(), 1);
+
+    let files: Vec<_> = std::fs::read_dir(output_dir.path())?
+        .filter_map(|e| e.ok())
+        .collect();
+
+    assert_eq!(files.len(), 1);
+    let filename = files[0].file_name();
+    let filename_str = filename.to_string_lossy();
+
+    assert!(
+        filename_str.ends_with(".json"),
+        "Expected .json extension but got: {}",
+        filename_str
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_content_type_fallback_to_bin() -> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/octet-stream")
+                .set_body_bytes(vec![0x00, 0x01, 0x02, 0x03]),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let url = mock_server.uri();
+    queue.enqueue(&url, "direct_url", None).await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine(1)?;
+    let output_dir = TempDir::new()?;
+
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+
+    assert_eq!(stats.completed(), 1);
+
+    let files: Vec<_> = std::fs::read_dir(output_dir.path())?
+        .filter_map(|e| e.ok())
+        .collect();
+
+    assert_eq!(files.len(), 1);
+    let filename = files[0].file_name();
+    let filename_str = filename.to_string_lossy();
+
+    assert!(
+        filename_str.ends_with(".bin"),
+        "Expected .bin extension for unknown content-type but got: {}",
+        filename_str
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_metadata_suggested_filename_is_used_for_download_path()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/paper.pdf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"pdf-bytes"))
+        .mount(&mock_server)
+        .await;
+
+    let url = format!("{}/paper.pdf", mock_server.uri());
+    let metadata = QueueMetadata {
+        suggested_filename: Some("Smith_2024_Climate_Study.pdf".to_string()),
+        title: Some("Climate Study".to_string()),
+        authors: Some("Smith, John".to_string()),
+        year: Some("2024".to_string()),
+        doi: Some("10.1000/test".to_string()),
+        topics: None,
+        parse_confidence: None,
+        parse_confidence_factors: None,
+    };
+    queue
+        .enqueue_with_metadata(&url, "doi", Some("10.1000/test"), Some(&metadata))
+        .await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+    let output_dir = TempDir::new()?;
+
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+    assert_eq!(stats.completed(), 1);
+
+    let expected = output_dir.path().join("Smith_2024_Climate_Study.pdf");
+    assert!(
+        expected.exists(),
+        "expected metadata-driven filename at {:?}",
+        expected
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_metadata_duplicate_suffix_starts_at_two() -> Result<(), Box<dyn std::error::Error>> {
+    let (db, _temp_dir) = setup_test_db().await?;
+    let queue = Queue::new(db);
+
+    let mock_server = require_mock_server!();
+    Mock::given(method("GET"))
+        .and(path("/paper.pdf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"pdf-bytes"))
+        .mount(&mock_server)
+        .await;
+
+    let output_dir = TempDir::new()?;
+    std::fs::write(
+        output_dir.path().join("Smith_2024_Climate_Study.pdf"),
+        b"existing",
+    )?;
+
+    let url = format!("{}/paper.pdf", mock_server.uri());
+    let metadata = QueueMetadata {
+        suggested_filename: Some("Smith_2024_Climate_Study.pdf".to_string()),
+        title: Some("Climate Study".to_string()),
+        authors: Some("Smith, John".to_string()),
+        year: Some("2024".to_string()),
+        doi: Some("10.1000/test".to_string()),
+        topics: None,
+        parse_confidence: None,
+        parse_confidence_factors: None,
+    };
+    queue
+        .enqueue_with_metadata(&url, "doi", Some("10.1000/test"), Some(&metadata))
+        .await?;
+
+    let client = HttpClient::new();
+    let engine = create_engine_no_retry(1)?;
+
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+    assert_eq!(stats.completed(), 1);
+
+    let expected = output_dir.path().join("Smith_2024_Climate_Study_2.pdf");
+    assert!(
+        expected.exists(),
+        "expected duplicate metadata filename with _2 suffix at {:?}",
+        expected
     );
 
     Ok(())

@@ -1,0 +1,8 @@
+[advisories]
+# RUSTSEC-2023-0071: rsa Marvin Attack timing sidechannel (medium, 5.9).
+# No patched version available. Transitive via sqlx-mysql which is unused at
+# runtime in this project; rsa is never invoked in any execution path.
+#
+# RUSTSEC-2025-0119: number_prefix unmaintained (warning only, no CVE).
+# Transitive via indicatif progress bars. No security impact; maintenance concern only.
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2025-0119"]

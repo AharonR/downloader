@@ -138,15 +138,27 @@
       - Git commit message quality
     </output>
 
-    <ask>What should I do with these issues?
+    <check if="{{review_mode}} == 'auto-fix-high-medium'">
+      <output>Auto-review mode active (`{{review_mode}}`): applying automatic fixes for High and Medium issues.</output>
+      <action>Set {{review_decision}} = "1"</action>
+    </check>
 
-      1. **Fix them automatically** - I'll update the code and tests
-      2. **Create action items** - Add to story Tasks/Subtasks for later
-      3. **Show me details** - Deep dive into specific issues
+    <check if="{{review_mode}} == 'create-followups'">
+      <output>Auto-review mode active (`{{review_mode}}`): creating follow-up tasks instead of direct fixes.</output>
+      <action>Set {{review_decision}} = "2"</action>
+    </check>
 
-      Choose [1], [2], or specify which issue to examine:</ask>
+    <check if="{{review_mode}} == 'interactive' OR {{review_decision}} is empty">
+      <ask>What should I do with these issues?
 
-    <check if="user chooses 1">
+        1. **Fix them automatically** - I'll update the code and tests
+        2. **Create action items** - Add to story Tasks/Subtasks for later
+        3. **Show me details** - Deep dive into specific issues
+
+        Choose [1], [2], or specify which issue to examine:</ask>
+    </check>
+
+    <check if="user chooses 1 OR {{review_decision}} == '1'">
       <action>Fix all HIGH and MEDIUM issues in the code</action>
       <action>Add/update tests as needed</action>
       <action>Update File List in story if files changed</action>
@@ -155,7 +167,7 @@
       <action>Set {{action_count}} = 0</action>
     </check>
 
-    <check if="user chooses 2">
+    <check if="user chooses 2 OR {{review_decision}} == '2'">
       <action>Add "Review Follow-ups (AI)" subsection to Tasks/Subtasks</action>
       <action>For each issue: `- [ ] [AI-Review][Severity] Description [file:line]`</action>
       <action>Set {{action_count}} = number of action items created</action>

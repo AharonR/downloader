@@ -1,0 +1,100 @@
+name: Phase Rollout Gates
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      run_nonfunctional:
+        description: Run non-functional regression gates
+        required: false
+        default: "false"
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gates:
+    name: quality-gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy gate
+        run: cargo clippy -- -D warnings
+
+      - name: Security audit
+        run: cargo audit
+
+      - name: Socket bind preflight
+        env:
+          DOWNLOADER_REQUIRE_SOCKET_TESTS: "1"
+        run: |
+          python - <<'PY'
+          import os
+          import socket
+          import sys
+
+          strict = os.getenv("DOWNLOADER_REQUIRE_SOCKET_TESTS", "").lower() in {"1", "true", "yes"}
+          probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          try:
+            probe.bind(("127.0.0.1", 0))
+            host, port = probe.getsockname()
+            print(f"[socket-preflight] localhost bind succeeded on {host}:{port}")
+          except OSError as err:
+            print(
+                "::error::[socket-preflight] localhost bind failed; wiremock-based tests cannot run in strict mode. "
+                "Use a runner that allows 127.0.0.1 socket binding."
+            )
+            print(f"[socket-preflight] OS error: {err}")
+            if strict:
+              sys.exit(1)
+          finally:
+            probe.close()
+          PY
+
+      - name: Core test gate
+        env:
+          DOWNLOADER_REQUIRE_SOCKET_TESTS: "1"
+        run: cargo test --all-targets
+
+      - name: Targeted integration gate
+        env:
+          DOWNLOADER_REQUIRE_SOCKET_TESTS: "1"
+        run: |
+          cargo test --test queue_integration
+          cargo test --test download_engine_integration
+          cargo test --test cli_e2e
+
+  nonfunctional-gates:
+    name: nonfunctional-gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'schedule' || github.event.inputs.run_nonfunctional == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run non-functional regression gates
+        run: cargo test --test nonfunctional_regression_gates -- --ignored --nocapture

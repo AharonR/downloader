@@ -10,6 +10,10 @@
 //! can proceed in parallel without waiting for each other. Only subsequent
 //! requests to the *same* domain are delayed.
 //!
+//! For fixed delays use [`RateLimiter::new`]. For jitter (randomization to avoid
+//! regular spacing and fingerprinting), use [`RateLimiter::new_with_jitter`]. The
+//! download orchestrator uses jitter when CLI `--rate-limit-jitter` is set.
+//!
 //! # Example
 //!
 //! ```
@@ -37,15 +41,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use dashmap::DashMap;
+use rand::Rng;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 use tracing::{debug, instrument, warn};
 
-/// Warning threshold for cumulative delay per domain (30 seconds).
-const CUMULATIVE_DELAY_WARNING_THRESHOLD: Duration = Duration::from_secs(30);
+use super::constants::{CUMULATIVE_DELAY_WARNING_THRESHOLD, MAX_RETRY_AFTER};
 
-/// Maximum Retry-After value (1 hour) to prevent excessive delays.
-const MAX_RETRY_AFTER: Duration = Duration::from_secs(3600);
+const DEFAULT_STALE_DOMAIN_TTL: Duration = Duration::from_secs(30 * 60);
+const DEFAULT_CLEANUP_INTERVAL_OPS: u64 = 256;
 
 /// Per-domain rate limiter for download requests.
 ///
@@ -81,6 +85,9 @@ pub struct RateLimiter {
     /// Default minimum delay between requests to the same domain.
     default_delay: Duration,
 
+    /// Optional maximum jitter added to each delay (random `0..=max_jitter`) for less regular spacing.
+    max_jitter: Option<Duration>,
+
     /// Whether rate limiting is disabled (for `--rate-limit 0`).
     disabled: bool,
 
@@ -88,6 +95,15 @@ pub struct RateLimiter {
     /// Uses Arc to allow cloning the state and releasing the `DashMap` lock
     /// before awaiting on the inner Mutex (prevents shard lock across await).
     domains: DashMap<String, Arc<DomainState>>,
+
+    /// Removes domain entries that have not been touched for this duration.
+    stale_domain_ttl: Duration,
+
+    /// Runs stale cleanup every N acquire/record operations.
+    cleanup_interval_ops: u64,
+
+    /// Operation counter used to trigger periodic stale cleanup.
+    cleanup_ops: AtomicU64,
 }
 
 /// State tracked for each domain.
@@ -101,15 +117,19 @@ struct DomainState {
     /// Cumulative delay applied to this domain (in milliseconds).
     /// Used to warn when excessive rate limiting occurs.
     cumulative_delay_ms: AtomicU64,
+
+    /// Last unix timestamp (seconds) when this domain was touched.
+    last_seen_secs: AtomicU64,
 }
 
 impl DomainState {
     /// Creates a new domain state for a domain that hasn't been requested yet.
-    fn new() -> Self {
+    fn new(now_secs: u64) -> Self {
         Self {
             // None means first request - no delay needed
             last_request: Mutex::new(None),
             cumulative_delay_ms: AtomicU64::new(0),
+            last_seen_secs: AtomicU64::new(now_secs),
         }
     }
 
@@ -122,6 +142,14 @@ impl DomainState {
             .fetch_add(delay_ms, Ordering::SeqCst)
             + delay_ms;
         Duration::from_millis(new_total)
+    }
+
+    fn touch(&self, now_secs: u64) {
+        self.last_seen_secs.store(now_secs, Ordering::Relaxed);
+    }
+
+    fn last_seen_secs(&self) -> u64 {
+        self.last_seen_secs.load(Ordering::Relaxed)
     }
 }
 
@@ -144,11 +172,30 @@ impl RateLimiter {
     #[instrument(skip_all, fields(delay_ms = default_delay.as_millis()))]
     pub fn new(default_delay: Duration) -> Self {
         debug!("creating rate limiter");
-        Self {
+        Self::with_cleanup_policy(
             default_delay,
-            disabled: false,
-            domains: DashMap::new(),
-        }
+            None,
+            false,
+            DEFAULT_STALE_DOMAIN_TTL,
+            DEFAULT_CLEANUP_INTERVAL_OPS,
+        )
+    }
+
+    /// Creates a rate limiter with optional jitter added to each delay.
+    ///
+    /// When `max_jitter_ms > 0`, each applied delay is `default_delay + random(0..=max_jitter_ms)`.
+    /// Jitter makes request spacing less regular and can help avoid fingerprinting.
+    #[must_use]
+    #[instrument(skip_all, fields(delay_ms = default_delay.as_millis(), jitter_ms = max_jitter_ms))]
+    pub fn new_with_jitter(default_delay: Duration, max_jitter_ms: u64) -> Self {
+        debug!("creating rate limiter with jitter");
+        Self::with_cleanup_policy(
+            default_delay,
+            Some(Duration::from_millis(max_jitter_ms)),
+            false,
+            DEFAULT_STALE_DOMAIN_TTL,
+            DEFAULT_CLEANUP_INTERVAL_OPS,
+        )
     }
 
     /// Creates a disabled rate limiter that applies no delays.
@@ -166,10 +213,30 @@ impl RateLimiter {
     #[instrument]
     pub fn disabled() -> Self {
         debug!("creating disabled rate limiter");
+        Self::with_cleanup_policy(
+            Duration::ZERO,
+            None,
+            true,
+            DEFAULT_STALE_DOMAIN_TTL,
+            DEFAULT_CLEANUP_INTERVAL_OPS,
+        )
+    }
+
+    fn with_cleanup_policy(
+        default_delay: Duration,
+        max_jitter: Option<Duration>,
+        disabled: bool,
+        stale_domain_ttl: Duration,
+        cleanup_interval_ops: u64,
+    ) -> Self {
         Self {
-            default_delay: Duration::ZERO,
-            disabled: true,
+            default_delay,
+            max_jitter,
+            disabled,
             domains: DashMap::new(),
+            stale_domain_ttl,
+            cleanup_interval_ops: cleanup_interval_ops.max(1),
+            cleanup_ops: AtomicU64::new(0),
         }
     }
 
@@ -215,6 +282,7 @@ impl RateLimiter {
             return;
         }
 
+        let now_secs = unix_timestamp_secs();
         let domain = extract_domain(url);
         tracing::Span::current().record("domain", &domain);
 
@@ -222,8 +290,9 @@ impl RateLimiter {
         let state = self
             .domains
             .entry(domain.clone())
-            .or_insert_with(|| Arc::new(DomainState::new()))
+            .or_insert_with(|| Arc::new(DomainState::new(now_secs)))
             .clone();
+        state.touch(now_secs);
 
         // Lock the state to atomically check and update
         // Note: DashMap lock is released above, only Mutex lock is held during await
@@ -234,7 +303,13 @@ impl RateLimiter {
             let elapsed = last_request.elapsed();
 
             if elapsed < self.default_delay {
-                let delay = self.default_delay.saturating_sub(elapsed);
+                let mut delay = self.default_delay.saturating_sub(elapsed);
+                if let Some(jitter) = self.max_jitter {
+                    let jitter_cap = u64::try_from(jitter.as_millis().min(u128::from(u64::MAX)))
+                        .unwrap_or(u64::MAX);
+                    let jitter_ms = rand::thread_rng().gen_range(0..=jitter_cap);
+                    delay = delay.saturating_add(Duration::from_millis(jitter_ms));
+                }
                 let cumulative = state.add_cumulative_delay(delay);
 
                 debug!(
@@ -261,6 +336,7 @@ impl RateLimiter {
 
         // Update last request time after any delay
         *last_request_guard = Some(Instant::now());
+        self.maybe_cleanup_stale_domains(now_secs);
     }
 
     /// Records a server-mandated rate limit delay (from Retry-After header).
@@ -274,13 +350,16 @@ impl RateLimiter {
     /// * `delay` - The delay specified by the server
     #[instrument(skip(self), fields(domain))]
     pub fn record_rate_limit(&self, url: &str, delay: Duration) {
+        let now_secs = unix_timestamp_secs();
         let domain = extract_domain(url);
         tracing::Span::current().record("domain", &domain);
 
         let state = self
             .domains
             .entry(domain.clone())
-            .or_insert_with(|| Arc::new(DomainState::new()));
+            .or_insert_with(|| Arc::new(DomainState::new(now_secs)))
+            .clone();
+        state.touch(now_secs);
         let cumulative = state.add_cumulative_delay(delay);
 
         debug!(
@@ -298,7 +377,35 @@ impl RateLimiter {
                 "excessive server rate limiting - site may be under heavy load"
             );
         }
+        self.maybe_cleanup_stale_domains(now_secs);
     }
+
+    fn maybe_cleanup_stale_domains(&self, now_secs: u64) {
+        let op = self.cleanup_ops.fetch_add(1, Ordering::Relaxed) + 1;
+        if op % self.cleanup_interval_ops != 0 {
+            return;
+        }
+
+        let cutoff = now_secs.saturating_sub(self.stale_domain_ttl.as_secs());
+        let before = self.domains.len();
+        self.domains
+            .retain(|_domain, state| state.last_seen_secs() >= cutoff);
+        let removed = before.saturating_sub(self.domains.len());
+        if removed > 0 {
+            debug!(
+                removed,
+                remaining = self.domains.len(),
+                "pruned stale rate-limiter domains"
+            );
+        }
+    }
+}
+
+fn unix_timestamp_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Extracts the domain from a URL.
@@ -479,6 +586,13 @@ mod tests {
         // Third request - should delay another second
         limiter.acquire("https://example.com/3").await;
         assert!(start.elapsed() >= Duration::from_secs(2));
+    }
+
+    #[test]
+    fn test_rate_limiter_new_with_jitter_creates_limiter() {
+        let limiter = RateLimiter::new_with_jitter(Duration::from_millis(100), 50);
+        assert!(!limiter.is_disabled());
+        assert_eq!(limiter.default_delay(), Duration::from_millis(100));
     }
 
     #[tokio::test]
@@ -678,5 +792,47 @@ mod tests {
 
         assert_eq!(state_a.cumulative_delay_ms.load(Ordering::SeqCst), 5000);
         assert_eq!(state_b.cumulative_delay_ms.load(Ordering::SeqCst), 10000);
+    }
+
+    #[test]
+    fn test_periodic_cleanup_prunes_stale_domains() {
+        let limiter = RateLimiter::with_cleanup_policy(
+            Duration::from_secs(1),
+            None,
+            false,
+            Duration::from_secs(1),
+            1,
+        );
+        limiter.record_rate_limit("https://stale.example/1", Duration::from_millis(10));
+        assert!(limiter.domains.contains_key("stale.example"));
+
+        std::thread::sleep(Duration::from_millis(2100));
+
+        limiter.record_rate_limit("https://fresh.example/1", Duration::from_millis(10));
+        assert!(!limiter.domains.contains_key("stale.example"));
+        assert!(limiter.domains.contains_key("fresh.example"));
+    }
+
+    #[test]
+    fn test_record_rate_limit_cleanup_path_does_not_deadlock() {
+        let limiter = RateLimiter::with_cleanup_policy(
+            Duration::from_secs(1),
+            None,
+            false,
+            Duration::from_secs(1),
+            1,
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            limiter.record_rate_limit("https://example.com/1", Duration::from_millis(10));
+            let _ = tx.send(());
+        });
+
+        let completed = rx.recv_timeout(Duration::from_secs(2)).is_ok();
+        assert!(
+            completed,
+            "record_rate_limit should complete quickly when cleanup is triggered"
+        );
     }
 }

@@ -11,6 +11,7 @@
 --   - 'direct_url': A direct HTTP/HTTPS URL
 --   - 'doi': A DOI that was resolved to a URL
 --   - 'reference': A bibliographic reference that was parsed
+--   - 'bibtex': A BibTeX entry key routed through resolver flow
 
 CREATE TABLE IF NOT EXISTS queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,7 +20,7 @@ CREATE TABLE IF NOT EXISTS queue (
     url TEXT NOT NULL,
 
     -- How this item entered the queue
-    source_type TEXT NOT NULL CHECK (source_type IN ('direct_url', 'doi', 'reference')),
+    source_type TEXT NOT NULL CHECK (source_type IN ('direct_url', 'doi', 'reference', 'bibtex')),
 
     -- Original user input (for reference/debugging)
     original_input TEXT,

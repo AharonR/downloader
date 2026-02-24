@@ -1,0 +1,5 @@
+When you're ready for the next cycle, the natural entry points are:
+
+  - /bmad:bmm:workflows:sprint-planning — open a new sprint with the carry-forward items and next-cycle work
+  (coverage tooling, benchmarks, architecture amendment, UI scope evaluation)
+  - Architecture doc amendment can be started directly with the Architect agent

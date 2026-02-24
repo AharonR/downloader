@@ -54,6 +54,37 @@ pub enum DownloadError {
         /// The invalid URL string.
         url: String,
     },
+
+    /// Downloaded file size does not match expected server content length.
+    #[error(
+        "integrity check failed for {path}: expected {expected_bytes} bytes, got {actual_bytes}"
+    )]
+    Integrity {
+        /// Download path that failed verification.
+        path: PathBuf,
+        /// Expected size in bytes.
+        expected_bytes: u64,
+        /// Actual size in bytes.
+        actual_bytes: u64,
+    },
+
+    /// Authentication or authorization required to access the resource.
+    ///
+    /// Suggestion text varies: 407 suggests proxy configuration,
+    /// all others suggest `downloader auth capture`.
+    #[error(
+        "[AUTH] authentication required for {domain} (HTTP {status}) downloading {url}\n  Suggestion: {suggestion}"
+    )]
+    AuthRequired {
+        /// The URL that requires authentication.
+        url: String,
+        /// The HTTP status code (401, 403, 407, or 0 for login redirect).
+        status: u16,
+        /// The domain requiring authentication.
+        domain: String,
+        /// User-facing suggestion for resolving the auth issue.
+        suggestion: &'static str,
+    },
 }
 
 impl DownloadError {
@@ -103,6 +134,34 @@ impl DownloadError {
     /// Creates an invalid URL error.
     pub fn invalid_url(url: impl Into<String>) -> Self {
         Self::InvalidUrl { url: url.into() }
+    }
+
+    /// Creates an integrity mismatch error.
+    pub fn integrity(path: impl Into<PathBuf>, expected_bytes: u64, actual_bytes: u64) -> Self {
+        Self::Integrity {
+            path: path.into(),
+            expected_bytes,
+            actual_bytes,
+        }
+    }
+
+    /// Creates an authentication-required error.
+    ///
+    /// The suggestion text is derived from the status code:
+    /// - 407 (Proxy Authentication Required) → proxy configuration hint
+    /// - All others (401, 403, login redirect) → `downloader auth capture` hint
+    pub fn auth_required(url: impl Into<String>, status: u16, domain: impl Into<String>) -> Self {
+        let suggestion = if status == 407 {
+            "Configure your HTTP proxy settings or check proxy credentials."
+        } else {
+            "Run `downloader auth capture` to authenticate."
+        };
+        Self::AuthRequired {
+            url: url.into(),
+            status,
+            domain: domain.into(),
+            suggestion,
+        }
     }
 }
 
@@ -157,5 +216,77 @@ mod tests {
             "Expected 'invalid URL' in: {msg}"
         );
         assert!(msg.contains("not-a-url"), "Expected URL in: {msg}");
+    }
+
+    #[test]
+    fn test_download_error_auth_required_display() {
+        let error =
+            DownloadError::auth_required("https://example.com/paper.pdf", 401, "example.com");
+        let msg = error.to_string();
+        assert!(
+            msg.starts_with("[AUTH]"),
+            "Expected [AUTH] prefix in: {msg}"
+        );
+        assert!(msg.contains("example.com"), "Expected domain in: {msg}");
+        assert!(msg.contains("401"), "Expected status in: {msg}");
+        assert!(
+            msg.contains("https://example.com/paper.pdf"),
+            "Expected URL in: {msg}"
+        );
+        assert!(
+            msg.contains("downloader auth capture"),
+            "Expected actionable suggestion in: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_download_error_auth_required_403() {
+        let error = DownloadError::auth_required("https://ieee.org/doc.pdf", 403, "ieee.org");
+        let msg = error.to_string();
+        assert!(
+            msg.starts_with("[AUTH]"),
+            "Expected [AUTH] prefix in: {msg}"
+        );
+        assert!(msg.contains("403"), "Expected status 403 in: {msg}");
+        assert!(msg.contains("ieee.org"), "Expected domain in: {msg}");
+    }
+
+    #[test]
+    fn test_download_error_auth_required_login_redirect() {
+        let error = DownloadError::auth_required(
+            "https://sciencedirect.com/paper.pdf",
+            0,
+            "idp.university.edu",
+        );
+        let msg = error.to_string();
+        assert!(
+            msg.starts_with("[AUTH]"),
+            "Expected [AUTH] prefix in: {msg}"
+        );
+        assert!(
+            msg.contains("HTTP 0"),
+            "Expected status 0 (redirect) in: {msg}"
+        );
+        assert!(
+            msg.contains("idp.university.edu"),
+            "Expected redirect domain in: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_download_error_auth_required_407_proxy_suggestion() {
+        let error =
+            DownloadError::auth_required("https://example.com/file.pdf", 407, "proxy.corp.net");
+        let msg = error.to_string();
+        assert!(
+            msg.starts_with("[AUTH]"),
+            "Expected [AUTH] prefix in: {msg}"
+        );
+        assert!(msg.contains("407"), "Expected status 407 in: {msg}");
+        assert!(msg.contains("proxy"), "Expected proxy suggestion in: {msg}");
+        assert!(
+            !msg.contains("downloader auth capture"),
+            "407 should NOT suggest auth capture: {msg}"
+        );
     }
 }

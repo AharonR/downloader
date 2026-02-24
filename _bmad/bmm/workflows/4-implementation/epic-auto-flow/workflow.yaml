@@ -1,0 +1,35 @@
+name: epic-auto-flow
+description: "Automatically execute create-story -> party-mode-audit -> dev-story -> code-review -> bug-test-writing with context compression for all stories in a target epic."
+author: "BMad"
+
+# Critical variables from config
+config_source: "{project-root}/_bmad/bmm/config.yaml"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+user_skill_level: "{config_source}:user_skill_level"
+document_output_language: "{config_source}:document_output_language"
+date: system-generated
+planning_artifacts: "{config_source}:planning_artifacts"
+implementation_artifacts: "{config_source}:implementation_artifacts"
+output_folder: "{implementation_artifacts}"
+sprint_status: "{implementation_artifacts}/sprint-status.yaml"
+
+# Workflow components
+installed_path: "{project-root}/_bmad/bmm/workflows/4-implementation/epic-auto-flow"
+instructions: "{installed_path}/instructions.xml"
+template: false
+
+variables:
+  epic_num: "3"
+  review_mode: "auto-fix-high-medium"
+  failure_mode: "fail-fast"
+  story_dir: "{implementation_artifacts}"
+  create_story_workflow: "{project-root}/_bmad/bmm/workflows/4-implementation/create-story/workflow.yaml"
+  party_audit_workflow: "{project-root}/_bmad/bmm/workflows/4-implementation/party-mode-audit/workflow.yaml"
+  dev_story_workflow: "{project-root}/_bmad/bmm/workflows/4-implementation/dev-story/workflow.yaml"
+  code_review_workflow: "{project-root}/_bmad/bmm/workflows/4-implementation/code-review/workflow.yaml"
+  testarch_automate_workflow: "{project-root}/_bmad/bmm/workflows/5-quality/testarch-automate/workflow.yaml"
+  compress_after_story: "true"
+  compress_after_phases: "code-review,bug-test-writing"
+
+standalone: true

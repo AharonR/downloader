@@ -6,6 +6,12 @@ use thiserror::Error;
 /// URLs longer than this are rejected to prevent memory issues.
 pub const MAX_URL_LENGTH: usize = 2000;
 
+/// Minimum length for a segment after the last dot to be treated as a file extension.
+pub const MIN_FILE_EXTENSION_LEN: usize = 1;
+
+/// Maximum length for a segment after the last dot to be treated as a file extension.
+pub const MAX_FILE_EXTENSION_LEN: usize = 5;
+
 /// Errors that can occur during input parsing.
 #[derive(Debug, Clone, Error)]
 pub enum ParseError {
@@ -31,6 +37,28 @@ pub enum ParseError {
         length: usize,
         /// Maximum allowed
         max: usize,
+    },
+
+    /// DOI is malformed or invalid
+    #[error("invalid DOI '{doi}': {reason}\n  Suggestion: {suggestion}")]
+    InvalidDoi {
+        /// The DOI that failed validation
+        doi: String,
+        /// Why the DOI is invalid
+        reason: String,
+        /// How to fix the issue
+        suggestion: String,
+    },
+
+    /// Reference-like line could not be parsed into useful metadata
+    #[error("could not parse reference '{reference}': {reason}\n  Suggestion: {suggestion}")]
+    UnparseableReference {
+        /// Reference text that could not be parsed
+        reference: String,
+        /// Why parsing failed
+        reason: String,
+        /// How to fix the issue
+        suggestion: String,
     },
 }
 
@@ -72,6 +100,37 @@ impl ParseError {
             url_preview: url.chars().take(50).collect(),
             length: url.len(),
             max: MAX_URL_LENGTH,
+        }
+    }
+
+    /// Creates an `InvalidDoi` error for a malformed DOI.
+    #[must_use]
+    pub fn invalid_doi(doi: &str, reason: &str) -> Self {
+        Self::InvalidDoi {
+            doi: doi.to_string(),
+            reason: reason.to_string(),
+            suggestion: "Check the DOI format (should be 10.XXXX/suffix)".to_string(),
+        }
+    }
+
+    /// Creates an `InvalidDoi` error for a DOI missing its suffix.
+    #[must_use]
+    pub fn doi_no_suffix(doi: &str) -> Self {
+        Self::InvalidDoi {
+            doi: doi.to_string(),
+            reason: "DOI has no suffix after the registrant code".to_string(),
+            suggestion: "A DOI must have content after the '/' separator".to_string(),
+        }
+    }
+
+    /// Creates an `UnparseableReference` error for reference-like lines.
+    #[must_use]
+    pub fn unparseable_reference(reference: &str) -> Self {
+        Self::UnparseableReference {
+            reference: reference.to_string(),
+            reason: "heuristics could not extract author, year, or title".to_string(),
+            suggestion: "Use a standard citation format like 'Author, A. (2024). Title. Journal.'"
+                .to_string(),
         }
     }
 }
@@ -124,9 +183,39 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_error_invalid_doi_message() {
+        let err = ParseError::invalid_doi("10.1234/bad", "missing suffix");
+        let msg = err.to_string();
+        assert!(msg.contains("10.1234/bad"), "should contain DOI");
+        assert!(msg.contains("missing suffix"), "should contain reason");
+        assert!(msg.contains("10.XXXX"), "suggestion should mention format");
+    }
+
+    #[test]
+    fn test_parse_error_doi_no_suffix_message() {
+        let err = ParseError::doi_no_suffix("10.1234/");
+        let msg = err.to_string();
+        assert!(msg.contains("10.1234/"), "should contain DOI");
+        assert!(msg.contains("no suffix"), "should mention no suffix");
+        assert!(
+            msg.contains("'/' separator"),
+            "suggestion should mention separator"
+        );
+    }
+
+    #[test]
     fn test_parse_error_clone() {
         let err = ParseError::malformed("bad-url", "parse error");
         let cloned = err.clone();
         assert_eq!(err.to_string(), cloned.to_string());
+    }
+
+    #[test]
+    fn test_parse_error_unparseable_reference_message() {
+        let err = ParseError::unparseable_reference("Some reference-like line");
+        let msg = err.to_string();
+        assert!(msg.contains("could not parse reference"));
+        assert!(msg.contains("Some reference-like line"));
+        assert!(msg.contains("standard citation format"));
     }
 }

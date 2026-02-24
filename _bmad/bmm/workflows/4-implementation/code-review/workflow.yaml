@@ -25,6 +25,7 @@ variables:
   # Project context
   project_context: "**/project-context.md"
   story_dir: "{implementation_artifacts}"
+  review_mode: "interactive" # interactive | auto-fix-high-medium | create-followups
 
 # Smart input file references - handles both whole docs and sharded docs
 # Priority: Whole document first, then sharded version

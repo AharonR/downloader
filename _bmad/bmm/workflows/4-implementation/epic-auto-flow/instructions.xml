@@ -1,0 +1,163 @@
+<workflow>
+  <critical>The workflow execution engine is governed by: {project-root}/_bmad/core/tasks/workflow.xml</critical>
+  <critical>You MUST have already loaded and processed: {installed_path}/workflow.yaml</critical>
+  <critical>Communicate all responses in {communication_language} and language MUST be tailored to {user_skill_level}</critical>
+  <critical>Generate all documents in {document_output_language}</critical>
+  <critical>Default target is Epic {{epic_num}} with fail-fast behavior.</critical>
+
+  <step n="1" goal="Validate sprint status and initialize loop state">
+    <check if="{{sprint_status}} file does NOT exist">
+      <action>HALT: "sprint-status.yaml not found. Run sprint-planning first."</action>
+    </check>
+
+    <action>Set {{pipeline_active}} = true</action>
+    <action>Set {{processed_count}} = 0</action>
+    <action>Set {{failure_report}} = {{implementation_artifacts}}/epic-{{epic_num}}-auto-flow-failure-{{date}}.md</action>
+  </step>
+
+  <step n="2" goal="Select next target story in epic" >
+    <action>Load the FULL file: {{sprint_status}}</action>
+    <action>Read development_status in order from top to bottom</action>
+    <action>Collect stories whose key starts with "{{epic_num}}-"</action>
+
+    <check if="no stories for epic {{epic_num}} exist">
+      <output>No stories found for epic {{epic_num}}. Exiting.</output>
+      <action>Set {{pipeline_active}} = false</action>
+      <goto step="9" />
+    </check>
+
+    <check if="all epic {{epic_num}} stories are done">
+      <output>Epic {{epic_num}} automation complete. All stories are done.</output>
+      <action>Set {{pipeline_active}} = false</action>
+      <goto step="9" />
+    </check>
+
+    <action>Select first non-done epic story with priority:
+      1) in-progress
+      2) review
+      3) ready-for-dev
+      4) backlog
+    </action>
+    <action>Set {{target_story_key}} and {{target_story_status}}</action>
+    <action>Set {{target_story_path}} = {{story_dir}}/{{target_story_key}}.md</action>
+  </step>
+
+  <step n="3" goal="Create story when backlog">
+    <check if="{{target_story_status}} == 'backlog'">
+      <invoke-workflow path="{{create_story_workflow}}">
+      </invoke-workflow>
+
+      <action>Reload FULL {{sprint_status}} and confirm {{target_story_key}} moved out of backlog</action>
+      <check if="{{target_story_key}} still backlog">
+        <action>Write failure report to {{failure_report}} with:
+          - Story key
+          - Stage: create-story
+          - Failure reason: status did not transition from backlog
+          - Resume action: re-run epic-auto-flow after fix
+        </action>
+        <action>HALT: "create-story stage failed for {{target_story_key}}"</action>
+      </check>
+    </check>
+  </step>
+
+  <step n="4" goal="Run party mode audit">
+    <invoke-workflow path="{{party_audit_workflow}}">
+      <param>story_path: {{target_story_path}}</param>
+      <param>epic_num: {{epic_num}}</param>
+    </invoke-workflow>
+  </step>
+
+  <step n="5" goal="Run dev-story for target">
+    <invoke-workflow path="{{dev_story_workflow}}">
+      <param>story_path: {{target_story_path}}</param>
+    </invoke-workflow>
+  </step>
+
+  <step n="6" goal="Run code-review with auto-fix policy">
+    <invoke-workflow path="{{code_review_workflow}}">
+      <param>story_path: {{target_story_path}}</param>
+      <param>review_mode: {{review_mode}}</param>
+    </invoke-workflow>
+
+    <action>Reload FULL {{sprint_status}} and read status of {{target_story_key}}</action>
+    <action>Store any bugs/issues found during code-review in {{bugs_found}}</action>
+
+    <check if="{{compress_after_story}} == 'true' AND 'code-review' in {{compress_after_phases}}">
+      <action>Compress conversation context to save tokens. Preserve:
+        - Current {{target_story_key}} and its status
+        - {{bugs_found}} list
+        - {{processed_count}}
+        - {{pipeline_active}} state
+        - Epic {{epic_num}} progress summary
+      </action>
+      <output>📦 Context compressed after code-review phase</output>
+    </check>
+  </step>
+
+  <step n="7" goal="Write bug regression tests">
+    <check if="{{bugs_found}} is not empty OR code-review identified gaps">
+      <output>🧪 Generating regression tests for bugs/gaps found in code-review...</output>
+
+      <invoke-workflow path="{{testarch_automate_workflow}}">
+        <param>story_path: {{target_story_path}}</param>
+        <param>focus_areas: {{bugs_found}}</param>
+        <param>test_type: regression</param>
+      </invoke-workflow>
+
+      <check if="test generation failed">
+        <action>Write failure report to {{failure_report}} with:
+          - Story key
+          - Stage: bug-test-writing
+          - Failure reason: test automation workflow failed
+          - Bugs targeted: {{bugs_found}}
+          - Resume action: re-run epic-auto-flow or manually add tests
+        </action>
+        <action>HALT: "bug-test-writing stage failed for {{target_story_key}}"</action>
+      </check>
+    </check>
+
+    <check if="{{compress_after_story}} == 'true' AND 'bug-test-writing' in {{compress_after_phases}}">
+      <action>Compress conversation context to save tokens. Preserve:
+        - Current {{target_story_key}} final status
+        - {{processed_count}}
+        - {{pipeline_active}} state
+        - Epic {{epic_num}} progress summary
+      </action>
+      <output>📦 Context compressed after bug-test-writing phase</output>
+    </check>
+
+    <action>Verify {{target_story_key}} is marked 'done' in {{sprint_status}}</action>
+    <check if="{{target_story_status_final}} != 'done'">
+      <action>Write failure report to {{failure_report}} with:
+        - Story key
+        - Stage: bug-test-writing/verification
+        - Failure reason: story not marked done after all phases
+        - Resume action: re-run epic-auto-flow after resolving findings
+      </action>
+      <action>HALT: "final verification failed - {{target_story_key}} not done"</action>
+    </check>
+  </step>
+
+  <step n="8" goal="Continue loop">
+    <action>Increment {{processed_count}}</action>
+    <output>✅ Processed {{target_story_key}} successfully (count={{processed_count}}). Continuing to next story...</output>
+    <goto step="2" />
+  </step>
+
+  <step n="9" goal="Completion output">
+    <output>✅ Epic {{epic_num}} auto-flow complete.
+
+Stories processed in this run: {{processed_count}}
+
+Pipeline stages executed:
+  1. create-story (if backlog)
+  2. party-mode-audit
+  3. dev-story
+  4. code-review (with auto-fix)
+  5. bug-test-writing (regression tests)
+  6. context compression (after phases: {{compress_after_phases}})
+
+All stories in Epic {{epic_num}} are now complete! 🎉
+    </output>
+  </step>
+</workflow>

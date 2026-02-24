@@ -1,0 +1,43 @@
+name: stress-sidecar-flaky
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Number of stress iterations
+        required: false
+        default: "12"
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  stress:
+    name: sidecar-stress-lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run flaky stress lane
+        env:
+          STRESS_ITERATIONS: ${{ github.event.inputs.iterations || '12' }}
+        run: cargo run --bin stress-sidecar-flaky
+
+      - name: Upload stress logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-stress-logs-${{ github.run_id }}
+          path: target/stress-logs/sidecar-flaky/**
+          if-no-files-found: ignore
+          retention-days: 14

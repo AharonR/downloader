@@ -1,0 +1,82 @@
+<workflow>
+  <critical>The workflow execution engine is governed by: {project-root}/_bmad/core/tasks/workflow.xml</critical>
+  <critical>You MUST have already loaded and processed: {installed_path}/workflow.yaml</critical>
+  <critical>Communicate all responses in {communication_language} and language MUST be tailored to {user_skill_level}</critical>
+  <critical>Generate all documents in {document_output_language}</critical>
+  <critical>This workflow performs a deterministic risk audit and writes findings back to the story file.</critical>
+
+  <step n="1" goal="Resolve target story">
+    <check if="{{story_path}} is provided">
+      <action>Use {{story_path}} as target story file</action>
+    </check>
+
+    <check if="{{story_path}} is not provided">
+      <check if="{{sprint_status}} file does NOT exist">
+        <action>HALT: "sprint-status.yaml not found and no story_path provided"</action>
+      </check>
+
+      <action>Load the FULL file: {{sprint_status}}</action>
+      <action>Find the first story in epic {{epic_num}} with status "ready-for-dev" or "in-progress" by top-to-bottom order</action>
+      <check if="no eligible story found">
+        <action>HALT: "No eligible story found for party-mode-audit"</action>
+      </check>
+      <action>Set {{story_key}} from selected key (example: 3-1-input-parsing-feedback)</action>
+      <action>Set {{story_path}} = {{story_dir}}/{{story_key}}.md</action>
+    </check>
+
+    <action>Read COMPLETE story file from {{story_path}}</action>
+    <action>Extract Story, Acceptance Criteria, Tasks/Subtasks, Dev Notes, and Status</action>
+  </step>
+
+  <step n="2" goal="Load context and execute party-style risk audit">
+    <invoke-protocol name="discover_inputs" />
+    <action>Load {project_context} for coding standards and known pitfalls (if exists)</action>
+
+    <action>Run a focused multi-agent style audit using these perspectives:</action>
+    - Product/PM: acceptance criteria completeness and user value risks
+    - Architect: architecture/compliance and dependency risks
+    - QA/TEA: missing tests, edge cases, and validation gaps
+    - Developer: implementation ambiguity and sequencing risks
+
+    <action>Produce a prioritized findings set with severity labels: High, Medium, Low</action>
+    <action>For each High/Medium item, generate one concrete follow-up task formatted for story insertion</action>
+  </step>
+
+  <step n="3" goal="Write findings and follow-up tasks to the story">
+    <action>Ensure section "## Party Mode Audit (AI)" exists in the story; create if missing</action>
+    <action>Write an audit snapshot containing:
+      - Audit date
+      - Outcome: pass_with_actions or fail
+      - Summary counts (High/Medium/Low)
+      - Findings list with file/section evidence where possible
+    </action>
+
+    <action>Ensure "Tasks / Subtasks" includes subsection "Review Follow-ups (AI)"</action>
+    <action>Append generated tasks under that subsection as unchecked items using format:
+      - [ ] [AI-Audit][High] ...
+      - [ ] [AI-Audit][Medium] ...
+    </action>
+
+    <check if="story is missing required structural sections (Story, Acceptance Criteria, Tasks/Subtasks)">
+      <action>Set {{audit_outcome}} = "fail"</action>
+    </check>
+
+    <check if="story has required structure">
+      <action>Set {{audit_outcome}} = "pass_with_actions"</action>
+    </check>
+
+    <action>Save story file</action>
+  </step>
+
+  <step n="4" goal="Return audit result">
+    <output>✅ Party mode audit complete for {{story_path}}
+
+Outcome: {{audit_outcome}}
+Use this story for development only when outcome is pass_with_actions.
+    </output>
+
+    <check if="{{audit_outcome}} == 'fail'">
+      <action>HALT: "party-mode-audit failed; story structure must be repaired before development"</action>
+    </check>
+  </step>
+</workflow>

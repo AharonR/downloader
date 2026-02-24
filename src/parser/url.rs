@@ -6,7 +6,7 @@ use regex::Regex;
 use tracing::{debug, trace};
 use url::Url;
 
-use super::error::{MAX_URL_LENGTH, ParseError};
+use super::error::{MAX_FILE_EXTENSION_LEN, MAX_URL_LENGTH, MIN_FILE_EXTENSION_LEN, ParseError};
 use super::input::ParsedItem;
 
 /// Regex pattern for finding URLs in text.
@@ -72,43 +72,72 @@ pub fn extract_urls(input: &str) -> Vec<UrlExtractionResult> {
     results
 }
 
+/// Returns true if the string ends with a segment that looks like a file extension (after last dot).
+fn has_file_extension(url: &str) -> bool {
+    if let Some(dot_pos) = url.rfind('.') {
+        let after_dot = &url[dot_pos + 1..];
+        let ext_len = after_dot.len();
+        (MIN_FILE_EXTENSION_LEN..=MAX_FILE_EXTENSION_LEN).contains(&ext_len)
+            && after_dot.chars().all(|c| c.is_ascii_alphanumeric())
+    } else {
+        false
+    }
+}
+
+/// Strips one trailing closing bracket if it is unmatched (more closes than opens).
+fn strip_unmatched_closing_brackets(url: &str) -> &str {
+    let Some(last) = url.chars().last() else {
+        return url;
+    };
+    match last {
+        ')' | ']' => {
+            let open = if last == ')' { '(' } else { '[' };
+            let open_count = url.chars().filter(|&c| c == open).count();
+            let close_count = url.chars().filter(|&c| c == last).count();
+            if close_count > open_count {
+                &url[..url.len() - 1]
+            } else {
+                url
+            }
+        }
+        _ => url,
+    }
+}
+
+/// Strips one trailing punctuation character if present and not a file-extension dot.
+fn strip_trailing_punctuation(url: &str) -> &str {
+    let Some(last) = url.chars().last() else {
+        return url;
+    };
+    match last {
+        '.' | ',' | ';' | ':' | '!' | '?' => {
+            if last == '.' && has_file_extension(url) {
+                return url;
+            }
+            &url[..url.len() - 1]
+        }
+        _ => url,
+    }
+}
+
 /// Cleans trailing punctuation that often gets captured with URLs.
-fn clean_url_trailing(url: &str) -> &str {
-    // Common trailing chars that aren't part of URLs when embedded in text
+pub(crate) fn clean_url_trailing(url: &str) -> &str {
     let mut result = url;
 
-    // Handle trailing punctuation, but preserve valid URL chars
     while let Some(last) = result.chars().last() {
+        let after_bracket = strip_unmatched_closing_brackets(result);
+        if after_bracket != result {
+            result = after_bracket;
+            continue;
+        }
+
         match last {
-            // These are often sentence-ending punctuation, not part of URL
             '.' | ',' | ';' | ':' | '!' | '?' => {
-                // But don't strip if it looks like a file extension
-                if last == '.' {
-                    // Check if this looks like a file extension (1-5 alphanumeric chars after last dot)
-                    if let Some(dot_pos) = result.rfind('.') {
-                        let after_dot = &result[dot_pos + 1..];
-                        let ext_len = after_dot.len();
-                        // Valid extensions are 1-5 chars, all alphanumeric
-                        if (1..=5).contains(&ext_len)
-                            && after_dot.chars().all(|c| c.is_ascii_alphanumeric())
-                        {
-                            break; // Keep the dot, it's likely part of filename
-                        }
-                    }
-                }
-                result = &result[..result.len() - 1];
-            }
-            // Closing parens/brackets at end are usually not part of URL
-            ')' | ']' => {
-                // Unless there's a matching opener in the URL (like Wikipedia URLs)
-                let open = if last == ')' { '(' } else { '[' };
-                let open_count = result.chars().filter(|&c| c == open).count();
-                let close_count = result.chars().filter(|&c| c == last).count();
-                if close_count > open_count {
-                    result = &result[..result.len() - 1];
-                } else {
+                let after_punct = strip_trailing_punctuation(result);
+                if after_punct == result {
                     break;
                 }
+                result = after_punct;
             }
             _ => break,
         }
@@ -446,6 +475,32 @@ mod tests {
         assert_eq!(
             clean_url_trailing("https://example.com?"),
             "https://example.com"
+        );
+    }
+
+    #[test]
+    fn test_clean_url_trailing_strips_multiple_trailing_punctuation() {
+        assert_eq!(
+            clean_url_trailing("https://example.com/file.pdf.."),
+            "https://example.com/file.pdf"
+        );
+        assert_eq!(
+            clean_url_trailing("https://example.com?foo=bar!!"),
+            "https://example.com?foo=bar"
+        );
+    }
+
+    #[test]
+    fn test_clean_url_trailing_strips_unmatched_closing_brackets() {
+        // Trailing ) with no matching ( is stripped
+        assert_eq!(
+            clean_url_trailing("https://example.com/file.pdf)"),
+            "https://example.com/file.pdf"
+        );
+        // Trailing ] with no matching [ is stripped
+        assert_eq!(
+            clean_url_trailing("https://example.com/doc.pdf]"),
+            "https://example.com/doc.pdf"
         );
     }
 }

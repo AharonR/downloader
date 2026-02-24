@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en-US" xml:lang="en-US">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>
+		Comprehensive Review on Innovation in Software Testing: Advancing Methods with State-of-the-Art Intelligent Platforms
+							| International Journal of Intelligent Systems and Applications in Engineering
+			</title>
+
+	
+<link rel="icon" href="https://ijisae.org/public/journals/1/favicon_en_US.png">
+<meta name="generator" content="Open Journal Systems 3.3.0.8">
+<link rel="schema.DC" href="http://purl.org/dc/elements/1.1/" />
+<meta name="DC.Creator.PersonalName" content="Vamsi Krishna Talasila"/>
+<meta name="DC.Date.created" scheme="ISO8601" content="2025-10-15"/>
+<meta name="DC.Date.dateSubmitted" scheme="ISO8601" content="2025-12-26"/>
+<meta name="DC.Date.issued" scheme="ISO8601" content="2025-04-19"/>
+<meta name="DC.Date.modified" scheme="ISO8601" content="2025-12-26"/>
+<meta name="DC.Description" xml:lang="en" content="Software engineering and DevOps keep changing faster than most teams can catch their breath, and that shift has pushed testing into new territory. What used to be a fairly manual, rule-based practice is now leaning hard on AI to make sense of growing complexity. This paper takes a close look at how intelligent testing frameworks those that use machine learning, natural language processing, and other AI techniques fit into modern CI/CD pipelines. It walks through how testing evolved from scripted checks to systems that can, at least in theory, adapt and even repair themselves. The review digs into the architectures and algorithms behind these systems and how they’re actually used in industry. Some approaches, like reinforcement learning or NLP-based test generation, appear to raise fault detection rates and keep pipelines running with fewer interruptions. That said, the story isn’t all progress. These systems depend heavily on data quality, and bias or noise can easily skew predictions. Scalability sounds great in principle, but real-world environments often complicate it. The paper argues that explainability and ongoing validation aren’t just nice-to-haves they’re what make autonomous testing trustworthy. From a broader view, intelligent testing seems to shift quality assurance from catching errors after the fact to something more proactive and self-correcting. Whether that transformation truly holds up across teams and toolchains, though, still depends on how well the AI can align with human judgment. The work here nudges the field closer to testing ecosystems that are resilient, transparent, and hopefully just a bit more human-aware."/>
+<meta name="DC.Format" scheme="IMT" content="application/pdf"/>
+<meta name="DC.Identifier" content="7989"/>
+<meta name="DC.Identifier.pageNumber" content="618 - 626"/>
+<meta name="DC.Identifier.URI" content="https://ijisae.org/index.php/IJISAE/article/view/7989"/>
+<meta name="DC.Language" scheme="ISO639-1" content="en"/>
+<meta name="DC.Rights" content="Copyright (c) 2025 "/>
+<meta name="DC.Rights" content="http://creativecommons.org/licenses/by-sa/4.0"/>
+<meta name="DC.Source" content="International Journal of Intelligent Systems and Applications in Engineering"/>
+<meta name="DC.Source.ISSN" content="2147-6799"/>
+<meta name="DC.Source.Issue" content="1"/>
+<meta name="DC.Source.Volume" content="13"/>
+<meta name="DC.Source.URI" content="https://ijisae.org/index.php/IJISAE"/>
+<meta name="DC.Subject" xml:lang="en" content="AI-driven testing, autonomous quality assurance, cloud-based testing, DevOps, intelligent automation, test orchestration"/>
+<meta name="DC.Title" content="Comprehensive Review on Innovation in Software Testing: Advancing Methods with State-of-the-Art Intelligent Platforms"/>
+<meta name="DC.Type" content="Text.Serial.Journal"/>
+<meta name="DC.Type.articleType" content="Research Article"/>
+<meta name="gs_meta_revision" content="1.1"/>
+<meta name="citation_journal_title" content="International Journal of Intelligent Systems and Applications in Engineering"/>
+<meta name="citation_journal_abbrev" content="Int J Intell Syst Appl Eng"/>
+<meta name="citation_issn" content="2147-6799"/> 
+<meta name="citation_author" content="Vamsi Krishna Talasila"/>
+<meta name="citation_title" content="Comprehensive Review on Innovation in Software Testing: Advancing Methods with State-of-the-Art Intelligent Platforms"/>
+<meta name="citation_language" content="en"/>
+<meta name="citation_date" content="2025/10/15"/>
+<meta name="citation_volume" content="13"/>
+<meta name="citation_issue" content="1"/>
+<meta name="citation_firstpage" content="618"/>
+<meta name="citation_lastpage" content="626"/>
+<meta name="citation_abstract_html_url" content="https://ijisae.org/index.php/IJISAE/article/view/7989"/>
+<meta name="citation_keywords" xml:lang="en" content="AI-driven testing, autonomous quality assurance, cloud-based testing, DevOps, intelligent automation, test orchestration"/>
+<meta name="citation_pdf_url" content="https://ijisae.org/index.php/IJISAE/article/download/7989/7005"/>
+<meta name="citation_reference" content="A. Kiran, W. H. Butt, M. W. Anwar, F. Azam, and B. Maqbool, “A comprehensive investigation of modern test suite optimization trends, tools and techniques,” IEEE Access, vol. 7, pp. 89093–89117, 2019."/>
+<meta name="citation_reference" content="M. Boukhlif et al., “Exploring the application of classical and intelligent software testing in medicine: a literature review,” in Proc. Int. Conf. Advanced Intelligent Systems for Sustainable Development, 2024, pp. 37–46."/>
+<meta name="citation_reference" content="J. Wang et al., “Software testing with large language models: Survey, landscape, and vision,” IEEE Trans. Softw. Eng., vol. 50, no. 4, pp. 911–936, 2024."/>
+<meta name="citation_reference" content="A. Mehmood, Q. M. Ilyas, M. Ahmad, and Z. Shi, “Test suite optimization using machine learning techniques: A comprehensive study,” IEEE Access, vol. 12, pp. 168645–168671, 2024."/>
+<meta name="citation_reference" content="K. Telli et al., “A comprehensive review of recent research trends on unmanned aerial vehicles (UAVs),” Systems, vol. 11, no. 8, p. 400, 2023."/>
+<meta name="citation_reference" content="T. Bakhshi, “State of the art and recent research advances in software defined networking,” Wireless Commun. Mobile Comput., vol. 2017, no. 1, p. 7191647, 2017."/>
+<meta name="citation_reference" content="Y. Kumar et al., “A comprehensive review of AI advancement using testFAILS and testFAILS-2 for the pursuit of AGI,” Electronics, vol. 13, no. 24, p. 4991, 2024."/>
+<meta name="citation_reference" content="Q. Abbas, M. E. A. Ibrahim, and M. A. Jaffar, “A comprehensive review of recent advances on deep vision systems,” Artif. Intell. Rev., vol. 52, no. 1, pp. 39–76, 2019."/>
+<meta name="citation_reference" content="A. Salahirad, G. Gay, and E. Mohammadi, “Mapping the structure and evolution of software testing research over the past three decades,” J. Syst. Softw., vol. 195, p. 111518, 2023."/>
+<meta name="citation_reference" content="P. Chamoso, A. González-Briones, S. Rodríguez, and J. M. Corchado, “Tendencies of technologies and platforms in smart cities: a state-of-the-art review,” Wireless Commun. Mobile Comput., vol. 2018, no. 1, p. 3086854, 2018."/>
+<meta name="citation_reference" content="D. Bonino, A. Ciaramella, and F. Corno, “Review of the state-of-the-art in patent information and forthcoming evolutions in intelligent patent informatics,” World Patent Inf., vol. 32, no. 1, pp. 30–38, 2010."/>
+<meta name="citation_reference" content="K. Y. H. Lim, P. Zheng, and C.-H. Chen, “A state-of-the-art survey of Digital Twin: techniques, engineering product lifecycle management and business innovation perspectives,” J. Intell. Manuf., vol. 31, no. 6, pp. 1313–1337, 2020."/>
+<meta name="citation_reference" content="W. S. Robert et al., “A comprehensive review on cryptographic techniques for securing internet of medical things: A state-of-the-art, applications, security attacks, mitigation measures, and future research direction,” Mesopotamian J. Artif. Intell. Healthc., pp. 135–169, 2024."/>
+<meta name="citation_reference" content="V. Kumar et al., “The state of the art in deep learning applications, challenges, and future prospects: A comprehensive review of flood forecasting and management,” Sustainability, vol. 15, no. 13, p. 10543, 2023."/>
+<meta name="citation_reference" content="V. Vyatkin, “Software engineering in industrial automation: State-of-the-art review,” IEEE Trans. Ind. Inf., vol. 9, no. 3, pp. 1234–1249, 2013."/>
+<meta name="citation_reference" content="A. Singh et al., “Sidechain technologies in blockchain networks: An examination and state-of-the-art review,” J. Netw. Comput. Appl., vol. 149, p. 102471, 2020."/>
+<meta name="citation_reference" content="S. Sonko et al., “A comprehensive review of embedded systems in autonomous vehicles: Trends, challenges, and future directions,” World J. Adv. Res. Rev., vol. 21, no. 1, pp. 2009–2020, 2024."/>
+<meta name="citation_reference" content="M. Ryalat et al., “Research and education in robotics: A comprehensive review, trends, challenges, and future directions,” J. Sensor Actuator Netw., vol. 14, no. 4, p. 76, 2025."/>
+<meta name="citation_reference" content="B. Mendu and N. Mbuli, “State-of-the-art review on the application of unmanned aerial vehicles (UAVs) in power line inspections,” Drones, vol. 9, no. 4, p. 265, 2025."/>
+<meta name="citation_reference" content="B. P. Bhattarai et al., “Big data analytics in smart grids: state‐of‐the‐art, challenges, opportunities, and future directions,” IET Smart Grid, vol. 2, no. 2, pp. 141–154, 2019."/>
+<meta name="citation_reference" content="P. Ghamisi et al., “Multisource and multitemporal data fusion in remote sensing: A comprehensive review,” IEEE Geosci. Remote Sens. Mag., vol. 7, no. 1, pp. 6–39, 2019."/>
+<meta name="citation_reference" content="W. S. Admass, Y. Y. Munaye, and A. A. Diro, “Cyber security: State of the art, challenges and future directions,” Cyber Secur. Appl., vol. 2, p. 100031, 2024."/>
+<meta name="citation_reference" content="G. Abdelkader, K. Elgazzar, and A. Khamis, “Connected vehicles: Technology review, state of the art, challenges and opportunities,” Sensors, vol. 21, no. 22, p. 7712, 2021."/>
+<meta name="citation_reference" content="Y. J. Qu, X. G. Ming, Z. W. Liu, X. Y. Zhang, and Z. T. Hou, “Smart manufacturing systems: state of the art and future trends,” Int. J. Adv. Manuf. Technol., vol. 103, no. 9, pp. 3751–3768, 2019."/>
+<meta name="citation_reference" content="S. S. Ali and B. J. Choi, “State-of-the-art artificial intelligence techniques for distributed smart grids: A review,” Electronics, vol. 9, no. 6, p. 1030, 2020."/>
+<meta name="citation_reference" content="H. Sohrabi et al., “State of the art: Lateral flow assays toward point‐of‐care foodborne pathogenic bacteria detection in food samples,” Compr. Rev. Food Sci. Food Saf., vol. 21, no. 2, pp. 1868–1912, 2022."/>
+<meta name="citation_reference" content="J. Leaman and H. M. La, “A comprehensive review of smart wheelchairs: past, present, and future,” IEEE Trans. Hum.-Mach. Syst., vol. 47, no. 4, pp. 486–499, 2017."/>
+<meta name="citation_reference" content="L. Briand and Y. Labiche, “Empirical studies of software testing techniques: Challenges, practical strategies, and future research,” ACM SIGSOFT Softw. Eng. Notes, vol. 29, no. 5, pp. 1–3, 2004."/>
+<meta name="citation_reference" content="V. Garousi and J. Zhi, “A survey of software testing practices in Canada,” J. Syst. Softw., vol. 86, no. 5, pp. 1354–1376, 2013."/>
+<meta name="citation_reference" content="O. A. L. Lemos et al., “Evaluation studies of software testing research in Brazil and in the world: A survey,” J. Syst. Softw., vol. 86, no. 4, pp. 951–969, 2013."/>
+<meta name="citation_reference" content="V. Garousi et al., “Exploring the industry's challenges in software testing: An empirical study,” J. Softw. Evol. Process, vol. 32, no. 8, p. e2251, 2020."/>
+<meta name="citation_reference" content="C. Kaner, “Fundamental challenges in software testing,” presented at Butler Univ. Colloquium, 2003."/>
+<meta name="citation_reference" content="P. K. Waychal and L. F. Capretz, “Why a testing career is not the first choice of engineers,” arXiv preprint arXiv:1612.00734, 2016."/>
+<meta name="citation_reference" content="P. Raulamo-Jurvanen, S. Hosio, and M. V. Mäntylä, “Practitioner evaluations on software testing tools,” in Proc. 23rd Int. Conf. Eval. Assessment Softw. Eng., 2019, pp. 57–66."/>
+<meta name="citation_reference" content="K. Ibrahim and J. A. Whittaker, “Model-based software testing,” in Encyclopedia of Software Engineering. New York: Wiley, 2001."/>
+<meta name="citation_reference" content="G. D. Everett and R. McLeod Jr., Software Testing: Testing Across the Entire Software Development Life Cycle. Wiley, 2007."/>
+<meta name="citation_reference" content="N. Juristo, A. M. Moreno, and S. Vegas, “Towards building a solid empirical body of knowledge in testing techniques,” ACM SIGSOFT Softw. Eng. Notes, vol. 29, no. 5, pp. 1–4, 2004."/>
+	<link rel="stylesheet" href="https://ijisae.org/index.php/IJISAE/$$$call$$$/page/page/css?name=stylesheet" type="text/css" /><link rel="stylesheet" href="https://ijisae.org/index.php/IJISAE/$$$call$$$/page/page/css?name=font" type="text/css" /><link rel="stylesheet" href="https://ijisae.org/lib/pkp/styles/fontawesome/fontawesome.css?v=3.3.0.8" type="text/css" /><link rel="stylesheet" href="https://ijisae.org/plugins/generic/citations/css/citations.css?v=3.3.0.8" type="text/css" /><link rel="stylesheet" href="https://ijisae.org/plugins/generic/publons/styles/publons.css?v=3.3.0.8" type="text/css" /><link rel="stylesheet" href="https://ijisae.org/public/journals/1/styleSheet.css?d=2022-02-10+21%3A29%3A32" type="text/css" />
+</head>
+<body class="pkp_page_article pkp_op_view has_site_logo" dir="ltr">
+
+	<div class="pkp_structure_page">
+
+				<header class="pkp_structure_head" id="headerNavigationContainer" role="banner">
+						 <nav class="cmp_skip_to_content" aria-label="Jump to content links">
+	<a href="#pkp_content_main">Skip to main content</a>
+	<a href="#siteNav">Skip to main navigation menu</a>
+		<a href="#pkp_content_footer">Skip to site footer</a>
+</nav>
+
+			<div class="pkp_head_wrapper">
+
+				<div class="pkp_site_name_wrapper">
+					<button class="pkp_site_nav_toggle">
+						<span>Open Menu</span>
+					</button>
+										<div class="pkp_site_name">
+																<a href="						https://ijisae.org/index.php/IJISAE/index
+					" class="is_img">
+							<img src="https://ijisae.org/public/journals/1/pageHeaderLogoImage_en_US.png" width="150" height="150"  />
+						</a>
+										</div>
+				</div>
+
+				
+				<nav class="pkp_site_nav_menu" aria-label="Site Navigation">
+					<a id="siteNav"></a>
+					<div class="pkp_navigation_primary_row">
+						<div class="pkp_navigation_primary_wrapper">
+																				<ul id="navigationPrimary" class="pkp_navigation_primary pkp_nav_list">
+								<li class="">
+				<a href="https://www.ijisae.org/IJISAE">
+					Home
+				</a>
+							</li>
+								<li class="">
+				<a href="https://ijisae.org/index.php/IJISAE/issue/current">
+					Current
+				</a>
+							</li>
+								<li class="">
+				<a href="https://ijisae.org/index.php/IJISAE/issue/archive">
+					Archives
+				</a>
+							</li>
+								<li class="">
+				<a href="https://ijisae.org/index.php/IJISAE/announcement">
+					Announcements
+				</a>
+							</li>
+								<li class="">
+				<a href="https://ijisae.org/index.php/IJISAE/about">
+					About
+				</a>
+									<ul>
+																					<li class="">
+									<a href="https://ijisae.org/index.php/IJISAE/about">
+										About the Journal
+									</a>
+								</li>
+																												<li class="">
+									<a href="http://manuscriptsubmission.net/ijisae/index.php/submission/about/submissions">
+										Submissions
+									</a>
+								</li>
+																												<li class="">
+									<a href="https://ijisae.org/index.php/IJISAE/about/editorialTeam">
+										Editorial Team
+									</a>
+								</li>
+																												<li class="">
+									<a href="https://ijisae.org/index.php/IJISAE/Copyright_License">
+										Copyright Policy and License
+									</a>
+								</li>
+																												<li class="">
+									<a href="https://ijisae.org/index.php/IJISAE/about/privacy">
+										Privacy Statement
+									</a>
+								</li>
+																												<li class="">
+									<a href="https://ijisae.org/index.php/IJISAE/about/contact">
+										Contact
+									</a>
+								</li>
+																		</ul>
+							</li>
+			</ul>
+
+				
+
+																						<div class="pkp_navigation_search_wrapper">
+									<a href="https://ijisae.org/index.php/IJISAE/search" class="pkp_search pkp_search_desktop">
+										<span class="fa fa-search" aria-hidden="true"></span>
+										Search
+									</a>
+								</div>
+													</div>
+					</div>
+					<div class="pkp_navigation_user_wrapper" id="navigationUserWrapper">
+							<ul id="navigationUser" class="pkp_navigation_user pkp_nav_list">
+								<li class="profile">
+				<a href="https://ijisae.org/index.php/IJISAE/user/register">
+					Register
+				</a>
+							</li>
+								<li class="profile">
+				<a href="https://ijisae.org/index.php/IJISAE/login">
+					Login
+				</a>
+							</li>
+										</ul>
+
+					</div>
+				</nav>
+			</div><!-- .pkp_head_wrapper -->
+		</header><!-- .pkp_structure_head -->
+
+						<div class="pkp_structure_content has_sidebar">
+			<div class="pkp_structure_main" role="main">
+				<a id="pkp_content_main"></a>
+
+<div class="page page_article">
+			<nav class="cmp_breadcrumbs" role="navigation" aria-label="You are here:">
+	<ol>
+		<li>
+			<a href="https://ijisae.org/index.php/IJISAE/index">
+				Home
+			</a>
+			<span class="separator">/</span>
+		</li>
+		<li>
+			<a href="https://ijisae.org/index.php/IJISAE/issue/archive">
+				Archives
+			</a>
+			<span class="separator">/</span>
+		</li>
+					<li>
+				<a href="https://ijisae.org/index.php/IJISAE/issue/view/132">
+					Vol. 13 No. 1 (2025)
+				</a>
+				<span class="separator">/</span>
+			</li>
+				<li class="current" aria-current="page">
+			<span aria-current="page">
+									Research Article
+							</span>
+		</li>
+	</ol>
+</nav>
+	
+		  	 <article class="obj_article_details">
+
+		
+	<h1 class="page_title">
+		Comprehensive Review on Innovation in Software Testing: Advancing Methods with State-of-the-Art Intelligent Platforms
+	</h1>
+
+	
+	<div class="row">
+		<div class="main_entry">
+
+							<section class="item authors">
+					<h2 class="pkp_screen_reader">Authors</h2>
+					<ul class="authors">
+											<li>
+							<span class="name">
+								Vamsi Krishna Talasila, Rajeev Kankanala
+							</span>
+																				</li>
+										</ul>
+				</section>
+			
+																														
+									<section class="item keywords">
+				<h2 class="label">
+										Keywords:
+				</h2>
+				<span class="value">
+											AI-driven testing, autonomous quality assurance, cloud-based testing, DevOps, intelligent automation, test orchestration									</span>
+			</section>
+			
+										<section class="item abstract">
+					<h2 class="label">Abstract</h2>
+					<p>Software engineering and DevOps keep changing faster than most teams can catch their breath, and that shift has pushed testing into new territory. What used to be a fairly manual, rule-based practice is now leaning hard on AI to make sense of growing complexity. This paper takes a close look at how intelligent testing frameworks those that use machine learning, natural language processing, and other AI techniques fit into modern CI/CD pipelines. It walks through how testing evolved from scripted checks to systems that can, at least in theory, adapt and even repair themselves. The review digs into the architectures and algorithms behind these systems and how they’re actually used in industry. Some approaches, like reinforcement learning or NLP-based test generation, appear to raise fault detection rates and keep pipelines running with fewer interruptions. That said, the story isn’t all progress. These systems depend heavily on data quality, and bias or noise can easily skew predictions. Scalability sounds great in principle, but real-world environments often complicate it. The paper argues that explainability and ongoing validation aren’t just nice-to-haves they’re what make autonomous testing trustworthy. From a broader view, intelligent testing seems to shift quality assurance from catching errors after the fact to something more proactive and self-correcting. Whether that transformation truly holds up across teams and toolchains, though, still depends on how well the AI can align with human judgment. The work here nudges the field closer to testing ecosystems that are resilient, transparent, and hopefully just a bit more human-aware.</p>
+				</section>
+			
+			<div class="item downloads_chart">
+	<h3 class="label">
+		Downloads
+	</h3>
+	<div class="value">
+		<canvas class="usageStatsGraph" data-object-type="Submission" data-object-id="7989"></canvas>
+		<div class="usageStatsUnavailable" data-object-type="Submission" data-object-id="7989">
+			Download data is not yet available.
+		</div>
+	</div>
+</div>
+
+
+																			
+										<section class="item references">
+					<h2 class="label">
+						References
+					</h2>
+					<div class="value">
+																					<p>A. Kiran, W. H. Butt, M. W. Anwar, F. Azam, and B. Maqbool, “A comprehensive investigation of modern test suite optimization trends, tools and techniques,” IEEE Access, vol. 7, pp. 89093–89117, 2019. </p>
+															<p>M. Boukhlif et al., “Exploring the application of classical and intelligent software testing in medicine: a literature review,” in Proc. Int. Conf. Advanced Intelligent Systems for Sustainable Development, 2024, pp. 37–46. </p>
+															<p>J. Wang et al., “Software testing with large language models: Survey, landscape, and vision,” IEEE Trans. Softw. Eng., vol. 50, no. 4, pp. 911–936, 2024. </p>
+															<p>A. Mehmood, Q. M. Ilyas, M. Ahmad, and Z. Shi, “Test suite optimization using machine learning techniques: A comprehensive study,” IEEE Access, vol. 12, pp. 168645–168671, 2024. </p>
+															<p>K. Telli et al., “A comprehensive review of recent research trends on unmanned aerial vehicles (UAVs),” Systems, vol. 11, no. 8, p. 400, 2023. </p>
+															<p>T. Bakhshi, “State of the art and recent research advances in software defined networking,” Wireless Commun. Mobile Comput., vol. 2017, no. 1, p. 7191647, 2017. </p>
+															<p>Y. Kumar et al., “A comprehensive review of AI advancement using testFAILS and testFAILS-2 for the pursuit of AGI,” Electronics, vol. 13, no. 24, p. 4991, 2024. </p>
+															<p>Q. Abbas, M. E. A. Ibrahim, and M. A. Jaffar, “A comprehensive review of recent advances on deep vision systems,” Artif. Intell. Rev., vol. 52, no. 1, pp. 39–76, 2019. </p>
+															<p>A. Salahirad, G. Gay, and E. Mohammadi, “Mapping the structure and evolution of software testing research over the past three decades,” J. Syst. Softw., vol. 195, p. 111518, 2023. </p>
+															<p>P. Chamoso, A. González-Briones, S. Rodríguez, and J. M. Corchado, “Tendencies of technologies and platforms in smart cities: a state-of-the-art review,” Wireless Commun. Mobile Comput., vol. 2018, no. 1, p. 3086854, 2018. </p>
+															<p>D. Bonino, A. Ciaramella, and F. Corno, “Review of the state-of-the-art in patent information and forthcoming evolutions in intelligent patent informatics,” World Patent Inf., vol. 32, no. 1, pp. 30–38, 2010. </p>
+															<p>K. Y. H. Lim, P. Zheng, and C.-H. Chen, “A state-of-the-art survey of Digital Twin: techniques, engineering product lifecycle management and business innovation perspectives,” J. Intell. Manuf., vol. 31, no. 6, pp. 1313–1337, 2020. </p>
+															<p>W. S. Robert et al., “A comprehensive review on cryptographic techniques for securing internet of medical things: A state-of-the-art, applications, security attacks, mitigation measures, and future research direction,” Mesopotamian J. Artif. Intell. Healthc., pp. 135–169, 2024. </p>
+															<p>V. Kumar et al., “The state of the art in deep learning applications, challenges, and future prospects: A comprehensive review of flood forecasting and management,” Sustainability, vol. 15, no. 13, p. 10543, 2023. </p>
+															<p>V. Vyatkin, “Software engineering in industrial automation: State-of-the-art review,” IEEE Trans. Ind. Inf., vol. 9, no. 3, pp. 1234–1249, 2013. </p>
+															<p>A. Singh et al., “Sidechain technologies in blockchain networks: An examination and state-of-the-art review,” J. Netw. Comput. Appl., vol. 149, p. 102471, 2020. </p>
+															<p>S. Sonko et al., “A comprehensive review of embedded systems in autonomous vehicles: Trends, challenges, and future directions,” World J. Adv. Res. Rev., vol. 21, no. 1, pp. 2009–2020, 2024. </p>
+															<p>M. Ryalat et al., “Research and education in robotics: A comprehensive review, trends, challenges, and future directions,” J. Sensor Actuator Netw., vol. 14, no. 4, p. 76, 2025. </p>
+															<p>B. Mendu and N. Mbuli, “State-of-the-art review on the application of unmanned aerial vehicles (UAVs) in power line inspections,” Drones, vol. 9, no. 4, p. 265, 2025. </p>
+															<p>B. P. Bhattarai et al., “Big data analytics in smart grids: state‐of‐the‐art, challenges, opportunities, and future directions,” IET Smart Grid, vol. 2, no. 2, pp. 141–154, 2019. </p>
+															<p>P. Ghamisi et al., “Multisource and multitemporal data fusion in remote sensing: A comprehensive review,” IEEE Geosci. Remote Sens. Mag., vol. 7, no. 1, pp. 6–39, 2019. </p>
+															<p>W. S. Admass, Y. Y. Munaye, and A. A. Diro, “Cyber security: State of the art, challenges and future directions,” Cyber Secur. Appl., vol. 2, p. 100031, 2024. </p>
+															<p>G. Abdelkader, K. Elgazzar, and A. Khamis, “Connected vehicles: Technology review, state of the art, challenges and opportunities,” Sensors, vol. 21, no. 22, p. 7712, 2021. </p>
+															<p>Y. J. Qu, X. G. Ming, Z. W. Liu, X. Y. Zhang, and Z. T. Hou, “Smart manufacturing systems: state of the art and future trends,” Int. J. Adv. Manuf. Technol., vol. 103, no. 9, pp. 3751–3768, 2019. </p>
+															<p>S. S. Ali and B. J. Choi, “State-of-the-art artificial intelligence techniques for distributed smart grids: A review,” Electronics, vol. 9, no. 6, p. 1030, 2020. </p>
+															<p>H. Sohrabi et al., “State of the art: Lateral flow assays toward point‐of‐care foodborne pathogenic bacteria detection in food samples,” Compr. Rev. Food Sci. Food Saf., vol. 21, no. 2, pp. 1868–1912, 2022. </p>
+															<p>J. Leaman and H. M. La, “A comprehensive review of smart wheelchairs: past, present, and future,” IEEE Trans. Hum.-Mach. Syst., vol. 47, no. 4, pp. 486–499, 2017. </p>
+															<p>L. Briand and Y. Labiche, “Empirical studies of software testing techniques: Challenges, practical strategies, and future research,” ACM SIGSOFT Softw. Eng. Notes, vol. 29, no. 5, pp. 1–3, 2004. </p>
+															<p>V. Garousi and J. Zhi, “A survey of software testing practices in Canada,” J. Syst. Softw., vol. 86, no. 5, pp. 1354–1376, 2013. </p>
+															<p>O. A. L. Lemos et al., “Evaluation studies of software testing research in Brazil and in the world: A survey,” J. Syst. Softw., vol. 86, no. 4, pp. 951–969, 2013. </p>
+															<p>V. Garousi et al., “Exploring the industry's challenges in software testing: An empirical study,” J. Softw. Evol. Process, vol. 32, no. 8, p. e2251, 2020. </p>
+															<p>C. Kaner, “Fundamental challenges in software testing,” presented at Butler Univ. Colloquium, 2003. </p>
+															<p>P. K. Waychal and L. F. Capretz, “Why a testing career is not the first choice of engineers,” arXiv preprint arXiv:1612.00734, 2016. </p>
+															<p>P. Raulamo-Jurvanen, S. Hosio, and M. V. Mäntylä, “Practitioner evaluations on software testing tools,” in Proc. 23rd Int. Conf. Eval. Assessment Softw. Eng., 2019, pp. 57–66. </p>
+															<p>K. Ibrahim and J. A. Whittaker, “Model-based software testing,” in Encyclopedia of Software Engineering. New York: Wiley, 2001. </p>
+															<p>G. D. Everett and R. McLeod Jr., Software Testing: Testing Across the Entire Software Development Life Cycle. Wiley, 2007. </p>
+															<p>N. Juristo, A. M. Moreno, and S. Vegas, “Towards building a solid empirical body of knowledge in testing techniques,” ACM SIGSOFT Softw. Eng. Notes, vol. 29, no. 5, pp. 1–4, 2004. </p>
+																		</div>
+				</section>
+			
+		</div><!-- .main_entry -->
+
+		<div class="entry_details">
+
+						
+										<div class="item galleys">
+					<h2 class="pkp_screen_reader">
+						Downloads
+					</h2>
+					<ul class="value galleys_links">
+													<li>
+								
+	
+							
+
+<a class="obj_galley_link pdf" href="https://ijisae.org/index.php/IJISAE/article/view/7989/7005">
+
+		
+	PDF
+
+	</a>
+							</li>
+											</ul>
+				</div>
+						
+						<div class="item published">
+				<section class="sub_item">
+					<h2 class="label">
+						Published
+					</h2>
+					<div class="value">
+																			<span>15.10.2025</span>
+																	</div>
+				</section>
+							</div>
+			
+										<div class="item citation">
+					<section class="sub_item citation_display">
+						<h2 class="label">
+							How to Cite
+						</h2>
+						<div class="value">
+							<div id="citationOutput" role="region" aria-live="polite">
+								<div class="csl-bib-body">
+  <div class="csl-entry">Vamsi Krishna Talasila. (2025). Comprehensive Review on Innovation in Software Testing: Advancing Methods with State-of-the-Art Intelligent Platforms. <i>International Journal of Intelligent Systems and Applications in Engineering</i>, <i>13</i>(1), 618–626. Retrieved from https://ijisae.org/index.php/IJISAE/article/view/7989</div>
+</div>
+							</div>
+							<div class="citation_formats">
+								<button class="cmp_button citation_formats_button" aria-controls="cslCitationFormats" aria-expanded="false" data-csl-dropdown="true">
+									More Citation Formats
+								</button>
+								<div id="cslCitationFormats" class="citation_formats_list" aria-hidden="true">
+									<ul class="citation_formats_styles">
+																					<li>
+												<a
+													aria-controls="citationOutput"
+													href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/acm-sig-proceedings?submissionId=7989&amp;publicationId=8273"
+													data-load-citation
+													data-json-href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/acm-sig-proceedings?submissionId=7989&amp;publicationId=8273&amp;return=json"
+												>
+													ACM
+												</a>
+											</li>
+																					<li>
+												<a
+													aria-controls="citationOutput"
+													href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/acs-nano?submissionId=7989&amp;publicationId=8273"
+													data-load-citation
+													data-json-href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/acs-nano?submissionId=7989&amp;publicationId=8273&amp;return=json"
+												>
+													ACS
+												</a>
+											</li>
+																					<li>
+												<a
+													aria-controls="citationOutput"
+													href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/apa?submissionId=7989&amp;publicationId=8273"
+													data-load-citation
+													data-json-href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/apa?submissionId=7989&amp;publicationId=8273&amp;return=json"
+												>
+													APA
+												</a>
+											</li>
+																					<li>
+												<a
+													aria-controls="citationOutput"
+													href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/associacao-brasileira-de-normas-tecnicas?submissionId=7989&amp;publicationId=8273"
+													data-load-citation
+													data-json-href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/associacao-brasileira-de-normas-tecnicas?submissionId=7989&amp;publicationId=8273&amp;return=json"
+												>
+													ABNT
+												</a>
+											</li>
+																					<li>
+												<a
+													aria-controls="citationOutput"
+													href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/chicago-author-date?submissionId=7989&amp;publicationId=8273"
+													data-load-citation
+													data-json-href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/chicago-author-date?submissionId=7989&amp;publicationId=8273&amp;return=json"
+												>
+													Chicago
+												</a>
+											</li>
+																					<li>
+												<a
+													aria-controls="citationOutput"
+													href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/harvard-cite-them-right?submissionId=7989&amp;publicationId=8273"
+													data-load-citation
+													data-json-href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/harvard-cite-them-right?submissionId=7989&amp;publicationId=8273&amp;return=json"
+												>
+													Harvard
+												</a>
+											</li>
+																					<li>
+												<a
+													aria-controls="citationOutput"
+													href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/ieee?submissionId=7989&amp;publicationId=8273"
+													data-load-citation
+													data-json-href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/ieee?submissionId=7989&amp;publicationId=8273&amp;return=json"
+												>
+													IEEE
+												</a>
+											</li>
+																					<li>
+												<a
+													aria-controls="citationOutput"
+													href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/modern-language-association?submissionId=7989&amp;publicationId=8273"
+													data-load-citation
+													data-json-href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/modern-language-association?submissionId=7989&amp;publicationId=8273&amp;return=json"
+												>
+													MLA
+												</a>
+											</li>
+																					<li>
+												<a
+													aria-controls="citationOutput"
+													href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/turabian-fullnote-bibliography?submissionId=7989&amp;publicationId=8273"
+													data-load-citation
+													data-json-href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/turabian-fullnote-bibliography?submissionId=7989&amp;publicationId=8273&amp;return=json"
+												>
+													Turabian
+												</a>
+											</li>
+																					<li>
+												<a
+													aria-controls="citationOutput"
+													href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/vancouver?submissionId=7989&amp;publicationId=8273"
+													data-load-citation
+													data-json-href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/get/vancouver?submissionId=7989&amp;publicationId=8273&amp;return=json"
+												>
+													Vancouver
+												</a>
+											</li>
+																			</ul>
+																			<div class="label">
+											Download Citation
+										</div>
+										<ul class="citation_formats_styles">
+																							<li>
+													<a href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/download/ris?submissionId=7989&amp;publicationId=8273">
+														<span class="fa fa-download"></span>
+														Endnote/Zotero/Mendeley (RIS)
+													</a>
+												</li>
+																							<li>
+													<a href="https://ijisae.org/index.php/IJISAE/citationstylelanguage/download/bibtex?submissionId=7989&amp;publicationId=8273">
+														<span class="fa fa-download"></span>
+														BibTeX
+													</a>
+												</li>
+																					</ul>
+																	</div>
+							</div>
+						</div>
+					</section>
+				</div>
+			
+										<div class="item issue">
+
+											<section class="sub_item">
+							<h2 class="label">
+								Issue
+							</h2>
+							<div class="value">
+								<a class="title" href="https://ijisae.org/index.php/IJISAE/issue/view/132">
+									Vol. 13 No. 1 (2025)
+								</a>
+							</div>
+						</section>
+					
+											<section class="sub_item">
+							<h2 class="label">
+								Section
+							</h2>
+							<div class="value">
+								Research Article
+							</div>
+						</section>
+					
+									</div>
+			
+																														
+										<div class="item copyright">
+					<h2 class="label">
+						License
+					</h2>
+																									<a rel="license" href="https://creativecommons.org/licenses/by-sa/4.0/"><img alt="Creative Commons License" src="//i.creativecommons.org/l/by-sa/4.0/88x31.png" /></a><p>This work is licensed under a <a rel="license" href="https://creativecommons.org/licenses/by-sa/4.0/">Creative Commons Attribution-ShareAlike 4.0 International License</a>.</p>
+																<p>All papers should be submitted electronically. All submitted manuscripts must be original work that is not under submission at another journal or under consideration for publication in another form, such as a monograph or chapter of a book. Authors of submitted papers are obligated not to submit their paper for publication elsewhere until an editorial decision is rendered on their submission. Further, authors of accepted papers are prohibited from publishing the results in other publications that appear before the paper is published in the Journal unless they receive approval for doing so from the Editor-In-Chief.</p>
+<p>IJISAE open access articles are licensed under a&nbsp;<a href="http://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">Creative Commons Attribution-ShareAlike 4.0 International License</a>.&nbsp;This license lets the audience to&nbsp;give&nbsp;appropriate credit, provide a link to the license, and&nbsp;indicate if changes were made and if they&nbsp;remix, transform, or build upon the material, they must distribute contributions under the&nbsp;same license&nbsp;as the original.</p>
+				</div>
+			
+			
+
+		</div><!-- .entry_details -->
+	</div><!-- .row -->
+
+</article>
+
+	<div id="articlesBySameAuthorList">
+				</div>
+<div id="articlesBySimilarityList">
+			<h3>Similar Articles</h3>
+
+		<ul>
+																							<li>
+											Rucha Rajiv Shastrakar, Vijayalaxmi Biradar,
+										<a href="https://ijisae.org/index.php/IJISAE/article/view/7706">
+						Smart Sensing and Geo-Intelligence: A Portable Approach to Water Quality Monitoring for Environmental Sustainability
+					</a>,
+					<a href="https://ijisae.org/index.php/IJISAE/issue/view/130">
+						International Journal of Intelligent Systems and Applications in Engineering: Vol. 12 No. 23s (2024)
+					</a>
+				</li>
+																							<li>
+											Rucha Rajiv Shastrakar, Vijayalaxmi Biradar,
+										<a href="https://ijisae.org/index.php/IJISAE/article/view/7705">
+						Geo-Location Based Analysis on Impact of Transportation Material on Potable Water Using IoT
+					</a>,
+					<a href="https://ijisae.org/index.php/IJISAE/issue/view/130">
+						International Journal of Intelligent Systems and Applications in Engineering: Vol. 12 No. 23s (2024)
+					</a>
+				</li>
+					</ul>
+		<p id="articlesBySimilarityPages">
+			
+		</p>
+		<p id="articlesBySimilaritySearch">
+						You may also <a href="https://ijisae.org/index.php/IJISAE/search/search?query=heavy%20metals%2C%20environment%2C%20contamination%2C%20legal%20requirements%2C%20pollution.">start an advanced similarity search</a> for this article.
+		</p>
+	</div>
+
+
+</div><!-- .page -->
+
+	</div><!-- pkp_structure_main -->
+
+									<div class="pkp_structure_sidebar left" role="complementary" aria-label="Sidebar">
+					<style type="text/css">
+		.block_announcements_article:not(:last-child) {
+			padding-bottom: 1.5em;
+			border-bottom: 1px solid;
+
+		}
+
+		.block_announcements_article {
+			text-align: left;
+		}
+	</style>
+	<div class="pkp_block block_announcements">
+		<h2 class="title">Announcements</h2>
+		<div class="content">
+							<article class="block_announcements_article">
+					<h3 class="block_announcements_article_headline">
+						<a href="https://ijisae.org/index.php/IJISAE/announcement/view/24">
+							Information for Authors
+						</a>
+					</h3>
+					<time class="block_announcements_article_date" datetime="2023-03-06">
+						<strong>March  6, 2023</strong>
+					</time>
+					<div class="block_announcements_article_content">
+																			
+
+<p><strong><u>Information for Authors:</u></strong><br>We are pleased to inform that we are now collaborating with <strong>Elsevier Digital Commons</strong> for much better visibility of journal. Further authors will be able to observe their citations, metric like PlumX from journal website itself. <strong>IJISAE</strong> will be in transition from <strong>OJS</strong> to <strong>Digital Commons framework</strong> in next few months so if their is any queries or delays contact directly on <em><strong>editor@ijisae.org</strong></em></p>
+
+<img src="https://ijisae.org/public/site/images/admin_ijisae/elsevier-logo-2019.svg.png" alt="">
+
+											</div>
+				</article>
+					</div>
+	</div>
+<div class="pkp_block block_custom" id="customblock-like-subscribe-and-share-this-video">
+	<h2 class="title">Like, Subscribe and Share This Video</h2>
+	<div class="content">
+		<p style="text-align: center;"><iframe style="width: 100%; height: auto;" title="YouTube video player" src="https://www.youtube.com/embed/nvESKDAjFlk?si=jgF-hdzbrqXDljQb" frameborder="0" allowfullscreen=""></iframe></p>
+	</div>
+</div>
+<div class="pkp_block block_custom" id="customblock-ijisae">
+	<h2 class="title pkp_screen_reader">ijisae</h2>
+	<div class="content">
+		<ul>
+<li><a href="/IJISAE/about/editorialTeam">Editorial Team</a></li>
+<li><a href="/IJISAE/focus">Focus and Scope</a></li>
+<li><a href="http://manuscriptsubmission.net/ijisae/index.php/submission/about/submissions#authorGuidelines">Author Guidelines</a></li>
+<li><a href="/IJISAE/indexing">Indexing</a></li>
+<li><a href="/IJISAE/about/aboutThisPublishingSystem">Publishing Process</a></li>
+<li><a href="http://manuscriptsubmission.net/ijisae/index.php/submission/submission/wizard">New Submission</a></li>
+<li><a href="/IJISAE/ethics">Publishing Ethics</a></li>
+<li><a href="/IJISAE/about/contact">Contact</a></li>
+<li><a href="/IJISAE/peerreview">Peer Review Process</a></li>
+</ul>
+	</div>
+</div>
+<div class="pkp_block block_information">
+	<h2 class="title">Information</h2>
+	<div class="content">
+		<ul>
+							<li>
+					<a href="https://ijisae.org/index.php/IJISAE/information/readers">
+						For Readers
+					</a>
+				</li>
+										<li>
+					<a href="https://ijisae.org/index.php/IJISAE/information/authors">
+						For Authors
+					</a>
+				</li>
+										<li>
+					<a href="https://ijisae.org/index.php/IJISAE/information/librarians">
+						For Librarians
+					</a>
+				</li>
+					</ul>
+	</div>
+</div>
+<div class="pkp_block block_custom" id="customblock-trindex">
+	<h2 class="title">Indexed By</h2>
+	<div class="content">
+		<p><a href="https://ijisae.org/IJISAE/indexing"><span class="blockTitle"><img style="display: block; margin-left: auto; margin-right: auto;" src="https://ijisae.org/public/site/images/isaritas/Scopus1.jpg" alt=""></span></a></p>
+<p style="text-align: center;"><a href="https://ijisae.org/IJISAE/indexing"><img src="/public/site/images/ilkerozkan/trindex.png" alt="" width="101" height="101"></a></p>
+<p><a href="https://hjrs.hec.gov.pk/index.php?r=site%2Fresult&amp;id=1072729#journal_result"><img style="display: block; margin-left: auto; margin-right: auto; max-width: 75%;" src="https://ijisae.org/public/site/images/admin_ijisae/hec.jpg" alt="" width="134" height="155"></a></p>
+	</div>
+</div>
+<div class="pkp_block block_developed_by">
+	<div class="content">
+		<span class="title">Most Read</span>
+			<ul class="most_read">
+							<li class="most_read_article">
+					<div class="most_read_article_title"><a href="https://ijisae.org/index.php/IJISAE/article/view/7102">Bill of Materials Management: Ensuring Production Efficiency</a></div>
+					<div class="most_read_article_journal"><span class="fa fa-eye"></span> 13</div>
+				</li>
+							<li class="most_read_article">
+					<div class="most_read_article_title"><a href="https://ijisae.org/index.php/IJISAE/article/view/5242">Code Plagiarism and Originality Detection using Machine Learning for Ethical Code Practices</a></div>
+					<div class="most_read_article_journal"><span class="fa fa-eye"></span> 12</div>
+				</li>
+							<li class="most_read_article">
+					<div class="most_read_article_title"><a href="https://ijisae.org/index.php/IJISAE/article/view/6688">Smart Gas Leakage Detector Using IoT Sensors</a></div>
+					<div class="most_read_article_journal"><span class="fa fa-eye"></span> 12</div>
+				</li>
+							<li class="most_read_article">
+					<div class="most_read_article_title"><a href="https://ijisae.org/index.php/IJISAE/article/view/2738">Applications of Integration and Differentiation in Real Life</a></div>
+					<div class="most_read_article_journal"><span class="fa fa-eye"></span> 11</div>
+				</li>
+							<li class="most_read_article">
+					<div class="most_read_article_title"><a href="https://ijisae.org/index.php/IJISAE/article/view/7693">AI-Driven Design Verification of Semiconductor ICs for Graphics Processing Unit Using LLMs</a></div>
+					<div class="most_read_article_journal"><span class="fa fa-eye"></span> 10</div>
+				</li>
+						</ul>
+	</div>
+</div>
+
+			</div><!-- pkp_sidebar.left -->
+			</div><!-- pkp_structure_content -->
+
+<div class="pkp_structure_footer_wrapper" role="contentinfo">
+	<a id="pkp_content_footer"></a>
+
+	<div class="pkp_structure_footer">
+
+					<div class="pkp_footer_content">
+				<div class="blockfoo1"><strong>Quick links for:</strong>
+<div class="quick_t">Authors</div>
+<ul>
+<li class="show"><a href="http://manuscriptsubmission.net/ijisae/index.php/submission/user/register"><strong>Register</strong></a> as a new author</li>
+<li class="show"><a href="https://www.ijisae.org/IJISAE/author?journal="><strong>Track</strong></a> the status of your submissions</li>
+<li class="show"><a href="http://manuscriptsubmission.net/ijisae/index.php/submission/about/submissions"><strong>Submit</strong></a> a new manuscript</li>
+<li class="show"><a href="http://manuscriptsubmission.net/ijisae/index.php/submission/user/profile"><strong>Update</strong></a> the details in your profile</li>
+<li class="show"><a href="http://manuscriptsubmission.net/ijisae/index.php/submission/about/submissions#authorGuidelines"><strong>Show the guidelines</strong></a> for authors</li>
+</ul>
+</div>
+<div class="blockfoo2"><strong>Quick links for:</strong>
+<div class="quick_t">Peer Reviewers</div>
+<ul>
+<li class="show"><a href="http://manuscriptsubmission.net/ijisae/index.php/submission/user/register"><strong>Register</strong></a> as a new Peer Reviewer</li>
+<li class="show"><a href="http://manuscriptsubmission.net/ijisae/index.php/submission/user/profile"><strong>Overview</strong></a> of a current review</li>
+<li class="show"><a href="https://www.ijisae.org/IJISAE/about/editorialPolicies#peerReviewProcess"><strong>Process</strong></a> for undertaking reviews</li>
+</ul>
+</div>
+<div class="blockfoo3"><strong>Quick links for:</strong>
+<div class="quick_t">Editor and Section Editors</div>
+<ul>
+<li class="show"><a href="https://www.ijisae.org/IJISAE/editor/submissions/submissionsUnassigned"><strong>Overview</strong></a> of new submissions</li>
+<li class="show"><a href="https://www.ijisae.org/IJISAE/editor/submissions/submissionsInReview"><strong>Assign</strong></a> submissions to reviewers</li>
+<li class="show"><a href="https://www.ijisae.org/IJISAE/editor/submissions/submissionsInReview"><strong>Track progress</strong></a> of revisions</li>
+<li class="show"><a href="http://manuscriptsubmission.net/ijisae/index.php/submission/user/profile"><strong>Select</strong></a> submissions for copy editing</li>
+</ul>
+</div>
+<div class="blockfoo4"><strong>Quick links for:</strong>
+<div class="quick_t">Editor and Publisher</div>
+<ul>
+<li class="show"><a href="http://manuscriptsubmission.net/ijisae/index.php/submission/user/profile"><strong>Overview</strong></a> of new submissions</li>
+<li class="show"><a href="https://www.ijisae.org/IJISAE/editor/submissions/submissionsUnassigned"><strong>Assign</strong></a> submissions to Section Editors</li>
+</ul>
+</div>
+<div class="blockfoo5"><a href="https://www.ijisae.org/IJISAE/issue/current">Current Issue</a> | <a href="https://www.ijisae.org/IJISAE/issue/archive">Archives</a> | <a href="http://manuscriptsubmission.net/ijisae/index.php/submission/about/submissions">Submit a manuscript</a> | <a href="https://www.ijisae.org/IJISAE/about">About the Journal</a> <br />ISSN: 2147-6799</div>
+			</div>
+		
+		<div class="pkp_brand_footer" role="complementary">
+			<a href="https://ijisae.org/index.php/IJISAE/about/aboutThisPublishingSystem">
+				<img alt="More information about the publishing system, Platform and Workflow by OJS/PKP." src="https://ijisae.org/templates/images/ojs_brand.png">
+			</a>
+		</div>
+	</div>
+</div><!-- pkp_structure_footer_wrapper -->
+
+</div><!-- pkp_structure_page -->
+
+<script src="https://ijisae.org/lib/pkp/lib/vendor/components/jquery/jquery.min.js?v=3.3.0.8" type="text/javascript"></script><script src="https://ijisae.org/lib/pkp/lib/vendor/components/jqueryui/jquery-ui.min.js?v=3.3.0.8" type="text/javascript"></script><script src="https://ijisae.org/plugins/themes/default/js/lib/popper/popper.js?v=3.3.0.8" type="text/javascript"></script><script src="https://ijisae.org/plugins/themes/default/js/lib/bootstrap/util.js?v=3.3.0.8" type="text/javascript"></script><script src="https://ijisae.org/plugins/themes/default/js/lib/bootstrap/dropdown.js?v=3.3.0.8" type="text/javascript"></script><script src="https://ijisae.org/plugins/themes/default/js/main.js?v=3.3.0.8" type="text/javascript"></script><script src="https://ijisae.org/plugins/generic/citationStyleLanguage/js/articleCitation.js?v=3.3.0.8" type="text/javascript"></script><script type="text/javascript">var pkpUsageStats = pkpUsageStats || {};pkpUsageStats.data = pkpUsageStats.data || {};pkpUsageStats.data.Submission = pkpUsageStats.data.Submission || {};pkpUsageStats.data.Submission[7989] = [];</script><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.0.1/Chart.js?v=3.3.0.8" type="text/javascript"></script><script type="text/javascript">var pkpUsageStats = pkpUsageStats || {};pkpUsageStats.locale = pkpUsageStats.locale || {};pkpUsageStats.locale.months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];pkpUsageStats.config = pkpUsageStats.config || {};pkpUsageStats.config.chartType = "bar";</script><script src="https://ijisae.org/plugins/generic/usageStats/js/UsageStatsFrontendHandler.js?v=3.3.0.8" type="text/javascript"></script><script type="text/javascript">
+(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+ga('create', 'UA-39193086-1', 'auto');
+ga('send', 'pageview');
+</script>
+
+<span class="Z3988" title="ctx_ver=Z39.88-2004&amp;rft_id=https%3A%2F%2Fijisae.org%2Findex.php%2FIJISAE%2Farticle%2Fview%2F7989&amp;rft_val_fmt=info%3Aofi%2Ffmt%3Akev%3Amtx%3Ajournal&amp;rft.language=en_US&amp;rft.genre=article&amp;rft.title=International+Journal+of+Intelligent+Systems+and+Applications+in+Engineering&amp;rft.jtitle=International+Journal+of+Intelligent+Systems+and+Applications+in+Engineering&amp;rft.atitle=Comprehensive+Review+on+Innovation+in+Software+Testing%3A+Advancing+Methods+with+State-of-the-Art+Intelligent+Platforms&amp;rft.artnum=7989&amp;rft.stitle=Int+J+Intell+Syst+Appl+Eng&amp;rft.volume=13&amp;rft.issue=1&amp;rft.aulast=&amp;rft.aufirst=Vamsi+Krishna+Talasila&amp;rft.date=2025-10-15&amp;rft.pages=618+-+626&amp;rft.eissn=2147-6799"></span>
+
+</body>
+</html>

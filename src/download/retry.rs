@@ -282,8 +282,8 @@ impl RetryPolicy {
 /// | Status | Type | Rationale |
 /// |--------|------|-----------|
 /// | 400 | Permanent | Bad request - won't succeed on retry |
-/// | 401 | NeedsAuth | Unauthorized - needs authentication |
-/// | 403 | NeedsAuth | Forbidden - needs authentication |
+/// | 401 | — | Promoted to `AuthRequired` in `HttpClient::send_request()` |
+/// | 403 | — | Promoted to `AuthRequired` in `HttpClient::send_request()` |
 /// | 404 | Permanent | Not found - resource doesn't exist |
 /// | 408 | Transient | Request timeout - may succeed |
 /// | 410 | Permanent | Gone - permanently removed |
@@ -306,6 +306,8 @@ impl RetryPolicy {
 #[instrument]
 pub fn classify_error(error: &DownloadError) -> FailureType {
     match error {
+        DownloadError::AuthRequired { .. } => FailureType::NeedsAuth,
+
         DownloadError::HttpStatus { status, .. } => classify_http_status(*status),
 
         DownloadError::Timeout { .. } => FailureType::Transient,
@@ -319,7 +321,9 @@ pub fn classify_error(error: &DownloadError) -> FailureType {
             }
         }
 
-        DownloadError::Io { .. } | DownloadError::InvalidUrl { .. } => FailureType::Permanent,
+        DownloadError::Io { .. }
+        | DownloadError::InvalidUrl { .. }
+        | DownloadError::Integrity { .. } => FailureType::Permanent,
     }
 }
 
@@ -331,10 +335,14 @@ pub fn classify_error(error: &DownloadError) -> FailureType {
 fn classify_http_status(status: u16) -> FailureType {
     match status {
         // Client errors - mostly permanent
+        // Note: 401, 403, 407 are promoted to DownloadError::AuthRequired in
+        // HttpClient::send_request() and handled by classify_error's AuthRequired arm.
+        // These arms are kept as defensive fallback if HttpStatus is constructed directly.
         400 => FailureType::Permanent,   // Bad Request
-        401 => FailureType::NeedsAuth,   // Unauthorized
-        403 => FailureType::NeedsAuth,   // Forbidden
+        401 => FailureType::NeedsAuth,   // Unauthorized (fallback)
+        403 => FailureType::NeedsAuth,   // Forbidden (fallback)
         404 => FailureType::Permanent,   // Not Found
+        407 => FailureType::NeedsAuth,   // Proxy Auth Required (fallback)
         408 => FailureType::Transient,   // Request Timeout
         410 => FailureType::Permanent,   // Gone
         429 => FailureType::RateLimited, // Too Many Requests
@@ -492,13 +500,34 @@ mod tests {
 
     #[test]
     fn test_classify_http_401_needs_auth() {
-        let error = DownloadError::http_status("http://example.com", 401);
+        let error = DownloadError::auth_required("http://example.com", 401, "example.com");
         assert_eq!(classify_error(&error), FailureType::NeedsAuth);
     }
 
     #[test]
     fn test_classify_http_403_needs_auth() {
-        let error = DownloadError::http_status("http://example.com", 403);
+        let error = DownloadError::auth_required("http://example.com", 403, "example.com");
+        assert_eq!(classify_error(&error), FailureType::NeedsAuth);
+    }
+
+    #[test]
+    fn test_classify_http_407_needs_auth() {
+        let error = DownloadError::auth_required("http://example.com", 407, "example.com");
+        assert_eq!(classify_error(&error), FailureType::NeedsAuth);
+    }
+
+    #[test]
+    fn test_classify_http_407_fallback_needs_auth() {
+        // Defensive: if HttpStatus { status: 407 } is constructed directly
+        // (bypassing send_request()), it should still classify as NeedsAuth.
+        let error = DownloadError::http_status("http://example.com", 407);
+        assert_eq!(classify_error(&error), FailureType::NeedsAuth);
+    }
+
+    #[test]
+    fn test_classify_auth_required_login_redirect() {
+        let error =
+            DownloadError::auth_required("http://example.com/paper.pdf", 0, "idp.example.edu");
         assert_eq!(classify_error(&error), FailureType::NeedsAuth);
     }
 
