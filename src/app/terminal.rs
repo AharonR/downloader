@@ -38,6 +38,7 @@ pub(crate) fn init_tracing(default_level: &str, force_cli_level: bool, no_color:
             .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_level))
     };
     let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_ansi(!no_color)
         .with_env_filter(filter)
         .try_init();
