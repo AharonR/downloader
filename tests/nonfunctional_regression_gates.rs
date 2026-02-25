@@ -8,16 +8,42 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use downloader_core::{Database, DatabaseOptions, Queue, QueueStatus};
+use downloader_core::{
+    Database, DatabaseOptions, DownloadEngine, EngineError, HttpClient, Queue, QueueStatus,
+    RateLimiter, RetryPolicy,
+};
 use tempfile::TempDir;
 use tokio::task::JoinSet;
+use wiremock::matchers::{method, path, path_regex};
+use wiremock::{Mock, ResponseTemplate};
+
+mod support;
+use support::socket_guard::{socket_skip_return, start_mock_server_or_skip};
+
+macro_rules! require_mock_server {
+    () => {{
+        let Some(mock_server) = start_mock_server_or_skip().await else {
+            return socket_skip_return();
+        };
+        mock_server
+    }};
+}
 
 const MAX_P95_RUNTIME_REGRESSION: f64 = 0.07;
 const MAX_QUEUE_THROUGHPUT_REGRESSION: f64 = 0.05;
 const MAX_DB_BUSY_LOCK_RATE: f64 = 0.005;
+const MAX_DOWNLOAD_LATENCY_REGRESSION: f64 = 0.10;
+const MAX_DOWNLOAD_THROUGHPUT_REGRESSION: f64 = 0.10;
 
 const DEFAULT_BASELINE_QUEUE_THROUGHPUT_OPS_PER_SEC: f64 = 200.0;
 const DEFAULT_BASELINE_RETRY_P95_MS: f64 = 50.0;
+const DEFAULT_BASELINE_DOWNLOAD_LATENCY_P95_MS: f64 = 200.0;
+const DEFAULT_BASELINE_DOWNLOAD_THROUGHPUT_MB_PER_SEC: f64 = 50.0;
+
+const DOWNLOAD_BENCH_PAYLOAD_SIZE: usize = 1_024 * 1_024; // 1 MB
+const DOWNLOAD_BENCH_LATENCY_ITERATIONS: usize = 20;
+const DOWNLOAD_BENCH_CONCURRENCY: usize = 10;
+const DOWNLOAD_BENCH_THROUGHPUT_FILES: usize = 30;
 
 fn baseline_from_env(var_name: &str, fallback: f64) -> f64 {
     std::env::var(var_name)
@@ -44,6 +70,35 @@ async fn setup_file_backed_queue(
     let db_path = temp_dir.path().join(file_name);
     let db = Database::new_with_options(&db_path, &options).await?;
     Ok((Queue::new(db), temp_dir))
+}
+
+async fn setup_download_bench(
+    db_file_name: &str,
+) -> Result<(Queue, TempDir, TempDir), Box<dyn std::error::Error>> {
+    let db_dir = TempDir::new()?;
+    let db_path = db_dir.path().join(db_file_name);
+    let db = Database::new_with_options(
+        &db_path,
+        &DatabaseOptions {
+            max_connections: 4,
+            busy_timeout_ms: 5_000,
+        },
+    )
+    .await?;
+    let output_dir = TempDir::new()?;
+    Ok((Queue::new(db), db_dir, output_dir))
+}
+
+fn bench_engine(concurrency: usize) -> Result<DownloadEngine, EngineError> {
+    DownloadEngine::new(
+        concurrency,
+        RetryPolicy::with_max_attempts(1),
+        Arc::new(RateLimiter::disabled()),
+    )
+}
+
+fn bench_payload(size: usize) -> Vec<u8> {
+    (0..size).map(|i| ((i % 251) + 1) as u8).collect()
 }
 
 #[tokio::test]
@@ -214,6 +269,122 @@ async fn gate_db_busy_lock_incidence_stays_below_half_percent()
     assert!(
         busy_ratio <= MAX_DB_BUSY_LOCK_RATE,
         "busy/lock rate exceeded threshold: busy={busy} total_ops={total_ops} ratio={busy_ratio:.6} max={MAX_DB_BUSY_LOCK_RATE:.6}"
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "non-functional gate: download latency p95 baseline"]
+async fn gate_download_latency_p95_regression_is_within_10_percent()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mock_server = require_mock_server!();
+
+    let payload = bench_payload(DOWNLOAD_BENCH_PAYLOAD_SIZE);
+    Mock::given(method("GET"))
+        .and(path("/bench.bin"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(payload))
+        .mount(&mock_server)
+        .await;
+
+    let client = HttpClient::new();
+    let engine = bench_engine(1)?;
+    let url = format!("{}/bench.bin", mock_server.uri());
+
+    let mut samples_ms = Vec::with_capacity(DOWNLOAD_BENCH_LATENCY_ITERATIONS);
+
+    for i in 0..DOWNLOAD_BENCH_LATENCY_ITERATIONS {
+        let (queue, _db_dir, output_dir) =
+            setup_download_bench(&format!("latency_bench_{i}.db")).await?;
+
+        queue.enqueue(&url, "direct_url", None).await?;
+
+        let start = Instant::now();
+        let stats = engine
+            .process_queue(&queue, &client, output_dir.path())
+            .await?;
+        samples_ms.push(start.elapsed().as_secs_f64() * 1000.0);
+
+        assert_eq!(
+            stats.completed(),
+            1,
+            "iteration {i} should complete 1 download"
+        );
+    }
+
+    let baseline = baseline_from_env(
+        "NF_BASELINE_DOWNLOAD_LATENCY_P95_MS",
+        DEFAULT_BASELINE_DOWNLOAD_LATENCY_P95_MS,
+    );
+    let max_allowed = baseline * (1.0 + MAX_DOWNLOAD_LATENCY_REGRESSION);
+    let measured_p95 = p95(&mut samples_ms);
+
+    eprintln!(
+        "[download-latency] p95={measured_p95:.2}ms baseline={baseline:.2}ms max_allowed={max_allowed:.2}ms"
+    );
+
+    assert!(
+        measured_p95 <= max_allowed,
+        "download latency p95 regression exceeded threshold: measured={measured_p95:.2}ms baseline={baseline:.2}ms max_allowed={max_allowed:.2}ms"
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "non-functional gate: download throughput baseline"]
+async fn gate_download_throughput_regression_is_within_10_percent()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mock_server = require_mock_server!();
+
+    let payload = bench_payload(DOWNLOAD_BENCH_PAYLOAD_SIZE);
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/bench-\d+\.bin$"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(payload))
+        .mount(&mock_server)
+        .await;
+
+    let (queue, _db_dir, output_dir) = setup_download_bench("throughput_bench.db").await?;
+    let client = HttpClient::new();
+    let engine = bench_engine(DOWNLOAD_BENCH_CONCURRENCY)?;
+
+    let base_url = mock_server.uri();
+    for i in 0..DOWNLOAD_BENCH_THROUGHPUT_FILES {
+        queue
+            .enqueue(
+                &format!("{base_url}/bench-{i}.bin"),
+                "direct_url",
+                None,
+            )
+            .await?;
+    }
+
+    let start = Instant::now();
+    let stats = engine
+        .process_queue(&queue, &client, output_dir.path())
+        .await?;
+    let elapsed = start.elapsed();
+
+    assert_eq!(
+        stats.completed(),
+        DOWNLOAD_BENCH_THROUGHPUT_FILES,
+        "all {DOWNLOAD_BENCH_THROUGHPUT_FILES} files should complete"
+    );
+
+    let total_bytes = DOWNLOAD_BENCH_THROUGHPUT_FILES * DOWNLOAD_BENCH_PAYLOAD_SIZE;
+    let throughput_mb_s = (total_bytes as f64 / 1_048_576.0) / elapsed.as_secs_f64();
+
+    let baseline = baseline_from_env(
+        "NF_BASELINE_DOWNLOAD_THROUGHPUT_MB_PER_SEC",
+        DEFAULT_BASELINE_DOWNLOAD_THROUGHPUT_MB_PER_SEC,
+    );
+    let min_allowed = baseline * (1.0 - MAX_DOWNLOAD_THROUGHPUT_REGRESSION);
+
+    eprintln!(
+        "[download-throughput] measured={throughput_mb_s:.2}MB/s baseline={baseline:.2}MB/s min_allowed={min_allowed:.2}MB/s"
+    );
+
+    assert!(
+        throughput_mb_s >= min_allowed,
+        "download throughput regression exceeded threshold: measured={throughput_mb_s:.2}MB/s baseline={baseline:.2}MB/s min_allowed={min_allowed:.2}MB/s"
     );
     Ok(())
 }
