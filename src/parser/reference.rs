@@ -678,6 +678,11 @@ mod tests {
         let reference = format!("Smith, J. (2024). Structured Title {suffix}. Journal Name.");
 
         tracing::subscriber::with_default(subscriber, || {
+            // Warm up the callsite under our subscriber; a parallel test running
+            // with the noop dispatcher may have cached Interest::Never atomically.
+            // Rebuilding the cache ensures our subscriber's Interest::Always wins.
+            let _ = parse_reference_metadata(&reference);
+            tracing::callsite::rebuild_interest_cache();
             let _ = parse_reference_metadata(&reference);
         });
 

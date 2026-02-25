@@ -1,4 +1,4 @@
-# generated: 2026-02-09
+# generated: 2026-02-25
 # project: Downloader
 # project_key: downloader
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-02-09
+generated: 2026-02-25
 project: Downloader
 project_key: downloader
 tracking_system: file-system
@@ -126,17 +126,17 @@ nfr_assessment_date: '2026-02-23'
 nfr_gate_blockers: []
 nfr_gate_resolved:
   - 'Maintainability FIXED: 0 clippy errors (cargo clippy -- -D warnings exits 0)'
-  - 'Maintainability FIXED: 0 unit test failures (564 pass)'
+  - 'Maintainability FIXED: 0 unit test failures (566 pass)'
   - 'Security FIXED: cargo audit exits 0 (bytes+time patched; rsa+number_prefix accepted with rationale)'
   - 'Security FIXED: cargo audit step added to phase-rollout-gates.yml CI'
+  - 'Maintainability FIXED: cargo llvm-cov v0.8.4 installed; coverage.yml CI workflow active; ~89.55% line coverage (Phase 1 baseline)'
 nfr_gate_high_priority:
-  - 'Maintainability CONCERNS: add test coverage tooling (cargo llvm-cov) — next sprint'
   - 'Performance CONCERNS: no download throughput benchmark yet — next sprint'
 nfr_gate_waived:
   - 'ci-burn-in (no CI run history yet — instrumentation story required)'
   - 'availability (CLI tool, not a service)'
   - 'disaster-recovery (single-user local tool)'
-nfr_next_action: 'Add cargo llvm-cov coverage reporting and download throughput benchmark'
+nfr_next_action: 'Add download throughput benchmark'
 
 # Project Retrospective
 project_retrospective_status: done
