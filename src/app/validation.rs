@@ -100,7 +100,10 @@ mod tests {
     fn test_cookie_stdin_no_conflict_when_stdin_is_terminal() {
         let result = validate_cookie_stdin_conflict(Some("-"), &[], true);
         assert!(result.is_ok());
-        assert!(result.unwrap(), "should return true when cookies are from stdin");
+        assert!(
+            result.unwrap(),
+            "should return true when cookies are from stdin"
+        );
     }
 
     #[test]
@@ -115,7 +118,10 @@ mod tests {
     fn test_cookie_stdin_returns_false_when_source_is_not_stdin() {
         let result = validate_cookie_stdin_conflict(Some("cookies.txt"), &[], false);
         assert!(result.is_ok());
-        assert!(!result.unwrap(), "should return false when cookie source is a file");
+        assert!(
+            !result.unwrap(),
+            "should return false when cookie source is a file"
+        );
     }
 
     #[test]
@@ -203,11 +209,10 @@ mod tests {
 
     #[test]
     fn test_valid_date_range_with_time_component() {
-        assert!(validate_search_date_range(
-            Some("2024-01-01 00:00:00"),
-            Some("2024-12-31 23:59:59")
-        )
-        .is_ok());
+        assert!(
+            validate_search_date_range(Some("2024-01-01 00:00:00"), Some("2024-12-31 23:59:59"))
+                .is_ok()
+        );
     }
 
     #[test]

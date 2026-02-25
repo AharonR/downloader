@@ -259,8 +259,7 @@ mod tests {
 
     #[test]
     fn test_parse_disallow_sorted_longest_first() {
-        let body =
-            "User-agent: *\nDisallow: /a/\nDisallow: /longer/path/\nDisallow: /medium/\n";
+        let body = "User-agent: *\nDisallow: /a/\nDisallow: /longer/path/\nDisallow: /medium/\n";
         let r = parse_disallow_rules(body);
         assert_eq!(r.len(), 3);
         // Longest prefix first so most-specific rules win during matching

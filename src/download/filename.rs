@@ -523,10 +523,7 @@ mod tests {
     #[test]
     fn test_extension_from_url_dot_only_rejected() {
         // A dot with nothing after it has len == 1, rejected
-        assert_eq!(
-            extension_from_url("https://example.com/file."),
-            None
-        );
+        assert_eq!(extension_from_url("https://example.com/file."), None);
     }
 
     // --- extract_primary_author ---
@@ -611,7 +608,10 @@ mod tests {
 
     #[test]
     fn test_extension_from_content_type_unknown_falls_back_to_bin() {
-        assert_eq!(extension_from_content_type("application/octet-stream"), ".bin");
+        assert_eq!(
+            extension_from_content_type("application/octet-stream"),
+            ".bin"
+        );
         assert_eq!(extension_from_content_type(""), ".bin");
     }
 
