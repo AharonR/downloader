@@ -120,7 +120,7 @@ development_status:
   epic-8-retrospective: done
 
 # NFR Assessment Gate
-nfr_assessment_status: CONCERNS
+nfr_assessment_status: PASS
 nfr_assessment_file: _bmad-output/nfr-assessment.md
 nfr_assessment_date: '2026-02-23'
 nfr_gate_blockers: []
@@ -130,13 +130,13 @@ nfr_gate_resolved:
   - 'Security FIXED: cargo audit exits 0 (bytes+time patched; rsa+number_prefix accepted with rationale)'
   - 'Security FIXED: cargo audit step added to phase-rollout-gates.yml CI'
   - 'Maintainability FIXED: cargo llvm-cov v0.8.4 installed; coverage.yml CI workflow active; ~89.55% line coverage (Phase 1 baseline)'
-nfr_gate_high_priority:
-  - 'Performance CONCERNS: no download throughput benchmark yet — next sprint'
+  - 'Performance FIXED: download latency p95 + throughput regression gates added (abf6428); run weekly in CI nonfunctional-gates job'
+nfr_gate_high_priority: []
 nfr_gate_waived:
   - 'ci-burn-in (no CI run history yet — instrumentation story required)'
   - 'availability (CLI tool, not a service)'
   - 'disaster-recovery (single-user local tool)'
-nfr_next_action: 'Add download throughput benchmark'
+nfr_next_action: 'Monitor CI burn-in (waived; no action required for single-user CLI)'
 
 # Project Retrospective
 project_retrospective_status: done
