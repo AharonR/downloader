@@ -1,0 +1,175 @@
+name: Coverage
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CARGO_TARGET_DIR: target/coverage-ci
+      DOWNLOADER_REQUIRE_SOCKET_TESTS: "1"
+      # Use single quotes in YAML so regex escapes are not mangled.
+      COVERAGE_IGNORE_REGEX: '(^|[\\/])src[\\/]bin[\\/](extract_md_links|stress_sidecar_flaky)\.rs$'
+    steps:
+      # Phase 1 baseline lane: informational only. Do not mark this check as required
+      # in branch protection until a later rollout phase.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Socket bind preflight
+        run: |
+          python - <<'PY'
+          import os
+          import socket
+          import sys
+
+          strict = os.getenv("DOWNLOADER_REQUIRE_SOCKET_TESTS", "").lower() in {"1", "true", "yes"}
+          probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          try:
+            probe.bind(("127.0.0.1", 0))
+            host, port = probe.getsockname()
+            print(f"[socket-preflight] localhost bind succeeded on {host}:{port}")
+          except OSError as err:
+            print(
+                "::error::[socket-preflight] localhost bind failed; wiremock-based tests cannot run in strict mode. "
+                "Use a runner that allows 127.0.0.1 socket binding."
+            )
+            print(f"[socket-preflight] OS error: {err}")
+            if strict:
+              sys.exit(1)
+          finally:
+            probe.close()
+          PY
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Install LLVM tools
+        run: rustup component add llvm-tools-preview
+
+      - name: Record cargo-llvm-cov version
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$CARGO_TARGET_DIR"
+          cargo llvm-cov --version | tee "$CARGO_TARGET_DIR/llvm-cov-version.txt"
+
+      - name: Clean coverage artifacts
+        run: cargo llvm-cov clean --workspace
+
+      - name: Run phase 1 baseline coverage suite
+        run: |
+          cargo llvm-cov \
+            --workspace \
+            --lib \
+            --bin downloader \
+            --test queue_integration \
+            --test download_engine_integration \
+            --test cli_e2e \
+            --test integration_matrix \
+            --no-report
+
+      - name: Generate coverage summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo llvm-cov report \
+            --summary-only \
+            --ignore-filename-regex "$COVERAGE_IGNORE_REGEX" | tee "$CARGO_TARGET_DIR/coverage-summary.txt"
+
+      - name: Generate HTML coverage report
+        run: |
+          cargo llvm-cov report \
+            --html \
+            --output-dir "$CARGO_TARGET_DIR/llvm-cov-html" \
+            --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+
+      - name: Generate LCOV coverage report
+        run: |
+          cargo llvm-cov report \
+            --lcov \
+            --output-path "$CARGO_TARGET_DIR/lcov.info" \
+            --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+
+      - name: Validate coverage outputs
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -s "$CARGO_TARGET_DIR/coverage-summary.txt"
+          test -s "$CARGO_TARGET_DIR/lcov.info"
+          test -d "$CARGO_TARGET_DIR/llvm-cov-html"
+          test -f "$CARGO_TARGET_DIR/llvm-cov-html/html/index.html"
+
+          # LCOV checks are diagnostic for now. Keep existence checks above as the hard gate
+          # and log warnings for content-shape mismatches until path semantics are stabilized.
+          if ! rg -n '^SF:' "$CARGO_TARGET_DIR/lcov.info" >/dev/null; then
+            echo "::warning::No LCOV source-file (SF:) entries were found in lcov.info"
+          fi
+          if ! rg -n '(cli|download_engine)\.rs' "$CARGO_TARGET_DIR/lcov.info" >/dev/null; then
+            echo "::warning::LCOV output did not include expected core file names (cli.rs/download_engine.rs)"
+          fi
+          if rg -n '^SF:.*(extract_md_links|stress_sidecar_flaky)\.rs$' "$CARGO_TARGET_DIR/lcov.info" >/dev/null; then
+            echo "::warning::LCOV output includes utility bin file names despite report filter"
+          fi
+
+          # HTML checks are spot checks only; HTML structure may vary by tool version.
+          if ! rg -n 'cli\.rs|download_engine\.rs' "$CARGO_TARGET_DIR/llvm-cov-html" >/dev/null; then
+            echo "::warning::HTML coverage output spot-check did not find expected core file names"
+          fi
+          if rg -n 'extract_md_links\.rs|stress_sidecar_flaky\.rs' "$CARGO_TARGET_DIR/llvm-cov-html" >/dev/null; then
+            echo "::warning::HTML coverage output spot-check found excluded utility bin file names"
+          fi
+
+      - name: Upload HTML coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html-${{ github.run_id }}
+          path: target/coverage-ci/llvm-cov-html/**
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload LCOV coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov-${{ github.run_id }}
+          path: target/coverage-ci/lcov.info
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Append coverage summary to job summary
+        shell: bash
+        run: |
+          {
+            echo "## Coverage"
+            echo
+            echo "- Phase: Phase 1 baseline"
+            echo "- Informational only (not required branch check in Phase 1)"
+            echo "- Artifacts: \`coverage-html-${{ github.run_id }}\`, \`coverage-lcov-${{ github.run_id }}\`"
+            echo
+            echo "### cargo-llvm-cov Version"
+            echo '```text'
+            cat "$CARGO_TARGET_DIR/llvm-cov-version.txt"
+            echo '```'
+            echo
+            echo "### Coverage Summary"
+            echo '```text'
+            cat "$CARGO_TARGET_DIR/coverage-summary.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

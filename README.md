@@ -113,6 +113,68 @@ cargo test
 cargo clippy -- -D warnings
 ```
 
+### Coverage (cargo-llvm-cov)
+
+Coverage is collected in a dedicated CI workflow (`.github/workflows/coverage.yml`) and is
+currently informational only (HTML + LCOV artifacts, no threshold enforcement yet).
+
+Quick local coverage (non-strict; socket-bound tests may skip):
+
+```bash
+rustup component add llvm-tools-preview
+cargo install cargo-llvm-cov --locked
+
+export CARGO_TARGET_DIR=target/coverage-local
+export COVERAGE_IGNORE_REGEX='(^|[\\/])src[\\/]bin[\\/](extract_md_links|stress_sidecar_flaky)\.rs$'
+
+cargo llvm-cov clean --workspace
+cargo llvm-cov \
+  --workspace \
+  --lib \
+  --bin downloader \
+  --test queue_integration \
+  --test download_engine_integration \
+  --test cli_e2e \
+  --test integration_matrix \
+  --no-report
+
+cargo llvm-cov report --summary-only --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+cargo llvm-cov report --html --output-dir target/coverage-local/llvm-cov-html --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+cargo llvm-cov report --lcov --output-path target/coverage-local/lcov.info --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+```
+
+Quick local coverage percentages may differ from CI if socket-bound tests skip in the local
+environment.
+
+CI-parity local coverage (strict; fails if localhost bind is unavailable):
+
+```bash
+rustup component add llvm-tools-preview
+cargo install cargo-llvm-cov --locked
+
+export DOWNLOADER_REQUIRE_SOCKET_TESTS=1
+export CARGO_TARGET_DIR=target/coverage-local
+export COVERAGE_IGNORE_REGEX='(^|[\\/])src[\\/]bin[\\/](extract_md_links|stress_sidecar_flaky)\.rs$'
+
+cargo llvm-cov clean --workspace
+cargo llvm-cov \
+  --workspace \
+  --lib \
+  --bin downloader \
+  --test queue_integration \
+  --test download_engine_integration \
+  --test cli_e2e \
+  --test integration_matrix \
+  --no-report
+
+cargo llvm-cov report --summary-only --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+cargo llvm-cov report --html --output-dir target/coverage-local/llvm-cov-html --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+cargo llvm-cov report --lcov --output-path target/coverage-local/lcov.info --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+```
+
+Open the HTML report at `target/coverage-local/llvm-cov-html/index.html`.
+See `tests/README.md` for phase scope, denominator policy, and troubleshooting details.
+
 ### Flaky Test Stress Lane
 
 Run the known sidecar flaky test repeatedly with a lean stress runner:
