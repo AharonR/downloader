@@ -349,11 +349,7 @@ async fn gate_download_throughput_regression_is_within_10_percent()
     let base_url = mock_server.uri();
     for i in 0..DOWNLOAD_BENCH_THROUGHPUT_FILES {
         queue
-            .enqueue(
-                &format!("{base_url}/bench-{i}.bin"),
-                "direct_url",
-                None,
-            )
+            .enqueue(&format!("{base_url}/bench-{i}.bin"), "direct_url", None)
             .await?;
     }
 
