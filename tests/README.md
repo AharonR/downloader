@@ -39,6 +39,107 @@ cargo test --test critical -- --ignored
 cargo test --test integration_matrix
 ```
 
+## Coverage (`cargo-llvm-cov`)
+
+Execution scope controls which tests run; denominator is separately constrained at report time via
+filename filtering.
+
+### Phase Scope and Denominator Policy
+
+- Phase 1 coverage suite (deterministic baseline):
+  - `--lib`
+  - `--bin downloader`
+  - `--test queue_integration`
+  - `--test download_engine_integration`
+  - `--test cli_e2e`
+  - `--test integration_matrix`
+- Phase 2 expansion: replace the explicit integration test list with `--tests` while keeping
+  `--lib --bin downloader`.
+- Ignored tests are excluded in both phases (no `-- --ignored` in coverage commands).
+- Denominator policy: include library + `downloader` binary source files only.
+- Explicit denominator exclusions (filtered at report time even if compiled):
+  - `src/bin/extract_md_links.rs`
+  - `src/bin/stress_sidecar_flaky.rs`
+- Maintenance rule: when a new utility binary is added under `src/bin/` and should remain out of
+  coverage denominator, update `COVERAGE_IGNORE_REGEX` and the workflow validation checks in
+  `.github/workflows/coverage.yml`.
+
+### CI Coverage Workflow
+
+- Workflow: `.github/workflows/coverage.yml` (`Coverage`, job `coverage`)
+- Reporting: HTML + LCOV artifacts (`coverage-html-<run_id>`, `coverage-lcov-<run_id>`)
+- Enforcement: informational only (no coverage threshold in this rollout)
+- Branch protection: do not mark the coverage check as required in Phase 1
+- Socket behavior: strict (`DOWNLOADER_REQUIRE_SOCKET_TESTS=1`) to match CI gate behavior
+- Tool version: `cargo-llvm-cov` is intentionally unpinned in CI; the workflow records
+  `cargo llvm-cov --version` in logs and the job summary for traceability
+
+### Quick Local Coverage (non-strict; socket-bound tests may skip)
+
+```bash
+rustup component add llvm-tools-preview
+cargo install cargo-llvm-cov --locked
+
+export CARGO_TARGET_DIR=target/coverage-local
+export COVERAGE_IGNORE_REGEX='(^|[\\/])src[\\/]bin[\\/](extract_md_links|stress_sidecar_flaky)\.rs$'
+
+cargo llvm-cov clean --workspace
+cargo llvm-cov \
+  --workspace \
+  --lib \
+  --bin downloader \
+  --test queue_integration \
+  --test download_engine_integration \
+  --test cli_e2e \
+  --test integration_matrix \
+  --no-report
+
+cargo llvm-cov report --summary-only --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+cargo llvm-cov report --html --output-dir target/coverage-local/llvm-cov-html --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+cargo llvm-cov report --lcov --output-path target/coverage-local/lcov.info --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+```
+
+Quick local coverage percentages may differ from CI if socket-bound tests skip in your local
+environment.
+
+### CI-Parity Local Coverage (strict; fails if localhost bind is unavailable)
+
+```bash
+rustup component add llvm-tools-preview
+cargo install cargo-llvm-cov --locked
+
+export DOWNLOADER_REQUIRE_SOCKET_TESTS=1
+export CARGO_TARGET_DIR=target/coverage-local
+export COVERAGE_IGNORE_REGEX='(^|[\\/])src[\\/]bin[\\/](extract_md_links|stress_sidecar_flaky)\.rs$'
+
+cargo llvm-cov clean --workspace
+cargo llvm-cov \
+  --workspace \
+  --lib \
+  --bin downloader \
+  --test queue_integration \
+  --test download_engine_integration \
+  --test cli_e2e \
+  --test integration_matrix \
+  --no-report
+
+cargo llvm-cov report --summary-only --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+cargo llvm-cov report --html --output-dir target/coverage-local/llvm-cov-html --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+cargo llvm-cov report --lcov --output-path target/coverage-local/lcov.info --ignore-filename-regex "$COVERAGE_IGNORE_REGEX"
+```
+
+Open the HTML report at `target/coverage-local/llvm-cov-html/index.html`.
+
+### Troubleshooting
+
+- `error: no such command: llvm-cov`
+  - Install the tool: `cargo install cargo-llvm-cov --locked`
+- Missing LLVM tools / report-generation failures
+  - Install the Rust component: `rustup component add llvm-tools-preview`
+- Strict socket bind failures (`DOWNLOADER_REQUIRE_SOCKET_TESTS=1`)
+  - Use the non-strict local coverage mode above, or run in a full environment that allows
+    `127.0.0.1` socket binding
+
 ## Priority Convention
 
 Use a prefix in test names to indicate priority:
