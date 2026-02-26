@@ -232,4 +232,92 @@ mod tests {
             Some("http://localhost:8080".to_string())
         );
     }
+
+    // --- parse_disallow_rules edge cases ---
+
+    #[test]
+    fn test_parse_disallow_with_comments_ignored() {
+        let body = "# This is a comment\nUser-agent: *\nDisallow: /secret/\n";
+        let r = parse_disallow_rules(body);
+        assert!(r.contains(&"/secret/".to_string()));
+    }
+
+    #[test]
+    fn test_parse_disallow_empty_disallow_line_skipped() {
+        // Empty Disallow: means "allow all" — must not be added to list
+        let body = "User-agent: *\nDisallow: \n";
+        let r = parse_disallow_rules(body);
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn test_parse_disallow_deduplicates_paths() {
+        let body = "User-agent: *\nDisallow: /api/\nDisallow: /api/\n";
+        let r = parse_disallow_rules(body);
+        assert_eq!(r.iter().filter(|p| *p == "/api/").count(), 1);
+    }
+
+    #[test]
+    fn test_parse_disallow_sorted_longest_first() {
+        let body = "User-agent: *\nDisallow: /a/\nDisallow: /longer/path/\nDisallow: /medium/\n";
+        let r = parse_disallow_rules(body);
+        assert_eq!(r.len(), 3);
+        // Longest prefix first so most-specific rules win during matching
+        assert!(r[0].len() >= r[1].len());
+        assert!(r[1].len() >= r[2].len());
+    }
+
+    #[test]
+    fn test_parse_disallow_non_star_agent_ignored() {
+        // Rules for named agents must not affect wildcard matching
+        let body = "User-agent: Googlebot\nDisallow: /nobot/\nUser-agent: *\nDisallow: /all/\n";
+        let r = parse_disallow_rules(body);
+        assert!(!r.contains(&"/nobot/".to_string()));
+        assert!(r.contains(&"/all/".to_string()));
+    }
+
+    // --- normalize_disallow_path edge cases ---
+
+    #[test]
+    fn test_normalize_disallow_path_empty_returns_empty() {
+        assert_eq!(normalize_disallow_path(""), "");
+    }
+
+    #[test]
+    fn test_normalize_disallow_path_whitespace_only_returns_empty() {
+        assert_eq!(normalize_disallow_path("   "), "");
+    }
+
+    #[test]
+    fn test_normalize_disallow_path_already_has_slash() {
+        assert_eq!(normalize_disallow_path("/foo/bar"), "/foo/bar");
+    }
+
+    #[test]
+    fn test_normalize_disallow_path_adds_leading_slash() {
+        assert_eq!(normalize_disallow_path("foo/bar"), "/foo/bar");
+    }
+
+    // --- origin_for_robots edge cases ---
+
+    #[test]
+    fn test_origin_for_robots_invalid_url_returns_none() {
+        assert_eq!(origin_for_robots("not_a_valid_url"), None);
+    }
+
+    #[test]
+    fn test_origin_for_robots_strips_path_query_and_fragment() {
+        assert_eq!(
+            origin_for_robots("https://example.com/path?query=1#frag"),
+            Some("https://example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_origin_for_robots_includes_non_default_port() {
+        assert_eq!(
+            origin_for_robots("https://example.com:9443/path"),
+            Some("https://example.com:9443".to_string())
+        );
+    }
 }

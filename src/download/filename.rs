@@ -479,4 +479,169 @@ mod tests {
             resolve_unique_path_with_suffix_start(temp_dir.path(), "Smith_2024_Title.pdf", 2);
         assert_eq!(path, temp_dir.path().join("Smith_2024_Title_2.pdf"));
     }
+
+    // --- extension_from_url ---
+
+    #[test]
+    fn test_extension_from_url_pdf() {
+        assert_eq!(
+            extension_from_url("https://example.com/paper.pdf"),
+            Some(".pdf".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extension_from_url_no_extension() {
+        assert_eq!(extension_from_url("https://example.com/paper"), None);
+    }
+
+    #[test]
+    fn test_extension_from_url_too_long_extension_rejected() {
+        // Extensions longer than 12 chars are rejected
+        assert_eq!(
+            extension_from_url("https://example.com/file.toolongextension"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extension_from_url_lowercases_extension() {
+        assert_eq!(
+            extension_from_url("https://example.com/paper.PDF"),
+            Some(".pdf".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extension_from_url_uses_last_segment() {
+        assert_eq!(
+            extension_from_url("https://example.com/dir/paper.html"),
+            Some(".html".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extension_from_url_dot_only_rejected() {
+        // A dot with nothing after it has len == 1, rejected
+        assert_eq!(extension_from_url("https://example.com/file."), None);
+    }
+
+    // --- extract_primary_author ---
+
+    #[test]
+    fn test_extract_primary_author_family_name_from_comma() {
+        assert_eq!(
+            extract_primary_author("Smith, John"),
+            Some("Smith".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_primary_author_multiple_authors_takes_first() {
+        assert_eq!(
+            extract_primary_author("Smith, John; Doe, Jane"),
+            Some("Smith".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_primary_author_no_comma_uses_whole_name() {
+        assert_eq!(
+            extract_primary_author("Einstein"),
+            Some("Einstein".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_primary_author_empty_string_returns_none() {
+        assert_eq!(extract_primary_author(""), None);
+    }
+
+    #[test]
+    fn test_extract_primary_author_whitespace_only_returns_none() {
+        assert_eq!(extract_primary_author("   "), None);
+    }
+
+    #[test]
+    fn test_extract_primary_author_special_chars_sanitized() {
+        // Colon gets sanitized to underscore, but result must be non-empty
+        let result = extract_primary_author("O'Brien, Pat");
+        assert!(result.is_some());
+        assert!(!result.unwrap().contains('\''));
+    }
+
+    // --- extension_from_content_type ---
+
+    #[test]
+    fn test_extension_from_content_type_pdf() {
+        assert_eq!(extension_from_content_type("application/pdf"), ".pdf");
+    }
+
+    #[test]
+    fn test_extension_from_content_type_html() {
+        assert_eq!(extension_from_content_type("text/html"), ".html");
+    }
+
+    #[test]
+    fn test_extension_from_content_type_plain_text() {
+        assert_eq!(extension_from_content_type("text/plain"), ".txt");
+    }
+
+    #[test]
+    fn test_extension_from_content_type_strips_parameters() {
+        assert_eq!(
+            extension_from_content_type("text/html; charset=utf-8"),
+            ".html"
+        );
+    }
+
+    #[test]
+    fn test_extension_from_content_type_case_insensitive() {
+        assert_eq!(extension_from_content_type("Application/PDF"), ".pdf");
+    }
+
+    #[test]
+    fn test_extension_from_content_type_xml_variants() {
+        assert_eq!(extension_from_content_type("application/xml"), ".xml");
+        assert_eq!(extension_from_content_type("text/xml"), ".xml");
+    }
+
+    #[test]
+    fn test_extension_from_content_type_unknown_falls_back_to_bin() {
+        assert_eq!(
+            extension_from_content_type("application/octet-stream"),
+            ".bin"
+        );
+        assert_eq!(extension_from_content_type(""), ".bin");
+    }
+
+    #[test]
+    fn test_extension_from_content_type_javascript() {
+        assert_eq!(extension_from_content_type("text/javascript"), ".js");
+        assert_eq!(extension_from_content_type("application/javascript"), ".js");
+    }
+
+    // --- fallback_filename_from_url ---
+
+    #[test]
+    fn test_fallback_filename_from_url_uses_last_path_segment() {
+        let url = url::Url::parse("https://example.com/papers/thesis.pdf").unwrap();
+        assert_eq!(fallback_filename_from_url(&url), "thesis.pdf");
+    }
+
+    #[test]
+    fn test_fallback_filename_from_url_empty_path_returns_timestamp_fallback() {
+        let url = url::Url::parse("https://example.com/").unwrap();
+        let result = fallback_filename_from_url(&url);
+        assert!(result.starts_with("download_"));
+        assert!(result.ends_with(".bin"));
+    }
+
+    #[test]
+    fn test_fallback_filename_from_url_sanitizes_invalid_chars() {
+        // Colons in the filename component get sanitized
+        let url = url::Url::parse("https://example.com/file%3Aname.pdf").unwrap();
+        let result = fallback_filename_from_url(&url);
+        assert!(!result.contains(':'));
+    }
 }
