@@ -77,8 +77,12 @@ struct AppDefaults {
 
 impl Default for AppDefaults {
     fn default() -> Self {
+        let output_dir = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("Downloads")
+            .join("downloader-output");
         Self {
-            output_dir: PathBuf::from("./downloader-output"),
+            output_dir,
             concurrency: DEFAULT_CONCURRENCY,
         }
     }
