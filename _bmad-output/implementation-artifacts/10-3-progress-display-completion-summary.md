@@ -242,6 +242,9 @@ claude-sonnet-4-6
   8. "Download more" button resets the form
   9. Clicking "Cancel" mid-download stops engine gracefully; status shows "Cancelled — N completed, M failed" (+ error-hint block if any failed)
 - **Code review fixes (post-dev):** AC#9 poll-exit unit test added; `$props()` runes migration applied to `ProgressDisplay.svelte` + `CompletionSummary.svelte`; cancel error-hint gap fixed; File List completed; `cargo fmt` applied.
+- **Post-completion coverage hardening:** `cargo test --workspace --lib` → 584 passed (567 core + 17 app command tests)
+- **Post-completion coverage hardening:** Vitest → 43/43 passing (`DownloadForm` 13, `ProgressDisplay` 12, `CompletionSummary` 10, `utils` 8)
+- **Newly covered branches:** interrupt-slot cleanup helpers, listener teardown, cancel rejection stability, byte-only progress rendering, zero-success partial summaries
 
 ### File List
 
@@ -255,3 +258,14 @@ claude-sonnet-4-6
 - `downloader-app/src/lib/utils.test.ts` (update — 8 tests: formatBytes×6 + urlDomain×2, added negative/NaN guards)
 - `downloader-app/src/lib/DownloadForm.test.ts` (update — added `@tauri-apps/api/event` mock)
 - `downloader-app/src/lib/CompletionSummary.test.ts` (new — 8 tests covering all 5 render paths)
+
+## Post-Completion Coverage Hardening
+
+- [x] AC#3: expanded polling-adjacent backend coverage with helper tests for interrupt-slot cleanup across success, engine-error, and join-error paths
+- [x] AC#4: expanded `ProgressDisplay.test.ts` for byte-only rendering, `progress` value/max assertions, empty active list, and invalid URL fallback display
+- [x] AC#5: expanded `DownloadForm.test.ts` to verify cancel visibility, single-fire cancel invocation, and disabled state after the first click
+- [x] AC#6: codified cancel-result UI behavior, including the cancelled summary path even when `cancel_download` itself rejects
+- [x] AC#7: expanded `CompletionSummary.test.ts` for zero-success partial output and retained reset-button availability
+- [x] AC#9: retained and extended command-side branch tests in `commands.rs` with new cleanup and edge-case coverage
+- [x] AC#10: expanded component coverage in `ProgressDisplay.test.ts` beyond the original single payload assertion
+- [x] AC#12: re-ran `cargo test --workspace --lib` successfully after the added hardening tests

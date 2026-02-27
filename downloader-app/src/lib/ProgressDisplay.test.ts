@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import ProgressDisplay from './ProgressDisplay.svelte';
 
@@ -49,5 +49,57 @@ describe('ProgressDisplay', () => {
     render(ProgressDisplay, { props: { payload } });
     expect(screen.getByText(/arxiv\.org/)).toBeTruthy();
     expect(screen.getByText(/1\.1 MB \/ 3\.2 MB/)).toBeTruthy();
+  });
+
+  it('renders bytes only when content_length is null', () => {
+    const payload = makePayload({
+      in_progress: [
+        { url: 'https://example.com/file.pdf', bytes_downloaded: 2048, content_length: null },
+      ],
+    });
+    render(ProgressDisplay, { props: { payload } });
+    expect(screen.getByText(/^2\.0 KB$/)).toBeTruthy();
+    expect(screen.queryByText(/2\.0 KB \/ /)).toBeNull();
+  });
+
+  it('renders bytes only when content_length is zero', () => {
+    const payload = makePayload({
+      in_progress: [
+        { url: 'https://example.com/file.pdf', bytes_downloaded: 2048, content_length: 0 },
+      ],
+    });
+    render(ProgressDisplay, { props: { payload } });
+    expect(screen.getByText(/^2\.0 KB$/)).toBeTruthy();
+  });
+
+  it('sets progress value to completed plus failed', () => {
+    render(ProgressDisplay, {
+      props: { payload: makePayload({ completed: 2, failed: 1, total: 5 }) },
+    });
+    const progress = screen.getByRole('progressbar') as HTMLProgressElement;
+    expect(progress.value).toBe(3);
+  });
+
+  it('sets progress max to total', () => {
+    render(ProgressDisplay, {
+      props: { payload: makePayload({ completed: 2, failed: 1, total: 5 }) },
+    });
+    const progress = screen.getByRole('progressbar') as HTMLProgressElement;
+    expect(progress.max).toBe(5);
+  });
+
+  it('omits the active downloads list when no items are in progress', () => {
+    render(ProgressDisplay, { props: { payload: makePayload({ in_progress: [] }) } });
+    expect(screen.queryByLabelText(/Active downloads/i)).toBeNull();
+  });
+
+  it('falls back to the raw string when an in-progress item URL is invalid', () => {
+    const payload = makePayload({
+      in_progress: [
+        { url: 'not-a-url', bytes_downloaded: 1024, content_length: null },
+      ],
+    });
+    render(ProgressDisplay, { props: { payload } });
+    expect(screen.getByText(/^not-a-url$/)).toBeTruthy();
   });
 });

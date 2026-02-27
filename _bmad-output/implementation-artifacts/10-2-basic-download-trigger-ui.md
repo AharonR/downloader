@@ -375,6 +375,9 @@ claude-sonnet-4-6
   5. Status shows "downloading…" spinner while resolving/downloading
   6. On completion: "Downloaded N file(s) to ./downloader-output" (or error if network unavailable)
   7. On empty textarea: Download button is disabled (cannot click)
+- **Post-completion coverage hardening:** `cargo test --workspace --lib` → 584 passed (567 core + 17 app command tests)
+- **Post-completion coverage hardening:** Vitest → 43/43 passing (`DownloadForm` 13, `ProgressDisplay` 12, `CompletionSummary` 10, `utils` 8)
+- **Newly covered branches:** config fallback parsing, duplicate-skip enqueue paths, pending UI state, progress-listener cleanup, cancel idempotency, partial/cancel summary rendering
 
 ### File List
 
@@ -395,3 +398,12 @@ claude-sonnet-4-6
 - `Cargo.toml` (workspace root) — `"downloader-app/src-tauri"` added to `[workspace] members`
 - `downloader-app/vite.config.js` — inline test config removed (moved to vitest.config.ts)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — `10-2-basic-download-trigger-ui: done`
+
+## Post-Completion Coverage Hardening
+
+- [x] AC#5: added deterministic config parsing tests for default fallback, valid `output_dir`, valid concurrency, and invalid concurrency bounds
+- [x] AC#8: added direct enqueue-path tests for whitespace-only input, unparseable input, duplicate-only error, and partial success when one new URL enqueues
+- [x] AC#9: expanded command-layer branch tests in `commands.rs` without changing command signatures
+- [x] AC#10: expanded `DownloadForm.test.ts` to cover trimmed payload submission, pending `Downloading…` state, disabled textarea, and backend error rendering
+- [x] AC#12: re-ran `cargo test --workspace --lib` successfully after adding the new command tests
+- [x] AC#14: strengthened the manual-smoke-adjacent UI branch coverage by codifying pending-state and error-state expectations in Vitest

@@ -25,6 +25,13 @@ describe('CompletionSummary', () => {
     expect(screen.getByText(/Downloaded 1 file to/)).toBeTruthy();
   });
 
+  it('success path: keeps the reset button available', () => {
+    render(CompletionSummary, {
+      props: { summary: makeSummary(), onReset: vi.fn() },
+    });
+    expect(screen.getByRole('button', { name: /download more/i })).toBeTruthy();
+  });
+
   it('partial path: shows completed + failed counts', () => {
     render(CompletionSummary, {
       props: { summary: makeSummary({ completed: 2, failed: 1 }), onReset: vi.fn() },
@@ -37,6 +44,14 @@ describe('CompletionSummary', () => {
       props: { summary: makeSummary({ completed: 2, failed: 1 }), onReset: vi.fn() },
     });
     expect(screen.getByText(/Some downloads failed/)).toBeTruthy();
+  });
+
+  it('partial path: omits output dir when nothing completed', () => {
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ completed: 0, failed: 2 }), onReset: vi.fn() },
+    });
+    expect(screen.queryByText(/saved to/)).toBeNull();
+    expect(screen.queryByText(/\/home\/user\/downloads/)).toBeNull();
   });
 
   it('cancel path: shows cancelled status', () => {

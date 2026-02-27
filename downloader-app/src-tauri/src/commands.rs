@@ -90,36 +90,50 @@ impl Default for AppDefaults {
 
 impl AppDefaults {
     fn load() -> Self {
-        let mut defaults = Self::default();
         let config_path = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".downloader")
             .join("config.toml");
         if config_path.exists() {
             if let Ok(raw) = std::fs::read_to_string(&config_path) {
-                for line in raw.lines() {
-                    let line = line.trim();
-                    if let Some(val) = line.strip_prefix("output_dir") {
-                        let val = val
-                            .trim_start_matches(['=', ' ', '"'])
-                            .trim_end_matches('"');
-                        if !val.is_empty() {
-                            defaults.output_dir = PathBuf::from(val);
-                        }
-                    }
-                    if let Some(val) = line.strip_prefix("concurrency") {
-                        let val = val.trim_start_matches(['=', ' ']);
-                        if let Ok(n) = val.parse::<usize>() {
-                            if (1..=100).contains(&n) {
-                                defaults.concurrency = n;
-                            }
-                        }
+                return Self::parse_config_text(&raw, Self::default());
+            }
+        }
+        Self::default()
+    }
+
+    fn parse_config_text(raw: &str, mut defaults: Self) -> Self {
+        for line in raw.lines() {
+            let line = line.trim();
+            if let Some(val) = line.strip_prefix("output_dir") {
+                let val = val
+                    .trim_start_matches(['=', ' ', '"'])
+                    .trim_end_matches('"');
+                if !val.is_empty() {
+                    defaults.output_dir = PathBuf::from(val);
+                }
+            }
+            if let Some(val) = line.strip_prefix("concurrency") {
+                let val = val.trim_start_matches(['=', ' ']);
+                if let Ok(n) = val.parse::<usize>() {
+                    if (1..=100).contains(&n) {
+                        defaults.concurrency = n;
                     }
                 }
             }
         }
         defaults
     }
+}
+
+fn mark_interrupt_requested(state: &AppState) {
+    if let Some(flag) = state.interrupted.lock().unwrap().as_ref() {
+        flag.store(true, Ordering::SeqCst);
+    }
+}
+
+fn clear_interrupt_slot(state: &AppState) {
+    *state.interrupted.lock().unwrap() = None;
 }
 
 // ---------------------------------------------------------------------------
@@ -408,14 +422,14 @@ pub async fn start_download_with_progress(
     let stats = match engine_task.await {
         Err(e) => {
             poll_handle.abort();
-            *state.interrupted.lock().unwrap() = None;
+            clear_interrupt_slot(&state);
             return Err(format!(
                 "What: Internal task error.\nWhy: {e}\nFix: Restart the app."
             ));
         }
         Ok(Err(e)) => {
             poll_handle.abort();
-            *state.interrupted.lock().unwrap() = None;
+            clear_interrupt_slot(&state);
             return Err(format!(
                 "What: Download engine encountered an error.\n\
                  Why: {e}\n\
@@ -440,7 +454,7 @@ pub async fn start_download_with_progress(
     );
 
     // Clear the interrupt flag slot.
-    *state.interrupted.lock().unwrap() = None;
+    clear_interrupt_slot(&state);
 
     Ok(DownloadSummary {
         completed: stats.completed(),
@@ -452,9 +466,7 @@ pub async fn start_download_with_progress(
 /// Sets the interrupt flag to gracefully stop an active `start_download_with_progress` run.
 #[tauri::command]
 pub async fn cancel_download(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    if let Some(flag) = state.interrupted.lock().unwrap().as_ref() {
-        flag.store(true, Ordering::SeqCst);
-    }
+    mark_interrupt_requested(&state);
     Ok(())
 }
 
@@ -465,6 +477,19 @@ pub async fn cancel_download(state: tauri::State<'_, AppState>) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicU64;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn unique_db_path(label: &str) -> PathBuf {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock before epoch")
+            .as_nanos();
+        let seq = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("downloader-{label}-{ts}-{seq}.db"))
+    }
 
     #[tokio::test]
     async fn test_start_download_empty_inputs_returns_error() {
@@ -517,12 +542,170 @@ mod tests {
         assert!(flag_clone.load(Ordering::SeqCst), "flag set after cancel");
     }
 
+    #[test]
+    fn test_parse_config_text_keeps_defaults_for_empty_config() {
+        let defaults = AppDefaults::default();
+        let parsed = AppDefaults::parse_config_text("", AppDefaults::default());
+
+        assert_eq!(parsed.output_dir, defaults.output_dir);
+        assert_eq!(parsed.concurrency, defaults.concurrency);
+    }
+
+    #[test]
+    fn test_parse_config_text_reads_output_dir_override() {
+        let parsed = AppDefaults::parse_config_text(
+            "output_dir = \"/tmp/custom-downloads\"",
+            AppDefaults::default(),
+        );
+
+        assert_eq!(parsed.output_dir, PathBuf::from("/tmp/custom-downloads"));
+    }
+
+    #[test]
+    fn test_parse_config_text_accepts_valid_concurrency() {
+        let parsed = AppDefaults::parse_config_text("concurrency = 7", AppDefaults::default());
+        assert_eq!(parsed.concurrency, 7);
+    }
+
+    #[test]
+    fn test_parse_config_text_rejects_invalid_concurrency_values() {
+        let defaults = AppDefaults::default();
+
+        let zero = AppDefaults::parse_config_text("concurrency = 0", AppDefaults::default());
+        let too_large = AppDefaults::parse_config_text("concurrency = 101", AppDefaults::default());
+        let non_numeric =
+            AppDefaults::parse_config_text("concurrency = nope", AppDefaults::default());
+
+        assert_eq!(zero.concurrency, defaults.concurrency);
+        assert_eq!(too_large.concurrency, defaults.concurrency);
+        assert_eq!(non_numeric.concurrency, defaults.concurrency);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_and_enqueue_rejects_whitespace_only_input() {
+        let db_path = unique_db_path("whitespace-input");
+        let db = Database::new(&db_path).await.expect("test DB");
+        let queue = Queue::new(db);
+
+        let result =
+            resolve_and_enqueue(&["   ".to_string(), "\t".to_string()], &queue).await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("What: No input provided."));
+
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_and_enqueue_rejects_unparseable_input() {
+        let db_path = unique_db_path("garbage-input");
+        let db = Database::new(&db_path).await.expect("test DB");
+        let queue = Queue::new(db);
+
+        let result =
+            resolve_and_enqueue(&["not a url or doi at all".to_string()], &queue).await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("What: No valid URLs or DOIs found in input."));
+
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_and_enqueue_returns_partial_success_when_duplicate_is_skipped() {
+        let db_path = unique_db_path("partial-success");
+        let db = Database::new(&db_path).await.expect("test DB");
+        let queue = Queue::new(db);
+
+        queue
+            .enqueue("https://example.com/already-queued.pdf", "direct_url", None)
+            .await
+            .expect("seed duplicate");
+
+        let result = resolve_and_enqueue(
+            &[
+                "https://example.com/already-queued.pdf".to_string(),
+                "https://example.com/new-file.pdf".to_string(),
+            ],
+            &queue,
+        )
+        .await;
+
+        assert_eq!(result.expect("one item should enqueue"), 1);
+
+        let pending = queue
+            .count_by_status(QueueStatus::Pending)
+            .await
+            .expect("count pending");
+        assert_eq!(pending, 2);
+
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_and_enqueue_returns_error_when_only_duplicates_are_available() {
+        let db_path = unique_db_path("duplicate-only");
+        let db = Database::new(&db_path).await.expect("test DB");
+        let queue = Queue::new(db);
+
+        queue
+            .enqueue("https://example.com/already-queued.pdf", "direct_url", None)
+            .await
+            .expect("seed duplicate");
+
+        let result = resolve_and_enqueue(
+            &["https://example.com/already-queued.pdf".to_string()],
+            &queue,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("What: Download could not start."));
+
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn test_mark_interrupt_requested_is_noop_when_no_active_flag() {
+        let state = AppState::default();
+        mark_interrupt_requested(&state);
+        assert!(state.interrupted.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_clear_interrupt_slot_resets_state_on_success_path() {
+        let state = AppState {
+            interrupted: Mutex::new(Some(Arc::new(AtomicBool::new(false)))),
+        };
+        clear_interrupt_slot(&state);
+        assert!(state.interrupted.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_clear_interrupt_slot_resets_state_on_engine_error_path() {
+        let state = AppState {
+            interrupted: Mutex::new(Some(Arc::new(AtomicBool::new(true)))),
+        };
+        clear_interrupt_slot(&state);
+        assert!(state.interrupted.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_clear_interrupt_slot_resets_state_on_join_error_path() {
+        let state = AppState {
+            interrupted: Mutex::new(Some(Arc::new(AtomicBool::new(true)))),
+        };
+        clear_interrupt_slot(&state);
+        assert!(state.interrupted.lock().unwrap().is_none());
+    }
+
     /// AC#9: Verifies the polling exit condition (`completed + failed >= enqueued`) is
     /// satisfied once all queued items reach a terminal state — i.e., the loop would break.
     #[tokio::test]
     async fn test_poll_exit_condition_triggers_when_all_items_terminal() {
-        let db_path =
-            std::env::temp_dir().join(format!("downloader-test-poll-{}.db", std::process::id()));
+        let db_path = unique_db_path("poll-exit");
         let db = Database::new(&db_path).await.expect("test DB");
         let queue = Queue::new(db);
 
