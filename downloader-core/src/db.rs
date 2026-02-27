@@ -61,6 +61,13 @@ pub enum DbError {
     /// Failed to run migrations.
     #[error("failed to run migrations: {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
+
+    /// Failed to create the directory that holds the database file.
+    #[error("failed to create database directory '{path}': {source}")]
+    DirectoryCreate {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
 }
 
 /// Database connection wrapper with connection pool.
@@ -86,7 +93,8 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns `DbError::Connection` if the connection fails,
+    /// Returns `DbError::DirectoryCreate` if the parent directory cannot be created,
+    /// `DbError::Connection` if the connection fails,
     /// or `DbError::Migration` if migrations fail.
     #[instrument(skip(db_path), fields(path = %db_path.display()))]
     pub async fn new(db_path: &Path) -> Result<Self, DbError> {
@@ -97,13 +105,23 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns `DbError::Connection` if the connection fails,
+    /// Returns `DbError::DirectoryCreate` if the parent directory cannot be created,
+    /// `DbError::Connection` if the connection fails,
     /// or `DbError::Migration` if migrations fail.
     #[instrument(skip(db_path, options), fields(path = %db_path.display()))]
     pub async fn new_with_options(
         db_path: &Path,
         options: &DatabaseOptions,
     ) -> Result<Self, DbError> {
+        if let Some(parent) = db_path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).map_err(|e| DbError::DirectoryCreate {
+                    path: parent.to_path_buf(),
+                    source: e,
+                })?;
+            }
+        }
+
         let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
 
         let pool = SqlitePoolOptions::new()
@@ -402,6 +420,29 @@ mod tests {
         assert!(
             result.is_ok(),
             "Download log parse confidence columns should exist after migration"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_database_new_creates_missing_parent_directory() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        // Nest two levels deep — neither exists yet.
+        let db_path = temp_dir.path().join("a").join("b").join("test.db");
+
+        assert!(
+            !db_path.parent().unwrap().exists(),
+            "parent directory must not exist before the test"
+        );
+
+        let db = Database::new(&db_path).await;
+        assert!(
+            db.is_ok(),
+            "Database::new should create missing parent directories, got: {:?}",
+            db.err()
+        );
+        assert!(
+            db_path.exists(),
+            "database file should exist after successful open"
         );
     }
 

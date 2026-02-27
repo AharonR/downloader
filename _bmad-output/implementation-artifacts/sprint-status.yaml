@@ -130,6 +130,7 @@ development_status:
   10-1-workspace-extraction-tauri-init: done
   10-2-basic-download-trigger-ui: done
   10-3-progress-display-completion-summary: done
+  epic-10-retrospective: done
 
 # NFR Assessment Gate
 nfr_assessment_status: PASS
