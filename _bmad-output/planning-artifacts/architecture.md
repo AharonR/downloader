@@ -194,34 +194,41 @@ tokio-test = "0.4"    # Async test utilities
 downloader/
 ├── Cargo.toml
 ├── src/
-│   ├── lib.rs              # Library root: pub mod declarations
+│   ├── lib.rs              # Library root: pub mod declarations + pub use re-exports
 │   ├── main.rs             # CLI entry point
-│   ├── cli.rs              # CLI argument definitions (clap)
-│   ├── download/
-│   │   ├── mod.rs          # Download engine
-│   │   ├── client.rs       # HTTP client wrapper
-│   │   └── progress.rs     # Progress tracking
-│   ├── queue/
-│   │   ├── mod.rs          # Queue manager
-│   │   └── priority.rs     # Priority queue implementation
-│   ├── resolver/
-│   │   ├── mod.rs          # Resolver trait + registry
-│   │   ├── direct.rs       # Direct URL resolver
-│   │   ├── doi.rs          # DOI resolver
-│   │   └── sites/          # Site-specific resolvers
-│   ├── parser/
-│   │   ├── mod.rs          # Input parsing
-│   │   ├── url.rs          # URL extraction
-│   │   ├── doi.rs          # DOI detection
-│   │   └── bibliography.rs # Reference string parsing
-│   └── storage/
-│       ├── mod.rs          # Storage abstraction
-│       ├── metadata.rs     # JSON-LD envelope
-│       └── log.rs          # Download logging
+│   ├── cli.rs              # CLI argument definitions (clap derive)
+│   ├── app_config.rs       # App configuration
+│   ├── db.rs               # Database connection + migrations
+│   ├── user_agent.rs       # User-Agent string construction
+│   ├── bin/                # Additional binary targets (extract_md_links, stress_sidecar_flaky)
+│   ├── app/                # Application orchestration layer
+│   ├── commands/           # CLI command implementations
+│   ├── auth/               # Authentication & cookie management
+│   ├── download/           # Download engine
+│   ├── failure/            # Failure taxonomy
+│   ├── output/             # CLI output formatting
+│   ├── parser/             # Input parsing
+│   ├── project/            # Project directory management
+│   ├── queue/              # Download queue + history
+│   ├── resolver/           # Resolver trait + registry + site resolvers
+│   ├── search/             # Past-download search
+│   ├── sidecar/            # JSON-LD sidecar generation
+│   ├── test_support/       # In-lib test utilities
+│   └── topics/             # Topic extraction + normalization
 └── tests/
-    ├── download_tests.rs   # Integration tests for download engine
-    ├── resolver_tests.rs   # Resolver integration tests
-    └── cli_tests.rs        # CLI end-to-end tests
+    ├── auth_integration.rs
+    ├── cli_e2e.rs
+    ├── critical.rs         # Entry point for adversarial failure-mode suite
+    ├── critical/           # Auth bypass, encryption failures, race conditions, etc.
+    ├── download_engine_integration.rs
+    ├── download_integration.rs
+    ├── exit_code_partial_e2e.rs
+    ├── integration_matrix.rs
+    ├── nonfunctional_regression_gates.rs
+    ├── parser_integration.rs
+    ├── queue_integration.rs
+    ├── resolver_integration.rs
+    └── support/            # Shared test utilities (test_db, socket_guard)
 ```
 
 **Architectural Decisions Provided:**
@@ -250,13 +257,15 @@ cargo test                     # All tests
 
 **Migration Path to Tauri (v2):**
 
+v1 ships as CLI only. GUI migration is the planned next phase.
+
 When ready for GUI, extract to workspace:
 1. Create `downloader-app/` with `cargo create-tauri-app`
 2. Move `src/lib.rs` tree to `downloader-core/src/`
 3. Update workspace `Cargo.toml` to include both crates
 4. Tauri app imports `downloader_core` as dependency
 
-Estimated refactor effort: minimal (code already separated).
+Estimated refactor effort: minimal — the lib/bin split was validated across all 8 implementation epics; the public API surface in `lib.rs` is stable and behavior contracts are tested.
 
 **Note:** Project initialization using these commands should be the first implementation story.
 
@@ -767,14 +776,14 @@ assert!(result.is_ok());  // What was the error?
 **Test Fixtures:**
 
 ```rust
-// tests/common/mod.rs
+// tests/support/mod.rs
 pub fn load_fixture(name: &str) -> String {
     std::fs::read_to_string(format!("tests/fixtures/{}", name))
         .expect("fixture should exist")
 }
 
 // Usage in tests
-use crate::common::load_fixture;
+use crate::support::load_fixture;
 
 #[test]
 fn test_parser_handles_crossref_response() {
@@ -917,180 +926,225 @@ Error [AUTH_REQUIRED]: Cannot access ...
 
 ```
 downloader/
-├── .github/
-│   └── workflows/
-│       ├── ci.yml                    # Build, test, clippy, fmt check
-│       └── release.yml               # Binary releases for platforms
-│
 ├── src/
-│   ├── lib.rs                        # Library root: pub mod declarations
-│   ├── main.rs                       # CLI entry point
-│   ├── cli.rs                        # clap argument definitions
-│   ├── error.rs                      # Unified error type and Result alias
+│   ├── lib.rs                        # Library root: pub mod declarations + pub use re-exports
+│   ├── main.rs                       # CLI entry point (anyhow, single #[tokio::main])
+│   ├── cli.rs                        # clap derive-style argument definitions
+│   ├── app_config.rs                 # App configuration (replaces planned src/config/)
+│   ├── db.rs                         # Database connection + migrations (replaces planned src/storage/)
+│   ├── user_agent.rs                 # User-Agent string construction
 │   │
-│   ├── config/
-│   │   ├── mod.rs                    # Config loading and merging
-│   │   └── default.toml              # Compiled-in defaults (include_str!)
+│   ├── bin/                          # Additional binary targets
+│   │   ├── extract_md_links.rs
+│   │   └── stress_sidecar_flaky.rs
 │   │
-│   ├── parser/
-│   │   ├── mod.rs                    # Input parsing coordinator
-│   │   ├── url.rs                    # URL extraction and validation
-│   │   ├── doi.rs                    # DOI detection and normalization
-│   │   ├── reference.rs              # Reference string parsing
-│   │   └── bibliography.rs           # BibTeX/bibliography parsing
+│   ├── app/                          # Application orchestration layer
+│   │   ├── mod.rs
+│   │   ├── command_dispatcher.rs
+│   │   ├── config_manager.rs
+│   │   ├── config_runtime.rs
+│   │   ├── context.rs
+│   │   ├── download_orchestrator.rs
+│   │   ├── exit_handler.rs
+│   │   ├── input_processor.rs
+│   │   ├── progress_manager.rs
+│   │   ├── queue_manager.rs
+│   │   ├── resolution_orchestrator.rs
+│   │   ├── runtime.rs
+│   │   ├── terminal.rs
+│   │   └── validation.rs
 │   │
-│   ├── resolver/
-│   │   ├── mod.rs                    # Resolver trait, registry, resolution loop
-│   │   ├── registry.rs               # Resolver registration and lookup
-│   │   ├── context.rs                # ResolveContext for passing state
-│   │   ├── direct.rs                 # Direct URL resolver (passthrough)
-│   │   ├── doi.rs                    # DOI → Crossref → publisher resolver
-│   │   └── sites/
-│   │       ├── mod.rs                # Site-specific resolver registry
-│   │       ├── arxiv.rs              # arXiv.org resolver
-│   │       ├── pubmed.rs             # PubMed/PMC resolver
-│   │       └── generic.rs            # Generic HTML PDF link extractor
+│   ├── commands/                     # CLI command implementations
+│   │   ├── mod.rs
+│   │   ├── auth.rs
+│   │   ├── config.rs
+│   │   ├── dry_run.rs
+│   │   ├── log.rs
+│   │   └── search.rs
 │   │
-│   ├── download/
-│   │   ├── mod.rs                    # Download engine coordinator
-│   │   ├── client.rs                 # reqwest client wrapper
-│   │   ├── progress.rs               # Progress tracking and display
-│   │   ├── retry.rs                  # Retry logic with backoff
-│   │   └── stream.rs                 # Streaming download handler
+│   ├── auth/                         # Authentication & cookie management
+│   │   ├── mod.rs
+│   │   ├── capture.rs
+│   │   ├── cookies.rs
+│   │   ├── runtime_cookies.rs
+│   │   └── storage.rs                # KeyStorage enum (OsKeychain/InMemory/Environment)
 │   │
-│   ├── queue/
-│   │   ├── mod.rs                    # Queue manager
-│   │   ├── item.rs                   # QueueItem struct
-│   │   ├── priority.rs               # Priority queue implementation
-│   │   └── concurrency.rs            # Semaphore-based concurrency control
+│   ├── download/                     # Download engine
+│   │   ├── mod.rs
+│   │   ├── client.rs
+│   │   ├── constants.rs
+│   │   ├── error.rs                  # Module-local error type
+│   │   ├── filename.rs
+│   │   ├── rate_limiter.rs
+│   │   ├── retry.rs
+│   │   ├── robots.rs
+│   │   ├── engine.rs                 # Engine module root (Rust 2018 style: engine.rs + engine/)
+│   │   └── engine/
+│   │       ├── error_mapping.rs
+│   │       ├── persistence.rs
+│   │       └── task.rs
 │   │
-│   ├── auth/
-│   │   ├── mod.rs                    # Authentication coordinator
-│   │   ├── cookies.rs                # Cookie jar management
-│   │   ├── storage.rs                # Encrypted cookie persistence
-│   │   └── keychain.rs               # OS keychain integration (KeyStorage enum)
+│   ├── failure/                      # Failure taxonomy
+│   │   └── mod.rs
 │   │
-│   ├── storage/
-│   │   ├── mod.rs                    # Storage abstraction
-│   │   ├── database.rs               # SQLite connection and queries
-│   │   ├── schema.sql                # Database schema (embedded via include_str!)
-│   │   ├── metadata.rs               # JSON-LD envelope handling
-│   │   ├── project.rs                # Project directory management
-│   │   └── log.rs                    # Structured event logging
+│   ├── output/                       # CLI output formatting
+│   │   └── mod.rs
 │   │
-│   ├── output/
-│   │   ├── mod.rs                    # CLI output formatting
-│   │   ├── progress.rs               # Progress bars (indicatif)
-│   │   ├── summary.rs                # Download summary display
-│   │   └── errors.rs                 # Error formatting with suggestions
+│   ├── parser/                       # Input parsing
+│   │   ├── mod.rs
+│   │   ├── bibliography.rs
+│   │   ├── bibtex.rs
+│   │   ├── doi.rs
+│   │   ├── error.rs                  # Module-local error type
+│   │   ├── input.rs
+│   │   ├── reference.rs
+│   │   └── url.rs
 │   │
-│   └── util/
-│       ├── mod.rs                    # Shared utilities
-│       ├── clock.rs                  # Clock trait for testing
-│       └── fs.rs                     # File system helpers
+│   ├── project/                      # Project directory management
+│   │   └── mod.rs
+│   │
+│   ├── queue/                        # Download queue + history
+│   │   ├── mod.rs
+│   │   ├── error.rs                  # Module-local error type
+│   │   ├── history.rs
+│   │   ├── item.rs
+│   │   └── repository.rs
+│   │
+│   ├── resolver/                     # Resolver trait + registry + site resolvers
+│   │   ├── mod.rs
+│   │   ├── arxiv.rs
+│   │   ├── crossref.rs               # Crossref DOI resolution
+│   │   ├── direct.rs
+│   │   ├── error.rs                  # Module-local error type
+│   │   ├── http_client.rs
+│   │   ├── ieee.rs
+│   │   ├── pubmed.rs
+│   │   ├── registry.rs               # build_default_resolver_registry()
+│   │   ├── sciencedirect.rs
+│   │   ├── springer.rs
+│   │   └── utils.rs
+│   │
+│   ├── search/                       # Past-download search
+│   │   └── mod.rs
+│   │
+│   ├── sidecar/                      # JSON-LD sidecar generation
+│   │   └── mod.rs
+│   │
+│   ├── test_support/                 # In-lib test utilities
+│   │   ├── mod.rs
+│   │   └── socket_guard.rs
+│   │
+│   └── topics/                       # Topic extraction + normalization
+│       ├── mod.rs
+│       ├── extractor.rs
+│       └── normalizer.rs
 │
 ├── tests/
-│   ├── common/
-│   │   └── mod.rs                    # Shared test utilities, test_db()
-│   ├── fixtures/
-│   │   ├── crossref_response.json    # Sample Crossref API response
-│   │   ├── doi_list.txt              # Sample input file
-│   │   └── sciencedirect_page.html   # Sample publisher page
-│   ├── resolver_integration.rs       # Resolver chain tests (mocked HTTP)
-│   ├── download_integration.rs       # Download engine tests
-│   ├── queue_integration.rs          # Queue persistence tests
-│   ├── auth_integration.rs           # Authentication flow tests
-│   └── cli_e2e.rs                    # End-to-end CLI tests
+│   ├── auth_integration.rs
+│   ├── cli_e2e.rs
+│   ├── critical.rs                   # Entry point for adversarial suite
+│   ├── critical/                     # Failure-mode tests (auth bypass, encryption, races, etc.)
+│   ├── download_engine_integration.rs
+│   ├── download_integration.rs
+│   ├── exit_code_partial_e2e.rs
+│   ├── integration_matrix.rs
+│   ├── nonfunctional_regression_gates.rs
+│   ├── optimization_refactor_commands.rs
+│   ├── parser_integration.rs
+│   ├── queue_integration.rs
+│   ├── resolver_integration.rs
+│   └── support/                      # Shared test utilities (was tests/common/)
+│       ├── mod.rs
+│       ├── critical_utils.rs
+│       └── socket_guard.rs
+│
+├── .github/
+│   └── workflows/
+│       ├── phase-rollout-gates.yml   # Build, test, clippy, fmt, audit
+│       ├── coverage.yml              # cargo llvm-cov coverage reporting
+│       └── stress-sidecar-flaky.yml  # Sidecar stress test
 │
 ├── Cargo.toml                        # Dependencies and lib/bin config
 ├── Cargo.lock                        # Locked dependency versions
 ├── rust-toolchain.toml               # Rust version specification
 ├── rustfmt.toml                      # Formatter configuration
 ├── clippy.toml                       # Linter configuration
+├── .cargo/audit.toml                 # Accepted security advisories
 ├── .gitignore
-├── .env.example                      # Environment variable template
 ├── LICENSE
 └── README.md
 ```
 
 ### Error Module Structure
 
-```rust
-// src/error.rs
+Each module defines its own error type using `thiserror`. There is no unified `src/error.rs` — errors stay module-local and are converted at module boundaries via `From` impls.
 
+```rust
+// Pattern used in each module, e.g. src/resolver/error.rs
 use thiserror::Error;
 
-/// Unified error type for the downloader library
 #[derive(Debug, Error)]
-pub enum Error {
-    #[error(transparent)]
-    Config(#[from] config::Error),
-
-    #[error(transparent)]
-    Parser(#[from] parser::Error),
-
-    #[error(transparent)]
-    Resolver(#[from] resolver::Error),
-
-    #[error(transparent)]
-    Download(#[from] download::Error),
-
-    #[error(transparent)]
-    Queue(#[from] queue::Error),
-
-    #[error(transparent)]
-    Auth(#[from] auth::Error),
-
-    #[error(transparent)]
-    Storage(#[from] storage::Error),
+pub enum ResolveError {
+    #[error("resolution failed: {0}")]
+    ResolutionFailed(String),
+    // ...
 }
 
-/// Result type alias for library operations
-pub type Result<T> = std::result::Result<T, Error>;
+// src/download/error.rs, src/queue/error.rs, src/parser/error.rs follow the same pattern
 ```
+
+**Error handling boundary (enforced in `src/lib.rs`):**
+- Library code (`src/`): `thiserror` with module-scoped error enums
+- Binary code (`main.rs`, `cli.rs`): `anyhow` for ergonomic propagation
+- `#[deny(clippy::expect_used)]` enforced at lib level — no `.expect()` in library code
 
 ### Module Ownership Mapping
 
 | Directory | Primary Epic | Dependencies | Notes |
 |-----------|-------------|--------------|-------|
-| `src/error.rs` | Infrastructure | None | All modules depend on this |
-| `src/config/` | Infrastructure | None | Loaded at startup |
+| `src/app_config.rs` | Infrastructure | None | App configuration; replaces planned `src/config/` |
+| `src/db.rs` | Infrastructure | None | SQLite connection + migrations; replaces planned `src/storage/` |
+| `src/user_agent.rs` | Infrastructure | None | User-Agent string construction |
+| `src/app/` | Orchestration | download, resolver, parser, queue, auth, db | Application orchestration layer; all command dispatch |
+| `src/commands/` | CLI | app, auth, queue, search | Per-command implementations (auth, config, dry_run, log, search) |
 | `src/parser/` | Input Parsing | None | Pure parsing, no I/O |
-| `src/resolver/` | Resolver System | parser, auth | URL resolution pipeline |
-| `src/download/` | Core Download | auth, storage | HTTP operations |
-| `src/queue/` | Core Download | storage | Task orchestration |
-| `src/auth/` | Authentication | storage | Cookie/credential management |
-| `src/storage/` | Persistence | None | SQLite, all state lives here |
+| `src/resolver/` | Resolver System | parser, auth | Trait + registry + all site resolvers (flat, no `sites/` subdir) |
+| `src/download/` | Core Download | auth, db | HTTP operations; `engine/` submodule for task lifecycle |
+| `src/queue/` | Core Download | db | Task orchestration + download history |
+| `src/auth/` | Authentication | db | Cookie management; `storage.rs` holds `KeyStorage` enum |
+| `src/failure/` | Reliability | queue | Failure taxonomy and categorization |
+| `src/project/` | Organization | db | Project directory management; was planned in `src/storage/` |
+| `src/search/` | History | db | Past-download search |
+| `src/sidecar/` | Metadata | parser, topics | JSON-LD sidecar generation |
+| `src/topics/` | Metadata | parser | Topic extraction + normalization |
 | `src/output/` | CLI | None | Display formatting |
-| `src/util/` | Infrastructure | None | Shared helpers |
+| `src/test_support/` | Testing | None | In-lib test utilities; replaces planned `tests/common/` |
 
 ### Architectural Boundaries
 
 **Library Boundary (`src/lib.rs`):**
 ```rust
-// Public API exposed by downloader_core
-pub mod config;
-pub mod parser;
-pub mod resolver;
-pub mod download;
-pub mod queue;
+// Public API exposed by downloader_core (as-built)
 pub mod auth;
-pub mod storage;
-pub mod output;
+pub mod db;
+pub mod download;
+pub mod parser;
+pub mod queue;
+pub mod resolver;
+pub mod sidecar;
+#[cfg(test)]
+pub mod test_support;    // In-lib test utilities; cfg(test) only
+pub mod topics;
+pub(crate) mod user_agent;  // Internal only
 
-mod util;  // Internal only
-
-// Unified error handling
-pub mod error;
-pub use error::{Error, Result};
-
-// Convenience re-exports
-pub use config::Config;
-pub use parser::ParsedInput;
-pub use resolver::{Resolver, ResolveStep, Registry};
-pub use download::DownloadResult;
-pub use queue::{Queue, QueueItem};
-pub use storage::Database;
+// Convenience re-exports (selected — see src/lib.rs for full list)
+pub use db::{Database, DatabaseOptions};
+pub use parser::{Confidence, ParsedItem, ParseResult, parse_input};
+pub use resolver::{Resolver, ResolveStep, ResolverRegistry, build_default_resolver_registry};
+pub use download::{DownloadEngine, QueueProcessingOptions};
+pub use queue::{Queue, QueueItem, QueueError};
+pub use sidecar::{SidecarConfig, generate_sidecar};
+pub use topics::{TopicExtractor, extract_keywords};
 ```
 
 **Dependency Direction (No Cycles):**
@@ -1222,11 +1276,12 @@ downloader
 ### Test Utilities
 
 ```rust
-// tests/common/mod.rs
+// tests/support/mod.rs  (was planned as tests/common/mod.rs)
+// src/test_support/mod.rs  — in-lib utilities for unit tests
 
-use downloader_core::storage::Database;
+use downloader::db::Database;
 
-/// Create an in-memory database for unit tests
+/// Create an in-memory database for unit tests (see src/test_support/mod.rs for actual helper)
 pub fn test_db() -> Database {
     Database::open_in_memory().expect("test database should initialize")
 }
@@ -1258,7 +1313,7 @@ cargo clippy                   # Lint check
 cargo fmt                      # Format code
 ```
 
-**CI Pipeline (`.github/workflows/ci.yml`):**
+**CI Pipeline (`.github/workflows/phase-rollout-gates.yml`):**
 ```yaml
 jobs:
   check:
@@ -1292,8 +1347,8 @@ jobs:
 |-------------|--------------|------------|
 | Input Parsing (6) | URL, DOI, reference, bibliography, batch, validation | `parser/` module |
 | Download Engine (7) | HTTP, auth, resolvers, retry, concurrency, rate limit, resume | `download/`, `resolver/`, `queue/` |
-| Organization (6) | Projects, naming, indexing, topics, metadata, dedup | `storage/`, `config/` |
-| Logging & Memory (5) | Download log, failure tracking, queryable history | `storage/log.rs`, SQLite |
+| Organization (6) | Projects, naming, indexing, topics, metadata, dedup | `project/`, `sidecar/`, `topics/`, `app_config.rs` |
+| Logging & Memory (5) | Download log, failure tracking, queryable history | `queue/history.rs`, `failure/`, SQLite via `db.rs` |
 | CLI Interface (6) | stdin, flags, progress, summary, dry-run, config | `cli.rs`, `output/` |
 
 **Non-Functional Requirements (10/10 covered):**
@@ -1358,17 +1413,11 @@ CREATE TABLE events (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE cookies (
-    id INTEGER PRIMARY KEY,
-    domain TEXT NOT NULL,
-    name TEXT NOT NULL,
-    value_encrypted BLOB NOT NULL,
-    expires_at TEXT,
-    scope TEXT NOT NULL DEFAULT 'global',  -- global, project
-    project_id TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(domain, name, scope, project_id)
-);
+-- Note: cookies are NOT stored in SQLite.
+-- Cookie data is stored in an XChaCha20Poly1305-encrypted file.
+-- The master encryption key is held in the OS keychain (macOS Keychain /
+-- Windows Credential Manager). See src/auth/storage.rs — KeyStorage enum.
+-- This is a better security decision: cookie data never transits SQLite unencrypted.
 
 -- Indexes for common queries
 CREATE INDEX idx_downloads_status ON downloads(status);
@@ -1376,7 +1425,6 @@ CREATE INDEX idx_downloads_doi ON downloads(doi);
 CREATE INDEX idx_queue_priority ON queue_items(priority DESC, created_at ASC);
 CREATE INDEX idx_queue_domain ON queue_items(domain);
 CREATE INDEX idx_events_download ON events(download_id);
-CREATE INDEX idx_cookies_domain ON cookies(domain);
 ```
 
 ### Test Coverage Guidelines
@@ -1387,11 +1435,14 @@ CREATE INDEX idx_cookies_domain ON cookies(domain);
 |--------|----------|-----------------|-------------|
 | `parser/` | HIGH | 90%+ | All input formats, edge cases |
 | `resolver/` | HIGH | 85%+ | Each resolver, fallback chains |
-| `download/` | MEDIUM | 80%+ | Retry logic, error handling |
-| `queue/` | MEDIUM | 80%+ | Priority ordering, concurrency |
 | `auth/` | HIGH | 85%+ | Cookie handling, encryption |
-| `storage/` | MEDIUM | 80%+ | CRUD operations, migrations |
-| `config/` | LOW | 70%+ | Merge logic, defaults |
+| `download/` | MEDIUM | 80%+ | Retry logic, error handling |
+| `queue/` | MEDIUM | 80%+ | Concurrency, persistence, history |
+| `db.rs` | MEDIUM | 80%+ | Migrations, WAL mode, query correctness |
+| `sidecar/` | MEDIUM | 75%+ | JSON-LD generation, field mapping |
+| `topics/` | MEDIUM | 75%+ | Extraction, normalization |
+| `search/` | MEDIUM | 75%+ | Query correctness, ranking |
+| `app_config.rs` | LOW | 70%+ | Merge logic, defaults |
 | `output/` | LOW | 60%+ | Format correctness |
 
 **Critical Paths Requiring Integration Tests:**
@@ -1467,10 +1518,11 @@ cargo test
 ```
 
 **Key Files to Reference:**
-- `src/error.rs` - Import Error and Result from here
-- `src/lib.rs` - All public exports live here
-- `tests/common/mod.rs` - Use test_db() for database tests
-- `src/config/default.toml` - Compiled-in defaults
+- `src/lib.rs` - All public exports live here; module-local `error.rs` files own each module's error type
+- `src/app_config.rs` - App configuration (replaces planned `src/config/`)
+- `src/db.rs` - Database connection + migrations (replaces planned `src/storage/`)
+- `src/test_support/mod.rs` - Use `test_db()` and `SocketGuard` for tests (replaces planned `tests/common/`)
+- `tests/support/mod.rs` - Shared integration test utilities
 
 ## Architecture Completion Summary
 
@@ -1516,7 +1568,7 @@ cargo new downloader --lib
 **Development Sequence:**
 1. Initialize project using documented starter template
 2. Set up development environment per architecture
-3. Implement core architectural foundations (error.rs, config, storage)
+3. Implement core architectural foundations (db.rs, app_config.rs, module-local error types)
 4. Build features following established patterns
 5. Maintain consistency with documented rules
 

@@ -1,4 +1,4 @@
-# generated: 2026-02-25
+# generated: 2026-02-25  # updated: 2026-02-25 — Epic 9 done; 9-2 ratified (Tauri → Epic 10)
 # project: Downloader
 # project_key: downloader
 # tracking_system: file-system
@@ -118,6 +118,18 @@ development_status:
   8-4-query-past-downloads: done
   8-5-additional-site-resolvers: done
   epic-8-retrospective: done
+
+  # Epic 9: Post-Launch Maintenance & Planning
+  epic-9: done
+  9-1-architecture-as-built-amendment: done
+  9-2-ui-scope-evaluation: done
+  epic-9-retrospective: done
+
+  # Epic 10: Tauri Desktop App - "I can use a native desktop GUI"
+  epic-10: done
+  10-1-workspace-extraction-tauri-init: done
+  10-2-basic-download-trigger-ui: done
+  10-3-progress-display-completion-summary: done
 
 # NFR Assessment Gate
 nfr_assessment_status: PASS

@@ -1,0 +1,75 @@
+[package]
+name = "downloader-core"
+version = "0.1.0"
+edition = "2024"
+authors = ["fierce"]
+description = "Core library for the downloader tool"
+license = "MIT"
+
+[lib]
+name = "downloader_core"
+path = "src/lib.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.13", features = ["json", "cookies", "stream", "gzip"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+
+# Async trait objects - required for dyn Resolver dispatch (Rust 2024 native async traits are not object-safe)
+async-trait = "0.1"
+
+# Logging
+tracing = "0.1"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
+
+# Streaming downloads - required for bytes_stream() on reqwest responses
+futures-util = "0.3"
+
+# URL parsing - required for filename extraction from URLs
+url = "2"
+
+# URL encoding/decoding - required for Content-Disposition filename parsing
+urlencoding = "2"
+
+# Regex - required for URL pattern extraction from text input
+regex = "1"
+
+# Random number generation - required for retry jitter
+rand = "0.8"
+
+# Thread-safe concurrent HashMap - required for per-domain rate limiting (Story 1.7)
+dashmap = "5.5"
+
+# RFC 7231 HTTP-date parsing - required for Retry-After header (Story 1.7)
+httpdate = "1.0"
+
+# Encryption at rest for persisted auth cookies (Story 4.4)
+chacha20poly1305 = "0.10"
+sha2 = "0.10"
+
+# System keychain access for encryption key management (Story 4.4)
+keyring = "3"
+
+# Keyword extraction for topic auto-detection (Story 8.1)
+# Using RAKE algorithm - simple, unsupervised, no training data required
+rake = "0.2"
+# Stop words filtering for better keyword quality
+stop-words = "0.8"
+
+[dev-dependencies]
+wiremock = "0.6"
+tempfile = "3"
+tokio-test = "0.4"
+libc = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -36,7 +36,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy gate
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --workspace -- -D warnings
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
@@ -74,15 +74,15 @@ jobs:
       - name: Core test gate
         env:
           DOWNLOADER_REQUIRE_SOCKET_TESTS: "1"
-        run: cargo test --all-targets
+        run: cargo test --workspace --all-targets
 
       - name: Targeted integration gate
         env:
           DOWNLOADER_REQUIRE_SOCKET_TESTS: "1"
         run: |
-          cargo test --test queue_integration
-          cargo test --test download_engine_integration
-          cargo test --test cli_e2e
+          cargo test --test queue_integration -p downloader-core
+          cargo test --test download_engine_integration -p downloader-core
+          cargo test --test cli_e2e -p downloader-cli
 
   nonfunctional-gates:
     name: nonfunctional-gates
@@ -100,4 +100,4 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run non-functional regression gates
-        run: cargo test --test nonfunctional_regression_gates -- --ignored --nocapture
+        run: cargo test --test nonfunctional_regression_gates -p downloader-core -- --ignored --nocapture

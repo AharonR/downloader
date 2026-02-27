@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Downloader — UX Design Directions</title>
+<style>
+  :root {
+    --amber-bg:        #111008;
+    --amber-surface:   #1c1a0f;
+    --amber-elevated:  #252210;
+    --amber-border:    #2d2a1a;
+    --amber-focus:     #d4a017;
+    --amber-text:      #e8e0c8;
+    --amber-muted:     #8a8070;
+    --amber-faint:     #5a5040;
+    --amber-accent:    #d4a017;
+    --amber-success:   #7db87d;
+    --amber-warning:   #e07b39;
+    --amber-error:     #c0392b;
+
+    --terminal-bg:     #0d0d0d;
+    --terminal-surface:#1a1a1a;
+    --terminal-border: #2a2a2a;
+    --terminal-text:   #e0e0e0;
+    --terminal-muted:  #666666;
+    --terminal-accent: #00cc66;
+
+    --font-mono: ui-monospace, 'SF Mono', Cascadia Code, Consolas, monospace;
+    --font-sans: system-ui, -apple-system, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0a0a;
+    color: #ccc;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    padding: 24px;
+  }
+
+  h1 { color: #fff; font-size: 18px; margin-bottom: 8px; }
+  .subtitle { color: #666; font-size: 12px; margin-bottom: 32px; }
+
+  .direction-nav {
+    display: flex; gap: 8px; margin-bottom: 32px; flex-wrap: wrap;
+  }
+  .direction-nav button {
+    background: #1a1a1a; border: 1px solid #333; color: #ccc;
+    padding: 6px 16px; cursor: pointer; font-size: 12px;
+    font-family: var(--font-sans);
+  }
+  .direction-nav button.active {
+    background: #d4a017; border-color: #d4a017; color: #111;
+  }
+
+  .direction { display: none; }
+  .direction.active { display: block; }
+
+  .direction-label {
+    color: var(--amber-muted); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.1em; margin-bottom: 16px;
+  }
+
+  .screens {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+  }
+
+  .screen-label {
+    color: #555; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.1em; margin-bottom: 8px; font-family: var(--font-mono);
+  }
+
+  /* ===== DIRECTION 1: Classic Download Manager ===== */
+  .d1 .app-window {
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-border);
+    height: 480px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+
+  .d1 .title-bar {
+    background: var(--amber-elevated);
+    border-bottom: 1px solid var(--amber-border);
+    padding: 6px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .d1 .title-bar .app-name {
+    color: var(--amber-text); font-size: 12px; font-family: var(--font-mono);
+    font-weight: 600;
+  }
+  .d1 .title-bar .controls {
+    display: flex; gap: 6px;
+  }
+  .d1 .title-bar .ctrl {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--amber-border);
+  }
+
+  .d1 .input-view { padding: 24px; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .d1 .input-zone {
+    width: 100%; max-width: 500px;
+    border: 1px solid var(--amber-border);
+    background: var(--amber-surface);
+    padding: 16px;
+  }
+  .d1 .input-zone .label {
+    color: var(--amber-muted); font-size: 11px;
+    font-family: var(--font-mono); margin-bottom: 8px;
+  }
+  .d1 .input-zone textarea {
+    width: 100%; height: 80px; background: transparent;
+    border: none; color: var(--amber-text); font-family: var(--font-mono);
+    font-size: 12px; resize: none; outline: none;
+  }
+  .d1 .input-zone textarea::placeholder { color: var(--amber-faint); }
+  .d1 .parse-echo {
+    width: 100%; max-width: 500px; margin-top: 8px;
+    color: var(--amber-accent); font-family: var(--font-mono);
+    font-size: 12px; font-weight: 600;
+  }
+  .d1 .mode-toggle {
+    width: 100%; max-width: 500px; margin-top: 12px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .d1 .toggle-option {
+    color: var(--amber-muted); font-size: 11px; cursor: pointer;
+  }
+  .d1 .toggle-option.active { color: var(--amber-accent); }
+  .d1 .toggle-sep { color: var(--amber-border); }
+  .d1 .download-btn {
+    width: 100%; max-width: 500px; margin-top: 12px;
+    background: var(--amber-accent); border: none;
+    color: #111; font-family: var(--font-mono); font-size: 12px;
+    font-weight: 700; padding: 8px; cursor: pointer; text-align: center;
+    letter-spacing: 0.05em; text-transform: uppercase;
+  }
+
+  /* Run view */
+  .d1 .run-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .d1 .table-header {
+    display: grid;
+    grid-template-columns: 1fr 90px 80px 70px 70px;
+    gap: 0;
+    border-bottom: 1px solid var(--amber-border);
+    background: var(--amber-elevated);
+    padding: 0 8px;
+  }
+  .d1 .th {
+    padding: 5px 4px;
+    color: var(--amber-muted); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
+  }
+  .d1 .table-body { flex: 1; overflow-y: auto; }
+  .d1 .table-row {
+    display: grid;
+    grid-template-columns: 1fr 90px 80px 70px 70px;
+    border-bottom: 1px solid var(--amber-border);
+    padding: 0 8px;
+    align-items: center;
+    height: 32px;
+  }
+  .d1 .table-row:hover { background: var(--amber-elevated); }
+  .d1 .td {
+    padding: 0 4px;
+    font-family: var(--font-mono); font-size: 11px; color: var(--amber-text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .d1 .td.muted { color: var(--amber-muted); }
+  .d1 .td.success { color: var(--amber-success); }
+  .d1 .td.active { color: var(--amber-accent); }
+  .d1 .td.error { color: var(--amber-error); }
+  .d1 .progress-bar {
+    height: 4px; background: var(--amber-border);
+    border-radius: 1px; overflow: hidden; margin: 2px 4px;
+  }
+  .d1 .progress-fill {
+    height: 100%; background: var(--amber-accent);
+  }
+
+  .d1 .status-bar {
+    border-top: 1px solid var(--amber-border);
+    background: var(--amber-elevated);
+    padding: 4px 8px;
+    display: flex; gap: 16px; align-items: center;
+  }
+  .d1 .status-item {
+    font-family: var(--font-mono); font-size: 10px; color: var(--amber-muted);
+  }
+  .d1 .status-item span { color: var(--amber-text); }
+  .d1 .status-spinner { color: var(--amber-accent); }
+
+  /* Results view */
+  .d1 .results-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .d1 .tab-bar {
+    display: flex; border-bottom: 1px solid var(--amber-border);
+    background: var(--amber-elevated);
+  }
+  .d1 .tab {
+    padding: 8px 16px; font-size: 11px;
+    font-family: var(--font-mono); color: var(--amber-muted); cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .d1 .tab.active { color: var(--amber-accent); border-bottom-color: var(--amber-accent); }
+  .d1 .results-content { flex: 1; padding: 12px; overflow-y: auto; }
+  .d1 .session-card {
+    border: 1px solid var(--amber-border);
+    background: var(--amber-surface);
+    padding: 12px;
+  }
+  .d1 .session-title {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+    color: var(--amber-text); margin-bottom: 4px;
+  }
+  .d1 .session-meta {
+    font-family: var(--font-mono); font-size: 11px; color: var(--amber-muted);
+    margin-bottom: 8px;
+  }
+  .d1 .session-counts {
+    display: flex; gap: 12px; margin-bottom: 12px;
+  }
+  .d1 .count { font-family: var(--font-mono); font-size: 12px; }
+  .d1 .count.success { color: var(--amber-success); }
+  .d1 .count.warning { color: var(--amber-warning); }
+  .d1 .session-actions { display: flex; gap: 8px; }
+  .d1 .action-btn {
+    background: var(--amber-elevated); border: 1px solid var(--amber-border);
+    color: var(--amber-text); font-family: var(--font-mono); font-size: 11px;
+    padding: 5px 10px; cursor: pointer;
+  }
+  .d1 .action-btn:hover { border-color: var(--amber-accent); color: var(--amber-accent); }
+
+  .d1 .collection-list { padding: 0; }
+  .d1 .project-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0; border-bottom: 1px solid var(--amber-border);
+  }
+  .d1 .project-name {
+    font-family: var(--font-mono); font-size: 12px; color: var(--amber-text);
+  }
+  .d1 .project-count {
+    font-family: var(--font-mono); font-size: 11px; color: var(--amber-muted);
+  }
+
+  /* ===== DIRECTION 2: Terminal Green ===== */
+  .d2 .app-window {
+    background: var(--terminal-bg);
+    border: 1px solid var(--terminal-border);
+    height: 480px; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .d2 .title-bar {
+    background: var(--terminal-surface);
+    border-bottom: 1px solid var(--terminal-border);
+    padding: 6px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .d2 .app-name { color: var(--terminal-accent); font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+  .d2 .ctrl { width: 10px; height: 10px; border-radius: 50%; background: var(--terminal-border); }
+  .d2 .controls { display: flex; gap: 6px; }
+
+  .d2 .input-view { padding: 24px; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .d2 .prompt-line {
+    width: 100%; max-width: 500px;
+    font-family: var(--font-mono); font-size: 12px; color: var(--terminal-accent);
+    margin-bottom: 4px;
+  }
+  .d2 .input-zone {
+    width: 100%; max-width: 500px;
+    border: 1px solid var(--terminal-border); background: var(--terminal-surface);
+    padding: 12px;
+  }
+  .d2 .input-zone textarea {
+    width: 100%; height: 80px; background: transparent; border: none;
+    color: var(--terminal-text); font-family: var(--font-mono); font-size: 12px;
+    resize: none; outline: none;
+  }
+  .d2 .input-zone textarea::placeholder { color: var(--terminal-muted); }
+  .d2 .parse-echo { width: 100%; max-width: 500px; margin-top: 8px; }
+  .d2 .parse-line { font-family: var(--font-mono); font-size: 11px; color: var(--terminal-accent); }
+  .d2 .parse-line.dim { color: var(--terminal-muted); }
+  .d2 .mode-row {
+    width: 100%; max-width: 500px; margin-top: 10px;
+    display: flex; gap: 8px; align-items: center;
+    font-family: var(--font-mono); font-size: 11px;
+  }
+  .d2 .mode-label { color: var(--terminal-muted); }
+  .d2 .mode-opt { color: var(--terminal-accent); cursor: pointer; }
+  .d2 .mode-opt.inactive { color: var(--terminal-muted); text-decoration: underline; }
+  .d2 .download-btn {
+    width: 100%; max-width: 500px; margin-top: 10px;
+    background: transparent; border: 1px solid var(--terminal-accent);
+    color: var(--terminal-accent); font-family: var(--font-mono); font-size: 12px;
+    font-weight: 700; padding: 7px; cursor: pointer; text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .d2 .download-btn:hover { background: var(--terminal-accent); color: #000; }
+
+  .d2 .run-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .d2 .table-header {
+    display: grid; grid-template-columns: 1fr 90px 80px 70px 70px;
+    border-bottom: 1px solid var(--terminal-border);
+    background: var(--terminal-surface); padding: 0 8px;
+  }
+  .d2 .th { padding: 5px 4px; color: var(--terminal-accent); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; font-family: var(--font-mono); }
+  .d2 .table-body { flex: 1; overflow-y: auto; }
+  .d2 .table-row {
+    display: grid; grid-template-columns: 1fr 90px 80px 70px 70px;
+    border-bottom: 1px solid #161616; padding: 0 8px; height: 32px; align-items: center;
+  }
+  .d2 .table-row:hover { background: var(--terminal-surface); }
+  .d2 .td { padding: 0 4px; font-family: var(--font-mono); font-size: 11px; color: var(--terminal-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .d2 .td.muted { color: var(--terminal-muted); }
+  .d2 .td.active { color: var(--terminal-accent); }
+  .d2 .td.success { color: var(--terminal-accent); }
+  .d2 .td.error { color: #e74c3c; }
+  .d2 .progress-bar { height: 4px; background: var(--terminal-border); border-radius: 1px; overflow: hidden; margin: 2px 4px; }
+  .d2 .progress-fill { height: 100%; background: var(--terminal-accent); }
+  .d2 .status-bar {
+    border-top: 1px solid var(--terminal-border); background: var(--terminal-surface);
+    padding: 4px 8px; display: flex; gap: 16px; align-items: center;
+  }
+  .d2 .status-item { font-family: var(--font-mono); font-size: 10px; color: var(--terminal-muted); }
+  .d2 .status-item span { color: var(--terminal-accent); }
+
+  .d2 .results-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .d2 .tab-bar { display: flex; border-bottom: 1px solid var(--terminal-border); background: var(--terminal-surface); }
+  .d2 .tab { padding: 8px 16px; font-size: 11px; font-family: var(--font-mono); color: var(--terminal-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .d2 .tab.active { color: var(--terminal-accent); border-bottom-color: var(--terminal-accent); }
+  .d2 .results-content { flex: 1; padding: 12px; overflow-y: auto; }
+  .d2 .session-card { border: 1px solid var(--terminal-border); background: var(--terminal-surface); padding: 12px; }
+  .d2 .session-title { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--terminal-text); margin-bottom: 4px; }
+  .d2 .session-meta { font-family: var(--font-mono); font-size: 11px; color: var(--terminal-muted); margin-bottom: 8px; }
+  .d2 .session-counts { display: flex; gap: 12px; margin-bottom: 12px; }
+  .d2 .count { font-family: var(--font-mono); font-size: 12px; }
+  .d2 .count.success { color: var(--terminal-accent); }
+  .d2 .count.warning { color: #f5a623; }
+  .d2 .session-actions { display: flex; gap: 8px; }
+  .d2 .action-btn { background: transparent; border: 1px solid var(--terminal-border); color: var(--terminal-text); font-family: var(--font-mono); font-size: 11px; padding: 5px 10px; cursor: pointer; }
+  .d2 .action-btn:hover { border-color: var(--terminal-accent); color: var(--terminal-accent); }
+  .d2 .project-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--terminal-border); }
+  .d2 .project-name { font-family: var(--font-mono); font-size: 12px; color: var(--terminal-text); }
+  .d2 .project-count { font-family: var(--font-mono); font-size: 11px; color: var(--terminal-muted); }
+
+  /* ===== DIRECTION 3: Obsidian Slate ===== */
+  .d3 .app-window {
+    background: #0f0f13; border: 1px solid #313244;
+    height: 480px; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .d3 .title-bar { background: #1e1e2e; border-bottom: 1px solid #313244; padding: 6px 12px; display: flex; align-items: center; justify-content: space-between; }
+  .d3 .app-name { color: #89b4fa; font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+  .d3 .ctrl { width: 10px; height: 10px; border-radius: 50%; background: #313244; }
+  .d3 .controls { display: flex; gap: 6px; }
+  .d3 .input-view { padding: 24px; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .d3 .input-zone { width: 100%; max-width: 500px; border: 1px solid #313244; background: #1e1e2e; padding: 16px; border-radius: 2px; }
+  .d3 .input-zone textarea { width: 100%; height: 80px; background: transparent; border: none; color: #cdd6f4; font-family: var(--font-mono); font-size: 12px; resize: none; outline: none; }
+  .d3 .input-zone textarea::placeholder { color: #585b70; }
+  .d3 .parse-echo { width: 100%; max-width: 500px; margin-top: 8px; color: #89b4fa; font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+  .d3 .mode-toggle { width: 100%; max-width: 500px; margin-top: 12px; display: flex; align-items: center; gap: 12px; }
+  .d3 .toggle-option { color: #585b70; font-size: 11px; cursor: pointer; font-family: var(--font-mono); }
+  .d3 .toggle-option.active { color: #89b4fa; }
+  .d3 .download-btn { width: 100%; max-width: 500px; margin-top: 12px; background: #89b4fa; border: none; color: #0f0f13; font-family: var(--font-mono); font-size: 12px; font-weight: 700; padding: 8px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 2px; }
+  .d3 .run-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .d3 .table-header { display: grid; grid-template-columns: 1fr 90px 80px 70px 70px; border-bottom: 1px solid #313244; background: #1e1e2e; padding: 0 8px; }
+  .d3 .th { padding: 5px 4px; color: #585b70; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; font-family: var(--font-mono); }
+  .d3 .table-body { flex: 1; overflow-y: auto; }
+  .d3 .table-row { display: grid; grid-template-columns: 1fr 90px 80px 70px 70px; border-bottom: 1px solid #1a1a24; padding: 0 8px; height: 32px; align-items: center; }
+  .d3 .table-row:hover { background: #1e1e2e; }
+  .d3 .td { padding: 0 4px; font-family: var(--font-mono); font-size: 11px; color: #cdd6f4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .d3 .td.muted { color: #585b70; }
+  .d3 .td.active { color: #89b4fa; }
+  .d3 .td.success { color: #a6e3a1; }
+  .d3 .td.error { color: #f38ba8; }
+  .d3 .progress-bar { height: 4px; background: #313244; border-radius: 1px; overflow: hidden; margin: 2px 4px; }
+  .d3 .progress-fill { height: 100%; background: #89b4fa; }
+  .d3 .status-bar { border-top: 1px solid #313244; background: #1e1e2e; padding: 4px 8px; display: flex; gap: 16px; align-items: center; }
+  .d3 .status-item { font-family: var(--font-mono); font-size: 10px; color: #585b70; }
+  .d3 .status-item span { color: #89b4fa; }
+  .d3 .results-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .d3 .tab-bar { display: flex; border-bottom: 1px solid #313244; background: #1e1e2e; }
+  .d3 .tab { padding: 8px 16px; font-size: 11px; font-family: var(--font-mono); color: #585b70; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .d3 .tab.active { color: #89b4fa; border-bottom-color: #89b4fa; }
+  .d3 .results-content { flex: 1; padding: 12px; overflow-y: auto; }
+  .d3 .session-card { border: 1px solid #313244; background: #1e1e2e; padding: 12px; border-radius: 2px; }
+  .d3 .session-title { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: #cdd6f4; margin-bottom: 4px; }
+  .d3 .session-meta { font-family: var(--font-mono); font-size: 11px; color: #585b70; margin-bottom: 8px; }
+  .d3 .session-counts { display: flex; gap: 12px; margin-bottom: 12px; }
+  .d3 .count { font-family: var(--font-mono); font-size: 12px; }
+  .d3 .count.success { color: #a6e3a1; }
+  .d3 .count.warning { color: #f9e2af; }
+  .d3 .session-actions { display: flex; gap: 8px; }
+  .d3 .action-btn { background: transparent; border: 1px solid #313244; color: #cdd6f4; font-family: var(--font-mono); font-size: 11px; padding: 5px 10px; cursor: pointer; border-radius: 2px; }
+  .d3 .action-btn:hover { border-color: #89b4fa; color: #89b4fa; }
+  .d3 .project-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #252535; }
+  .d3 .project-name { font-family: var(--font-mono); font-size: 12px; color: #cdd6f4; }
+  .d3 .project-count { font-family: var(--font-mono); font-size: 11px; color: #585b70; }
+
+  /* ===== SHARED REUSABLE NOTE ===== */
+  .direction-notes {
+    margin-top: 16px; padding: 12px;
+    background: #141414; border: 1px solid #222;
+    font-size: 12px; color: #888;
+  }
+  .direction-notes strong { color: #ccc; }
+</style>
+</head>
+<body>
+
+<h1>Downloader — UX Design Directions</h1>
+<p class="subtitle">Three theme directions × three views (/input · /run · /results). Open in browser.</p>
+
+<div class="direction-nav">
+  <button class="active" onclick="showDir('d1')">① Warm Amber (Default)</button>
+  <button onclick="showDir('d2')">② Terminal Dark</button>
+  <button onclick="showDir('d3')">③ Obsidian Slate</button>
+</div>
+
+<!-- ===== DIRECTION 1: WARM AMBER ===== -->
+<div class="direction d1 active" id="dir-d1">
+  <div class="direction-label">Direction ① — Warm Amber · Handcrafted · Anti-corporate · Proud ownership</div>
+  <div class="screens">
+
+    <!-- INPUT VIEW -->
+    <div>
+      <div class="screen-label">/input — Invitation</div>
+      <div class="app-window">
+        <div class="title-bar">
+          <span class="app-name">downloader</span>
+          <div class="controls"><div class="ctrl"></div><div class="ctrl"></div><div class="ctrl"></div></div>
+        </div>
+        <div class="input-view">
+          <div class="input-zone">
+            <div class="label">PASTE ANYTHING — URLs, DOIs, references, .bib files</div>
+            <textarea placeholder="https://example.com/paper.pdf&#10;10.1234/doi.example&#10;Smith et al. 2024..."></textarea>
+          </div>
+          <div class="parse-echo">Parsed 47 items: 32 URLs · 12 DOIs · 3 references · ⚠ 2 unrecognised</div>
+          <div class="mode-toggle">
+            <span class="toggle-option active">Watch results</span>
+            <span class="toggle-sep">·</span>
+            <span class="toggle-option">Walk away</span>
+          </div>
+          <div class="download-btn">Download →</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RUN VIEW -->
+    <div>
+      <div class="screen-label">/run — Progress</div>
+      <div class="app-window">
+        <div class="title-bar">
+          <span class="app-name">downloader · Climate Research</span>
+          <div class="controls"><div class="ctrl"></div><div class="ctrl"></div><div class="ctrl"></div></div>
+        </div>
+        <div class="run-view">
+          <div class="table-header">
+            <div class="th">FILENAME</div>
+            <div class="th">SOURCE</div>
+            <div class="th">TYPE</div>
+            <div class="th">SIZE</div>
+            <div class="th">STATUS</div>
+          </div>
+          <div class="table-body">
+            <div class="table-row">
+              <div class="td">smith-2024-climate-feedback.pdf</div>
+              <div class="td muted">nature.com</div>
+              <div class="td muted">DOI</div>
+              <div class="td muted">2.4 MB</div>
+              <div class="td success">✓ done</div>
+            </div>
+            <div class="table-row">
+              <div class="td">jones-2023-arctic-temps.pdf</div>
+              <div class="td muted">sciencedirect</div>
+              <div class="td muted">URL</div>
+              <div class="td">
+                <div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div>
+              </div>
+              <div class="td active">⠋ 65%</div>
+            </div>
+            <div class="table-row">
+              <div class="td">ipcc-report-2024-ch3.pdf</div>
+              <div class="td muted">ipcc.ch</div>
+              <div class="td muted">URL</div>
+              <div class="td muted">—</div>
+              <div class="td muted">queued</div>
+            </div>
+            <div class="table-row">
+              <div class="td">miller-2022-sea-level.pdf</div>
+              <div class="td muted">springer.com</div>
+              <div class="td muted">DOI</div>
+              <div class="td muted">—</div>
+              <div class="td muted">queued</div>
+            </div>
+            <div class="table-row">
+              <div class="td">chen-2024-co2-model.pdf</div>
+              <div class="td muted">agu.org</div>
+              <div class="td muted">ref</div>
+              <div class="td muted">—</div>
+              <div class="td muted">queued</div>
+            </div>
+            <div class="table-row">
+              <div class="td">broken-link-2019.pdf</div>
+              <div class="td muted">example.com</div>
+              <div class="td muted">URL</div>
+              <div class="td muted">—</div>
+              <div class="td error">✗ 404</div>
+            </div>
+          </div>
+          <div class="status-bar">
+            <div class="status-item status-spinner">⠋</div>
+            <div class="status-item"><span>12/47</span> complete</div>
+            <div class="status-item">sciencedirect.com</div>
+            <div class="status-item"><span>340 KB/s</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESULTS VIEW -->
+    <div>
+      <div class="screen-label">/results — Exploration</div>
+      <div class="app-window">
+        <div class="title-bar">
+          <span class="app-name">downloader · results</span>
+          <div class="controls"><div class="ctrl"></div><div class="ctrl"></div><div class="ctrl"></div></div>
+        </div>
+        <div class="results-view">
+          <div class="tab-bar">
+            <div class="tab active">This run</div>
+            <div class="tab">Collection</div>
+          </div>
+          <div class="results-content">
+            <div class="session-card">
+              <div class="session-title">Climate Research</div>
+              <div class="session-meta">Feb 25, 2026 · 14:32 · /Projects/Climate-Research/</div>
+              <div class="session-counts">
+                <div class="count success">✓ 44 downloaded</div>
+                <div class="count warning">⚠ 3 need attention</div>
+              </div>
+              <div class="session-actions">
+                <button class="action-btn">Explore results</button>
+                <button class="action-btn">View failures</button>
+                <button class="action-btn">Open folder</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <div class="direction-notes">
+    <strong>Warm Amber</strong> — Gold accent (#d4a017) on near-black (#111008). Dense monospace tables.
+    32px row height. Border-not-shadow cards. No rounded corners.
+    Feels: handcrafted, ownership, anti-corporate, proudly old.
+  </div>
+</div>
+
+<!-- ===== DIRECTION 2: TERMINAL DARK ===== -->
+<div class="direction d2" id="dir-d2">
+  <div class="direction-label">Direction ② — Terminal Dark · µTorrent DNA · Classic download manager</div>
+  <div class="screens">
+
+    <div>
+      <div class="screen-label">/input — Invitation</div>
+      <div class="app-window">
+        <div class="title-bar">
+          <span class="app-name">downloader</span>
+          <div class="controls"><div class="ctrl"></div><div class="ctrl"></div><div class="ctrl"></div></div>
+        </div>
+        <div class="input-view">
+          <div class="prompt-line">&gt; paste your references below:</div>
+          <div class="input-zone">
+            <textarea placeholder="https://example.com/paper.pdf&#10;10.1234/doi.example&#10;Smith et al. 2024..."></textarea>
+          </div>
+          <div class="parse-echo">
+            <div class="parse-line">&gt; parsed 47 items</div>
+            <div class="parse-line dim">  32 urls  12 dois  3 refs  2 unrecognised</div>
+          </div>
+          <div class="mode-row">
+            <span class="mode-label">mode:</span>
+            <span class="mode-opt">[watch]</span>
+            <span class="mode-opt inactive">[walk-away]</span>
+          </div>
+          <div class="download-btn">[ download ]</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="screen-label">/run — Progress</div>
+      <div class="app-window">
+        <div class="title-bar">
+          <span class="app-name">downloader · Climate Research · 12/47</span>
+          <div class="controls"><div class="ctrl"></div><div class="ctrl"></div><div class="ctrl"></div></div>
+        </div>
+        <div class="run-view">
+          <div class="table-header">
+            <div class="th">FILENAME</div>
+            <div class="th">SOURCE</div>
+            <div class="th">TYPE</div>
+            <div class="th">SIZE</div>
+            <div class="th">STATUS</div>
+          </div>
+          <div class="table-body">
+            <div class="table-row">
+              <div class="td">smith-2024-climate-feedback.pdf</div>
+              <div class="td muted">nature.com</div>
+              <div class="td muted">DOI</div>
+              <div class="td muted">2.4 MB</div>
+              <div class="td success">✓ done</div>
+            </div>
+            <div class="table-row">
+              <div class="td">jones-2023-arctic-temps.pdf</div>
+              <div class="td muted">sciencedirect</div>
+              <div class="td muted">URL</div>
+              <div class="td">
+                <div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div>
+              </div>
+              <div class="td active">⠋ 65%</div>
+            </div>
+            <div class="table-row">
+              <div class="td">ipcc-report-2024-ch3.pdf</div>
+              <div class="td muted">ipcc.ch</div>
+              <div class="td muted">URL</div>
+              <div class="td muted">—</div>
+              <div class="td muted">queued</div>
+            </div>
+            <div class="table-row">
+              <div class="td">miller-2022-sea-level.pdf</div>
+              <div class="td muted">springer.com</div>
+              <div class="td muted">DOI</div>
+              <div class="td muted">—</div>
+              <div class="td muted">queued</div>
+            </div>
+            <div class="table-row">
+              <div class="td">broken-link-2019.pdf</div>
+              <div class="td muted">example.com</div>
+              <div class="td muted">URL</div>
+              <div class="td muted">—</div>
+              <div class="td error">✗ 404</div>
+            </div>
+          </div>
+          <div class="status-bar">
+            <div class="status-item">⠋</div>
+            <div class="status-item"><span>12/47</span></div>
+            <div class="status-item">sciencedirect.com</div>
+            <div class="status-item"><span>340 KB/s</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="screen-label">/results — Exploration</div>
+      <div class="app-window">
+        <div class="title-bar">
+          <span class="app-name">downloader · results</span>
+          <div class="controls"><div class="ctrl"></div><div class="ctrl"></div><div class="ctrl"></div></div>
+        </div>
+        <div class="results-view">
+          <div class="tab-bar">
+            <div class="tab active">This run</div>
+            <div class="tab">Collection</div>
+          </div>
+          <div class="results-content">
+            <div class="session-card">
+              <div class="session-title">Climate Research</div>
+              <div class="session-meta">Feb 25, 2026 · 14:32</div>
+              <div class="session-counts">
+                <div class="count success">✓ 44</div>
+                <div class="count warning">⚠ 3</div>
+              </div>
+              <div class="session-actions">
+                <button class="action-btn">[explore]</button>
+                <button class="action-btn">[failures]</button>
+                <button class="action-btn">[open folder]</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="direction-notes">
+    <strong>Terminal Dark</strong> — Green accent (#00cc66) on near-black (#0d0d0d).
+    Maximum eMule/µTorrent DNA. Terminal-prompt input style.
+    Feels: hardcore, download-tool, early 2000s power user.
+  </div>
+</div>
+
+<!-- ===== DIRECTION 3: OBSIDIAN SLATE ===== -->
+<div class="direction d3" id="dir-d3">
+  <div class="direction-label">Direction ③ — Obsidian Slate · Researcher-familiar · Modern local-first</div>
+  <div class="screens">
+
+    <div>
+      <div class="screen-label">/input — Invitation</div>
+      <div class="app-window">
+        <div class="title-bar">
+          <span class="app-name">downloader</span>
+          <div class="controls"><div class="ctrl"></div><div class="ctrl"></div><div class="ctrl"></div></div>
+        </div>
+        <div class="input-view">
+          <div class="input-zone">
+            <textarea placeholder="Paste anything — URLs, DOIs, references, .bib files"></textarea>
+          </div>
+          <div class="parse-echo">Parsed 47 items: 32 URLs · 12 DOIs · 3 references · ⚠ 2 unrecognised</div>
+          <div class="mode-toggle">
+            <span class="toggle-option active" style="font-family:var(--font-mono);font-size:11px;">Watch results</span>
+            <span style="color:#313244;font-family:var(--font-mono);font-size:11px;"> · </span>
+            <span class="toggle-option" style="font-family:var(--font-mono);font-size:11px;">Walk away</span>
+          </div>
+          <div class="download-btn">Download →</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="screen-label">/run — Progress</div>
+      <div class="app-window">
+        <div class="title-bar">
+          <span class="app-name">downloader · Climate Research</span>
+          <div class="controls"><div class="ctrl"></div><div class="ctrl"></div><div class="ctrl"></div></div>
+        </div>
+        <div class="run-view">
+          <div class="table-header">
+            <div class="th">FILENAME</div>
+            <div class="th">SOURCE</div>
+            <div class="th">TYPE</div>
+            <div class="th">SIZE</div>
+            <div class="th">STATUS</div>
+          </div>
+          <div class="table-body">
+            <div class="table-row">
+              <div class="td">smith-2024-climate-feedback.pdf</div>
+              <div class="td muted">nature.com</div>
+              <div class="td muted">DOI</div>
+              <div class="td muted">2.4 MB</div>
+              <div class="td success">✓ done</div>
+            </div>
+            <div class="table-row">
+              <div class="td">jones-2023-arctic-temps.pdf</div>
+              <div class="td muted">sciencedirect</div>
+              <div class="td muted">URL</div>
+              <div class="td">
+                <div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div>
+              </div>
+              <div class="td active">⠋ 65%</div>
+            </div>
+            <div class="table-row">
+              <div class="td">ipcc-report-2024-ch3.pdf</div>
+              <div class="td muted">ipcc.ch</div>
+              <div class="td muted">URL</div>
+              <div class="td muted">—</div>
+              <div class="td muted">queued</div>
+            </div>
+            <div class="table-row">
+              <div class="td">miller-2022-sea-level.pdf</div>
+              <div class="td muted">springer.com</div>
+              <div class="td muted">DOI</div>
+              <div class="td muted">—</div>
+              <div class="td muted">queued</div>
+            </div>
+            <div class="table-row">
+              <div class="td">broken-link-2019.pdf</div>
+              <div class="td muted">example.com</div>
+              <div class="td muted">URL</div>
+              <div class="td muted">—</div>
+              <div class="td error">✗ 404</div>
+            </div>
+          </div>
+          <div class="status-bar">
+            <div class="status-item">⠋</div>
+            <div class="status-item"><span>12/47</span> complete</div>
+            <div class="status-item">sciencedirect.com</div>
+            <div class="status-item"><span>340 KB/s</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="screen-label">/results — Exploration</div>
+      <div class="app-window">
+        <div class="title-bar">
+          <span class="app-name">downloader · results</span>
+          <div class="controls"><div class="ctrl"></div><div class="ctrl"></div><div class="ctrl"></div></div>
+        </div>
+        <div class="results-view">
+          <div class="tab-bar">
+            <div class="tab active">This run</div>
+            <div class="tab">Collection</div>
+          </div>
+          <div class="results-content">
+            <div class="session-card">
+              <div class="session-title">Climate Research</div>
+              <div class="session-meta">Feb 25, 2026 · 14:32 · /Projects/Climate-Research/</div>
+              <div class="session-counts">
+                <div class="count success">✓ 44 downloaded</div>
+                <div class="count warning">⚠ 3 need attention</div>
+              </div>
+              <div class="session-actions">
+                <button class="action-btn">Explore results</button>
+                <button class="action-btn">View failures</button>
+                <button class="action-btn">Open folder</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="direction-notes">
+    <strong>Obsidian Slate</strong> — Blue accent (#89b4fa, Catppuccin Mocha) on deep slate (#0f0f13).
+    Researcher-familiar aesthetic. Slightly softer than Terminal Dark.
+    Feels: academic tool, modern local-first, Obsidian-familiar.
+  </div>
+</div>
+
+<script>
+function showDir(id) {
+  document.querySelectorAll('.direction').forEach(d => d.classList.remove('active'));
+  document.querySelectorAll('.direction-nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('dir-' + id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>
