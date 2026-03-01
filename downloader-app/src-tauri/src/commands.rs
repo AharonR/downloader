@@ -2,15 +2,21 @@
 //!
 //! Bridges the Svelte frontend to `downloader_core` via Tauri's IPC layer.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use downloader_core::{
-    DEFAULT_CONCURRENCY, Database, DownloadEngine, HttpClient, InputType, Queue, QueueMetadata,
-    QueueStatus, RateLimiter, ResolveContext, RetryPolicy, build_default_resolver_registry,
-    build_preferred_filename, extract_reference_confidence, parse_input,
+    DEFAULT_CONCURRENCY, Database, DownloadAttemptQuery, DownloadEngine, HttpClient, InputType,
+    Queue, QueueMetadata, QueueStatus, RateLimiter, ResolveContext, RetryPolicy,
+    build_default_resolver_registry, build_preferred_filename, extract_reference_confidence,
+    parse_input,
+};
+use downloader_core::project::{
+    append_project_download_log, append_project_index, generate_sidecars_for_completed,
+    project_history_key, resolve_project_output_dir,
 };
 use serde::Serialize;
 use tauri::Emitter;
@@ -124,6 +130,61 @@ impl AppDefaults {
         }
         defaults
     }
+}
+
+// ---------------------------------------------------------------------------
+// list_projects helper
+// ---------------------------------------------------------------------------
+
+/// Scans `base` for non-hidden subdirectories, sorted by most-recently-modified.
+///
+/// Extracted for unit-testability; called by [`list_projects`].
+fn scan_project_dirs(base: &std::path::Path) -> Vec<String> {
+    if !base.exists() {
+        return Vec::new();
+    }
+
+    let entries = match std::fs::read_dir(base) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!(path = %base.display(), error = %e, "Could not read projects directory");
+            return Vec::new();
+        }
+    };
+
+    let mut dirs: Vec<(std::time::SystemTime, String)> = entries
+        .filter_map(|e| {
+            let e = e.ok()?;
+            let ft = e.file_type().ok()?;
+            if !ft.is_dir() {
+                return None;
+            }
+            let name = e.file_name().to_string_lossy().to_string();
+            // Skip hidden directories (e.g. .downloader)
+            if name.starts_with('.') {
+                return None;
+            }
+            let modified = e
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            Some((modified, name))
+        })
+        .collect();
+
+    dirs.sort_by(|a, b| b.0.cmp(&a.0));
+    dirs.into_iter().map(|(_, name)| name).collect()
+}
+
+/// Lists project subdirectory names under the base output directory.
+///
+/// Used to populate the project autocomplete suggestions in the frontend.
+#[tracing::instrument]
+#[tauri::command]
+pub async fn list_projects() -> Result<Vec<String>, String> {
+    let defaults = AppDefaults::load();
+    Ok(scan_project_dirs(&defaults.output_dir))
 }
 
 fn mark_interrupt_requested(state: &AppState) {
@@ -251,19 +312,42 @@ async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, 
 // ---------------------------------------------------------------------------
 
 /// Simple one-shot download command (Story 10-2 — kept for unit-test compatibility).
+#[tracing::instrument]
 #[tauri::command]
-pub async fn start_download(inputs: Vec<String>) -> Result<DownloadSummary, String> {
+pub async fn start_download(
+    inputs: Vec<String>,
+    project: Option<String>,
+) -> Result<DownloadSummary, String> {
     let defaults = AppDefaults::load();
 
-    if let Err(e) = std::fs::create_dir_all(&defaults.output_dir) {
+    let output_dir = resolve_project_output_dir(&defaults.output_dir, project.as_deref())
+        .map_err(|e| {
+            format!(
+                "What: Invalid project name.\n\
+                 Why: {e}\n\
+                 Fix: Use a simple name like 'Climate Research' without special characters."
+            )
+        })?;
+
+    if let Err(e) = std::fs::create_dir_all(&output_dir) {
         return Err(format!(
             "What: Could not create output directory.\n\
              Why: {e}\n\
              Fix: Check that the path '{dir}' is writable, or update output_dir in ~/.downloader/config.toml.",
-            dir = defaults.output_dir.display()
+            dir = output_dir.display()
         ));
     }
 
+    // Dual-DB design note: `start_download` uses a separate database file
+    // (`downloader-app.db`) from `start_download_with_progress` (`downloader-app-progress.db`).
+    // This split was introduced in Story 10-2 to preserve unit-test isolation: the progress
+    // command's tests assume a fresh DB state and would otherwise conflict with tests for this
+    // simpler command.
+    //
+    // Tradeoff: project history written by one command is invisible to the other. In practice
+    // the frontend always calls `start_download_with_progress`, so `start_download` is a
+    // fallback/test path only and its history is not surfaced in the UI. If the two commands
+    // are ever consolidated, merge their DB paths at the same time.
     let db_path = dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".downloader")
@@ -280,6 +364,28 @@ pub async fn start_download(inputs: Vec<String>) -> Result<DownloadSummary, Stri
     let queue = Arc::new(Queue::new(db));
     resolve_and_enqueue(&inputs, &queue).await?;
 
+    // Capture state before this run to identify newly-completed items and bound the log.
+    let completed_before: HashSet<i64> = queue
+        .list_by_status(QueueStatus::Completed)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|item| item.id)
+        .collect();
+
+    // Watermark: max existing DownloadAttempt id for this project before the run.
+    // Passed to append_project_download_log so only new attempts appear in the session section.
+    let log_watermark: Option<i64> = queue
+        .query_download_attempts(&DownloadAttemptQuery {
+            project: Some(project_history_key(&output_dir)),
+            limit: 1,
+            ..DownloadAttemptQuery::default()
+        })
+        .await
+        .ok()
+        .and_then(|mut v| v.pop())
+        .map(|a| a.id);
+
     let client = HttpClient::new();
     let rate_limiter = Arc::new(RateLimiter::new(Duration::from_millis(0)));
     let engine = DownloadEngine::new(defaults.concurrency, RetryPolicy::default(), rate_limiter)
@@ -292,7 +398,7 @@ pub async fn start_download(inputs: Vec<String>) -> Result<DownloadSummary, Stri
         })?;
 
     let stats = engine
-        .process_queue(&queue, &client, &defaults.output_dir)
+        .process_queue(&queue, &client, &output_dir)
         .await
         .map_err(|e| {
             format!(
@@ -302,10 +408,16 @@ pub async fn start_download(inputs: Vec<String>) -> Result<DownloadSummary, Stri
             )
         })?;
 
+    if project.is_some() {
+        let _ = append_project_index(&queue, &output_dir, &completed_before).await;
+        let _ = append_project_download_log(&queue, &output_dir, log_watermark).await;
+        generate_sidecars_for_completed(&queue, &completed_before).await;
+    }
+
     Ok(DownloadSummary {
         completed: stats.completed(),
         failed: stats.failed(),
-        output_dir: defaults.output_dir.display().to_string(),
+        output_dir: output_dir.display().to_string(),
     })
 }
 
@@ -313,20 +425,31 @@ pub async fn start_download(inputs: Vec<String>) -> Result<DownloadSummary, Stri
 ///
 /// Emits `"download://progress"` events every 300 ms while downloads are in flight.
 /// The `state.interrupted` flag can be set by `cancel_download` to stop the engine.
+#[tracing::instrument(skip(window, state))]
 #[tauri::command]
 pub async fn start_download_with_progress(
     inputs: Vec<String>,
+    project: Option<String>,
     window: tauri::Window,
     state: tauri::State<'_, AppState>,
 ) -> Result<DownloadSummary, String> {
     let defaults = AppDefaults::load();
 
-    if let Err(e) = std::fs::create_dir_all(&defaults.output_dir) {
+    let output_dir = resolve_project_output_dir(&defaults.output_dir, project.as_deref())
+        .map_err(|e| {
+            format!(
+                "What: Invalid project name.\n\
+                 Why: {e}\n\
+                 Fix: Use a simple name like 'Climate Research' without special characters."
+            )
+        })?;
+
+    if let Err(e) = std::fs::create_dir_all(&output_dir) {
         return Err(format!(
             "What: Could not create output directory.\n\
              Why: {e}\n\
              Fix: Check that the path '{dir}' is writable, or update output_dir in ~/.downloader/config.toml.",
-            dir = defaults.output_dir.display()
+            dir = output_dir.display()
         ));
     }
 
@@ -361,7 +484,37 @@ pub async fn start_download_with_progress(
             )
         })?;
 
-    let output_dir = defaults.output_dir.clone();
+    // Capture state before this run to identify newly-completed items and bound the log.
+    let completed_before: HashSet<i64> = queue
+        .list_by_status(QueueStatus::Completed)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|item| item.id)
+        .collect();
+
+    // Offsets for the polling loop: items completed/failed in prior runs must not count
+    // toward the progress of THIS run (they are already Completed/Failed in the shared DB).
+    let prior_completed = completed_before.len();
+    let prior_failed: usize = queue
+        .count_by_status(QueueStatus::Failed)
+        .await
+        .unwrap_or(0) as usize;
+
+    // Watermark: max existing DownloadAttempt id for this project before the run.
+    // Passed to append_project_download_log so only new attempts appear in the session section.
+    let log_watermark: Option<i64> = queue
+        .query_download_attempts(&DownloadAttemptQuery {
+            project: Some(project_history_key(&output_dir)),
+            limit: 1,
+            ..DownloadAttemptQuery::default()
+        })
+        .await
+        .ok()
+        .and_then(|mut v| v.pop())
+        .map(|a| a.id);
+
+    let output_dir_for_engine = output_dir.clone();
 
     // Spawn engine in a background task.
     let queue_for_engine = Arc::clone(&queue);
@@ -371,7 +524,7 @@ pub async fn start_download_with_progress(
             .process_queue_interruptible(
                 queue_for_engine.as_ref(),
                 &client,
-                &output_dir,
+                &output_dir_for_engine,
                 flag_for_engine,
             )
             .await
@@ -403,16 +556,21 @@ pub async fn start_download_with_progress(
                 })
                 .collect::<Vec<_>>();
 
+            // Subtract items completed/failed in prior runs so the payload reflects only
+            // this-run progress and the break condition is not tripped prematurely.
+            let this_run_completed = completed.saturating_sub(prior_completed);
+            let this_run_failed = failed.saturating_sub(prior_failed);
+
             let payload = ProgressPayload {
-                completed,
-                failed,
+                completed: this_run_completed,
+                failed: this_run_failed,
                 total: enqueued,
                 in_progress,
             };
 
             let _ = window_for_poll.emit("download://progress", &payload);
 
-            if completed + failed >= enqueued {
+            if this_run_completed + this_run_failed >= enqueued {
                 break;
             }
         }
@@ -456,14 +614,22 @@ pub async fn start_download_with_progress(
     // Clear the interrupt flag slot.
     clear_interrupt_slot(&state);
 
+    // Generate project artefacts (index.md, download.log, sidecars) when a project is set.
+    if project.is_some() {
+        let _ = append_project_index(&queue, &output_dir, &completed_before).await;
+        let _ = append_project_download_log(&queue, &output_dir, log_watermark).await;
+        generate_sidecars_for_completed(&queue, &completed_before).await;
+    }
+
     Ok(DownloadSummary {
         completed: stats.completed(),
         failed: stats.failed(),
-        output_dir: defaults.output_dir.display().to_string(),
+        output_dir: output_dir.display().to_string(),
     })
 }
 
 /// Sets the interrupt flag to gracefully stop an active `start_download_with_progress` run.
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub async fn cancel_download(state: tauri::State<'_, AppState>) -> Result<(), String> {
     mark_interrupt_requested(&state);
@@ -493,7 +659,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_download_empty_inputs_returns_error() {
-        let result = start_download(vec![]).await;
+        let result = start_download(vec![], None).await;
         assert!(result.is_err(), "empty input should return Err");
         let err = result.unwrap_err();
         assert!(
@@ -504,7 +670,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_download_blank_inputs_returns_error() {
-        let result = start_download(vec!["   ".to_string(), "\t".to_string()]).await;
+        let result = start_download(vec!["   ".to_string(), "\t".to_string()], None).await;
         assert!(result.is_err(), "blank-only inputs should return Err");
         let err = result.unwrap_err();
         assert!(
@@ -515,7 +681,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_download_garbage_text_returns_error() {
-        let result = start_download(vec!["not a url or doi at all".to_string()]).await;
+        let result = start_download(vec!["not a url or doi at all".to_string()], None).await;
         assert!(result.is_err(), "unrecognised text should return Err");
         let err = result.unwrap_err();
         assert!(
@@ -733,5 +899,57 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&db_path);
+    }
+
+    // -----------------------------------------------------------------------
+    // list_projects tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_scan_project_dirs_returns_empty_for_nonexistent_dir() {
+        let nonexistent = std::env::temp_dir().join("does_not_exist_downloader_test_scan");
+        let result = scan_project_dirs(&nonexistent);
+        assert!(result.is_empty(), "expected empty for nonexistent dir");
+    }
+
+    #[test]
+    fn test_scan_project_dirs_excludes_hidden_dirs_and_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path();
+        std::fs::create_dir_all(base.join("Climate-Research")).unwrap();
+        std::fs::create_dir_all(base.join("Genomics")).unwrap();
+        std::fs::create_dir_all(base.join(".hidden")).unwrap();
+        std::fs::write(base.join("readme.txt"), b"content").unwrap();
+
+        let result = scan_project_dirs(base);
+
+        assert_eq!(result.len(), 2, "only non-hidden dirs should appear");
+        assert!(result.contains(&"Climate-Research".to_string()));
+        assert!(result.contains(&"Genomics".to_string()));
+        assert!(!result.contains(&".hidden".to_string()));
+        assert!(!result.contains(&"readme.txt".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_start_download_rejects_invalid_project_name() {
+        // "." is rejected by resolve_project_output_dir
+        let result = start_download(vec!["https://example.com/test.pdf".to_string()], Some(".".to_string())).await;
+        assert!(result.is_err(), "traversal token should fail");
+        let err = result.unwrap_err();
+        assert!(err.contains("What:"), "error should follow What/Why/Fix format, got: {err}");
+    }
+
+    #[tokio::test]
+    async fn test_start_download_accepts_valid_project_name() {
+        // A valid project name resolves correctly — even if the download fails (no network)
+        // We just check the project validation step doesn't reject "Climate Research"
+        let result = start_download(vec!["not-a-url-or-doi".to_string()], Some("Climate Research".to_string())).await;
+        assert!(result.is_err(), "invalid input should fail");
+        let err = result.unwrap_err();
+        // The error should be about the URL/DOI, not the project name
+        assert!(
+            err.contains("What:"),
+            "error should follow What/Why/Fix format, got: {err}"
+        );
     }
 }

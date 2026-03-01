@@ -52,24 +52,6 @@ pub fn truncate_to_width(text: &str, width: usize) -> String {
     output
 }
 
-/// Truncates a log/display field to at most `max_chars` with ellipsis.
-pub fn truncate_log_field(value: &str, max_chars: usize) -> String {
-    if value.chars().count() <= max_chars {
-        return value.to_string();
-    }
-    let mut truncated: String = value.chars().take(max_chars.saturating_sub(1)).collect();
-    truncated.push('…');
-    truncated
-}
-
-/// Escapes markdown table cell characters (pipe, backtick, newlines).
-pub fn escape_markdown_cell(value: &str) -> String {
-    value
-        .replace('|', "\\|")
-        .replace('`', "\\`")
-        .replace(['\n', '\r'], " ")
-}
-
 /// Returns lines for quick-start guidance (headline + examples), truncated to width.
 pub fn quick_start_guidance_lines(empty_stdin: bool, width: usize) -> Vec<String> {
     let headline = if empty_stdin {
@@ -326,31 +308,6 @@ pub(crate) fn download_log_source(attempt: &DownloadAttempt) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_truncate_log_field_exact_fit_returns_original() {
-        let s = "short";
-        assert_eq!(truncate_log_field(s, 10), s);
-        assert_eq!(truncate_log_field(s, 5), s);
-    }
-
-    #[test]
-    fn test_truncate_log_field_truncates_with_ellipsis() {
-        assert_eq!(truncate_log_field("1234567890", 6), "12345…");
-        assert_eq!(truncate_log_field("abcd", 2), "a…");
-    }
-
-    #[test]
-    fn test_truncate_log_field_empty_and_zero_max() {
-        assert_eq!(truncate_log_field("", 10), "");
-        // max_chars 0 with non-empty input: implementation truncates to 0 then appends ellipsis
-        assert_eq!(truncate_log_field("any", 0), "…");
-    }
-
-    #[test]
-    fn test_truncate_log_field_single_char_max() {
-        assert_eq!(truncate_log_field("ab", 1), "…");
-    }
 
     #[test]
     fn test_terminal_width_returns_sensible_value() {

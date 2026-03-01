@@ -282,7 +282,9 @@ async fn append_project_download_log(
     output_dir: &Path,
     history_start_id: Option<i64>,
 ) -> Result<()> {
-    project::append_project_download_log(queue, output_dir, history_start_id).await
+    project::append_project_download_log(queue, output_dir, history_start_id)
+        .await
+        .map_err(anyhow::Error::from)
 }
 
 #[cfg(test)]
@@ -299,7 +301,9 @@ async fn append_project_index(
     output_dir: &Path,
     completed_before: &HashSet<i64>,
 ) -> Result<()> {
-    project::append_project_index(queue, output_dir, completed_before).await
+    project::append_project_index(queue, output_dir, completed_before)
+        .await
+        .map_err(anyhow::Error::from)
 }
 
 /// Generates JSON-LD sidecar files for items completed in this run with saved paths.
@@ -1019,7 +1023,7 @@ mod tests {
         let base = Path::new("/tmp/downloads");
         let err = project::resolve_project_output_dir(base, Some("../secret"))
             .expect_err("traversal token invalid");
-        assert!(err.to_string().contains("cannot contain '.' or '..'"));
+        assert!(err.to_string().contains("path traversal rejected"));
     }
 
     #[test]
@@ -1027,7 +1031,7 @@ mod tests {
         let base = Path::new("/tmp/downloads");
         let err = project::resolve_project_output_dir(base, Some("Climate//2024"))
             .expect_err("empty segments should fail");
-        assert!(err.to_string().contains("empty path segment"));
+        assert!(err.to_string().contains("project name is empty"));
     }
 
     #[test]
@@ -1836,7 +1840,7 @@ mod tests {
 
     #[test]
     fn test_escape_markdown_cell_escapes_backticks_pipes_and_newlines() {
-        let escaped = output::escape_markdown_cell("A|B\nline`one\rline2");
+        let escaped = project::escape_markdown_cell("A|B\nline`one\rline2");
         assert_eq!(escaped, "A\\|B line\\`one line2");
     }
 }

@@ -12,6 +12,7 @@ pub fn run() {
             commands::start_download,
             commands::start_download_with_progress,
             commands::cancel_download,
+            commands::list_projects,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

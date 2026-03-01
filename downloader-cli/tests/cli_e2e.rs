@@ -1156,7 +1156,7 @@ fn test_binary_project_rejects_repeated_separators() {
         .arg("not-a-url-token")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("empty path segment"));
+        .stderr(predicate::str::contains("project name is empty"));
 }
 
 /// Test that nested project depth beyond the guard limit fails cleanly.

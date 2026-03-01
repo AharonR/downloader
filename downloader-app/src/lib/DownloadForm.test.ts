@@ -36,6 +36,11 @@ describe('DownloadForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listenMock.mockResolvedValue(() => {});
+    // Provide a default mock for list_projects (used by ProjectSelector on mount)
+    invokeMock.mockImplementation((command) => {
+      if (command === 'list_projects') return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
   });
 
   it('renders a textarea and a download button', () => {
@@ -65,10 +70,9 @@ describe('DownloadForm', () => {
   });
 
   it('submits trimmed line-split inputs to the progress command', async () => {
-    invokeMock.mockResolvedValue({
-      completed: 2,
-      failed: 0,
-      output_dir: '/tmp/downloads',
+    invokeMock.mockImplementation((command) => {
+      if (command === 'list_projects') return Promise.resolve([]);
+      return Promise.resolve({ completed: 2, failed: 0, output_dir: '/tmp/downloads' });
     });
 
     render(DownloadForm);
@@ -79,15 +83,68 @@ describe('DownloadForm', () => {
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('start_download_with_progress', {
         inputs: ['https://example.com/a.pdf', '10.1000/xyz123'],
+        project: null,
       });
     });
   });
 
+  it('passes project name to start_download_with_progress when project field is filled', async () => {
+    invokeMock.mockImplementation((command) => {
+      if (command === 'list_projects') return Promise.resolve([]);
+      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads/Climate-Research' });
+    });
+
+    render(DownloadForm);
+
+    const projectInput = screen.getByRole('combobox') as HTMLInputElement;
+    await fireEvent.input(projectInput, { target: { value: 'Climate Research' } });
+
+    await enterInput('https://example.com/paper.pdf');
+
+    await fireEvent.submit(screen.getByRole('button', { name: /download/i }).closest('form')!);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('start_download_with_progress', {
+        inputs: ['https://example.com/paper.pdf'],
+        project: 'Climate Research',
+      });
+    });
+  });
+
+  it('does not clear projectName when reset after a successful download', async () => {
+    invokeMock.mockImplementation((command) => {
+      if (command === 'list_projects') return Promise.resolve([]);
+      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads/Climate-Research' });
+    });
+
+    render(DownloadForm);
+
+    // Fill in project name
+    const projectInput = screen.getByRole('combobox') as HTMLInputElement;
+    await fireEvent.input(projectInput, { target: { value: 'Climate Research' } });
+
+    await enterInput('https://example.com/paper.pdf');
+    await fireEvent.submit(screen.getByRole('button', { name: /download/i }).closest('form')!);
+
+    // Wait for CompletionSummary's reset button to appear
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /download more/i })).toBeDefined();
+    });
+
+    // Click "Download more" (handleReset)
+    await fireEvent.click(screen.getByRole('button', { name: /download more/i }));
+
+    // projectName must survive the reset — intentional UX: user continues in the same project
+    await waitFor(() => {
+      const inputAfterReset = screen.getByRole('combobox') as HTMLInputElement;
+      expect(inputAfterReset.value).toBe('Climate Research');
+    });
+  });
+
   it('registers the progress listener before invoking the download command', async () => {
-    invokeMock.mockResolvedValue({
-      completed: 1,
-      failed: 0,
-      output_dir: '/tmp/downloads',
+    invokeMock.mockImplementation((command) => {
+      if (command === 'list_projects') return Promise.resolve([]);
+      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads' });
     });
 
     render(DownloadForm);
@@ -97,11 +154,15 @@ describe('DownloadForm', () => {
 
     await waitFor(() => {
       expect(listenMock).toHaveBeenCalledWith('download://progress', expect.any(Function));
-      expect(invokeMock).toHaveBeenCalled();
+      expect(invokeMock).toHaveBeenCalledWith('start_download_with_progress', expect.any(Object));
     });
 
+    // listen must be called before start_download_with_progress
+    const downloadCallIdx = invokeMock.mock.calls.findIndex(
+      (call) => call[0] === 'start_download_with_progress',
+    );
     expect(listenMock.mock.invocationCallOrder[0]).toBeLessThan(
-      invokeMock.mock.invocationCallOrder[0],
+      invokeMock.mock.invocationCallOrder[downloadCallIdx],
     );
   });
 
@@ -147,10 +208,9 @@ describe('DownloadForm', () => {
   it('calls unlisten after a successful completion', async () => {
     const unlisten = vi.fn();
     listenMock.mockResolvedValue(unlisten);
-    invokeMock.mockResolvedValue({
-      completed: 1,
-      failed: 0,
-      output_dir: '/tmp/downloads',
+    invokeMock.mockImplementation((command) => {
+      if (command === 'list_projects') return Promise.resolve([]);
+      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads' });
     });
 
     render(DownloadForm);

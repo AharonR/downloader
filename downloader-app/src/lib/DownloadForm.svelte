@@ -5,9 +5,11 @@
   import StatusDisplay from './StatusDisplay.svelte';
   import ProgressDisplay from './ProgressDisplay.svelte';
   import CompletionSummary from './CompletionSummary.svelte';
+  import ProjectSelector from './ProjectSelector.svelte';
   import type { ProgressPayload } from './ProgressDisplay.svelte';
   import type { DownloadSummary } from './CompletionSummary.svelte';
 
+  let projectName = $state('');
   let inputText = $state('');
   let status = $state<'idle' | 'downloading' | 'done' | 'error'>('idle');
   let message = $state('');
@@ -46,6 +48,7 @@
 
       const result = await invoke<DownloadSummary>('start_download_with_progress', {
         inputs,
+        project: projectName || null,
       });
 
       summary = result;
@@ -88,6 +91,8 @@
 
 <div class="download-form-container">
   <form class="download-form" onsubmit={handleDownload}>
+    <ProjectSelector bind:value={projectName} disabled={isDownloading} />
+
     <label for="url-input" class="input-label">
       URLs or DOIs (one per line)
     </label>
