@@ -111,21 +111,29 @@ impl AppDefaults {
     fn parse_config_text(raw: &str, mut defaults: Self) -> Self {
         for line in raw.lines() {
             let line = line.trim();
-            if let Some(val) = line.strip_prefix("output_dir") {
-                let val = val
-                    .trim_start_matches(['=', ' ', '"'])
-                    .trim_end_matches('"');
-                if !val.is_empty() {
-                    defaults.output_dir = PathBuf::from(val);
-                }
+            if line.is_empty() || line.starts_with('#') {
+                continue;
             }
-            if let Some(val) = line.strip_prefix("concurrency") {
-                let val = val.trim_start_matches(['=', ' ']);
-                if let Ok(n) = val.parse::<usize>() {
-                    if (1..=100).contains(&n) {
-                        defaults.concurrency = n;
+            // Use split_once to require an explicit '=' separator, preventing a key like
+            // "output_directory" from matching a strip_prefix("output_dir") check.
+            let Some((key, val)) = line.split_once('=') else {
+                continue;
+            };
+            match key.trim() {
+                "output_dir" => {
+                    let val = val.trim().trim_matches('"');
+                    if !val.is_empty() {
+                        defaults.output_dir = PathBuf::from(val);
                     }
                 }
+                "concurrency" => {
+                    if let Ok(n) = val.trim().parse::<usize>() {
+                        if (1..=100).contains(&n) {
+                            defaults.concurrency = n;
+                        }
+                    }
+                }
+                _ => {}
             }
         }
         defaults
@@ -185,6 +193,23 @@ fn scan_project_dirs(base: &std::path::Path) -> Vec<String> {
 pub async fn list_projects() -> Result<Vec<String>, String> {
     let defaults = AppDefaults::load();
     Ok(scan_project_dirs(&defaults.output_dir))
+}
+
+/// Returns `true` when the polling loop should exit.
+///
+/// All items enqueued in the current run have reached a terminal state once
+/// `(db_completed - prior_completed) + (db_failed - prior_failed) >= enqueued`.
+/// The `prior_*` offsets subtract rows left over from earlier runs in the shared DB.
+fn poll_should_break(
+    db_completed: usize,
+    db_failed: usize,
+    prior_completed: usize,
+    prior_failed: usize,
+    enqueued: usize,
+) -> bool {
+    let this_run_completed = db_completed.saturating_sub(prior_completed);
+    let this_run_failed = db_failed.saturating_sub(prior_failed);
+    this_run_completed + this_run_failed >= enqueued
 }
 
 fn mark_interrupt_requested(state: &AppState) {
@@ -570,7 +595,7 @@ pub async fn start_download_with_progress(
 
             let _ = window_for_poll.emit("download://progress", &payload);
 
-            if this_run_completed + this_run_failed >= enqueued {
+            if poll_should_break(completed, failed, prior_completed, prior_failed, enqueued) {
                 break;
             }
         }
@@ -747,6 +772,39 @@ mod tests {
         assert_eq!(non_numeric.concurrency, defaults.concurrency);
     }
 
+    #[test]
+    fn test_parse_config_text_ignores_output_directory_prefix_match() {
+        // "output_directory" must NOT be treated as "output_dir" — exact key match required.
+        let defaults = AppDefaults::default();
+        let result = AppDefaults::parse_config_text(
+            "output_directory = \"/should/be/ignored\"",
+            AppDefaults::default(),
+        );
+        assert_eq!(
+            result.output_dir, defaults.output_dir,
+            "output_directory key should not override output_dir"
+        );
+    }
+
+    #[test]
+    fn test_parse_config_text_ignores_comment_lines() {
+        let defaults = AppDefaults::default();
+        let result = AppDefaults::parse_config_text(
+            "# output_dir = \"/commented/out\"\noutput_dir = \"/actual/path\"",
+            AppDefaults::default(),
+        );
+        assert_eq!(result.output_dir, std::path::PathBuf::from("/actual/path"));
+        assert_eq!(
+            AppDefaults::parse_config_text(
+                "# output_dir = \"/commented/out\"",
+                AppDefaults::default()
+            )
+            .output_dir,
+            defaults.output_dir,
+            "commented-out key should be ignored"
+        );
+    }
+
     #[tokio::test]
     async fn test_resolve_and_enqueue_rejects_whitespace_only_input() {
         let db_path = unique_db_path("whitespace-input");
@@ -871,8 +929,50 @@ mod tests {
         assert!(state.interrupted.lock().unwrap().is_none());
     }
 
-    /// AC#9: Verifies the polling exit condition (`completed + failed >= enqueued`) is
-    /// satisfied once all queued items reach a terminal state — i.e., the loop would break.
+    // -----------------------------------------------------------------------
+    // poll_should_break — unit tests for the polling loop exit predicate (M-3)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_poll_should_break_exits_when_all_items_completed() {
+        assert!(poll_should_break(2, 0, 0, 0, 2), "all completed → break");
+    }
+
+    #[test]
+    fn test_poll_should_break_exits_on_mixed_completed_and_failed() {
+        assert!(
+            poll_should_break(1, 1, 0, 0, 2),
+            "1 completed + 1 failed → break"
+        );
+        assert!(poll_should_break(0, 2, 0, 0, 2), "all failed → break");
+    }
+
+    #[test]
+    fn test_poll_should_break_stays_when_items_still_pending() {
+        assert!(!poll_should_break(0, 0, 0, 0, 2), "nothing done → continue");
+        assert!(!poll_should_break(1, 0, 0, 0, 2), "1 of 2 done → continue");
+    }
+
+    #[test]
+    fn test_poll_should_break_accounts_for_prior_run_offsets() {
+        // 3 completed in DB, 1 was from a prior run → this_run_completed = 2 → break
+        assert!(poll_should_break(3, 0, 1, 0, 2));
+        // 3 completed in DB, 2 were from prior runs → this_run_completed = 1 → continue
+        assert!(!poll_should_break(3, 0, 2, 0, 2));
+        // prior_failed offset applied correctly
+        assert!(poll_should_break(0, 3, 0, 1, 2));
+        assert!(!poll_should_break(0, 3, 0, 2, 2));
+    }
+
+    #[test]
+    fn test_poll_should_break_saturating_sub_handles_underflow() {
+        // prior counts larger than current (shouldn't happen in practice) must not panic.
+        assert!(!poll_should_break(1, 0, 5, 0, 2)); // saturating_sub → 0, 0 < 2 → continue
+    }
+
+    /// AC#9 (DB invariant): verifies queue state is consistent after engine marks items terminal.
+    /// Note: this tests the DB mechanics, not the polling loop's break path.
+    /// The break predicate itself is covered by test_poll_should_break_* tests above.
     #[tokio::test]
     async fn test_poll_exit_condition_triggers_when_all_items_terminal() {
         let db_path = unique_db_path("poll-exit");
@@ -934,6 +1034,33 @@ mod tests {
         assert!(!result.contains(&"readme.txt".to_string()));
     }
 
+    /// M-4: start_download_with_progress cannot be called directly in unit tests
+    /// (requires tauri::Window + tauri::State which need a running Tauri runtime).
+    /// Both commands delegate to the same `resolve_project_output_dir` function.
+    /// This test verifies that shared validation and error formatting are correct.
+    #[test]
+    fn test_start_download_with_progress_project_validation_via_shared_fn() {
+        let base = std::path::PathBuf::from("/tmp/test-output");
+
+        // Traversal is rejected
+        let e = resolve_project_output_dir(&base, Some("..")).unwrap_err();
+        // Both commands format this as "What: Invalid project name.\nWhy: {e}\n..."
+        let formatted = format!("What: Invalid project name.\nWhy: {e}\nFix: ...");
+        assert!(
+            formatted.contains("path traversal rejected"),
+            "err: {formatted}"
+        );
+
+        // Empty project name is rejected
+        let e = resolve_project_output_dir(&base, Some("   ")).unwrap_err();
+        let formatted = format!("What: Invalid project name.\nWhy: {e}\nFix: ...");
+        assert!(formatted.contains("empty"), "err: {formatted}");
+
+        // Valid name resolves correctly (same path both commands would compute)
+        let ok = resolve_project_output_dir(&base, Some("Climate Research")).unwrap();
+        assert_eq!(ok, base.join("Climate-Research"));
+    }
+
     #[tokio::test]
     async fn test_start_download_rejects_invalid_project_name() {
         // "." is rejected by resolve_project_output_dir
@@ -952,8 +1079,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_download_accepts_valid_project_name() {
-        // A valid project name resolves correctly — even if the download fails (no network)
-        // We just check the project validation step doesn't reject "Climate Research"
+        // A valid project name must NOT be rejected by resolve_project_output_dir.
+        // The download will fail on URL parsing — that is the expected error path.
         let result = start_download(
             vec!["not-a-url-or-doi".to_string()],
             Some("Climate Research".to_string()),
@@ -961,10 +1088,14 @@ mod tests {
         .await;
         assert!(result.is_err(), "invalid input should fail");
         let err = result.unwrap_err();
-        // The error should be about the URL/DOI, not the project name
+        // The error must be about the URL/DOI — NOT about the project name.
         assert!(
-            err.contains("What:"),
-            "error should follow What/Why/Fix format, got: {err}"
+            !err.contains("Invalid project name"),
+            "project name 'Climate Research' should have been accepted, got: {err}"
+        );
+        assert!(
+            err.contains("No valid URLs or DOIs"),
+            "expected URL parse error, got: {err}"
         );
     }
 }

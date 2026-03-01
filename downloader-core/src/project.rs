@@ -8,6 +8,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::hash::BuildHasher;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use tracing::{info, warn};
 
@@ -28,6 +29,23 @@ pub const MAX_PROJECT_SEGMENTS: usize = 10;
 
 /// Page size for paged history queries in [`append_project_download_log`].
 pub const PROJECT_LOG_QUERY_PAGE_SIZE: usize = 10_000;
+
+// Process-lifetime counter: ensures session labels are unique even when two
+// sessions complete within the same wall-clock second.
+static SESSION_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Returns a unique session label combining Unix seconds and a per-process counter.
+///
+/// `SystemTime::now()` is the single wall-clock access point in this module.
+/// Replace with a `Clock` trait injection if test-injectable time becomes needed.
+fn make_session_label() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let seq = SESSION_SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("unix-{secs}-{seq}")
+}
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -311,13 +329,7 @@ pub async fn append_project_download_log(
         );
     }
 
-    let session_label = format!(
-        "unix-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
-    );
+    let session_label = make_session_label();
     let section = render_project_download_log_section(&session_label, &attempts);
     let log_path = output_dir.join("download.log");
 
@@ -409,13 +421,7 @@ pub async fn append_project_index<S: BuildHasher>(
     }
 
     new_items.sort_by_key(|item| item.id);
-    let session_label = format!(
-        "unix-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
-    );
+    let session_label = make_session_label();
 
     let section = render_project_index_section(&session_label, &new_items);
     let index_path = output_dir.join("index.md");
@@ -513,7 +519,7 @@ pub fn render_project_index_section(session_label: &str, items: &[QueueItem]) ->
             escape_markdown_cell(filename),
             escape_markdown_cell(title),
             escape_markdown_cell(authors),
-            item.url
+            escape_markdown_cell(item.url.as_str())
         );
     }
     out.push('\n');
@@ -756,6 +762,41 @@ mod tests {
         assert!(
             !output.contains("**Topics detected:**"),
             "topics line should be absent"
+        );
+    }
+
+    #[test]
+    fn test_make_session_label_unique_across_rapid_calls() {
+        // Session labels must be distinct even if the wall clock doesn't advance.
+        let labels: Vec<String> = (0..5).map(|_| make_session_label()).collect();
+        let unique: std::collections::HashSet<_> = labels.iter().collect();
+        assert_eq!(
+            unique.len(),
+            labels.len(),
+            "session labels must all be unique: {:?}",
+            labels
+        );
+    }
+
+    #[test]
+    fn test_make_session_label_has_expected_prefix() {
+        let label = make_session_label();
+        assert!(
+            label.starts_with("unix-"),
+            "session label should start with 'unix-', got: {label}"
+        );
+    }
+
+    #[test]
+    fn test_render_project_index_section_escapes_url_pipe_chars() {
+        // URLs with '|' in query strings must not break the markdown table.
+        let mut item = make_test_item(10, None);
+        item.url = "https://example.com/?a=1|b=2".to_string();
+        let output = render_project_index_section("unix-0", &[item]);
+        // The pipe in the URL must be escaped so it doesn't act as a column delimiter.
+        assert!(
+            output.contains("\\|"),
+            "pipe in URL should be escaped in markdown table"
         );
     }
 }

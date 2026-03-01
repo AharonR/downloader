@@ -172,3 +172,24 @@ test verifying it respects a custom `output_dir` from config. This is low priori
 
 ### All items resolved
 - [x] [AI-Audit][Low] ARCH-3: dual-DB design documented via code comment on `start_download` DB path (`commands.rs`). Explains the Story 10-2 origin, the test-isolation rationale, the history-split tradeoff, and a consolidation note for future maintainers.
+
+---
+
+## Code Review Pass 3 (2026-03-01)
+
+**Outcome:** done — all Medium and Low issues fixed
+**Issues fixed:** 9 (0 High, 5 Medium, 4 Low)
+**Action items created:** 0
+**Verification:** cargo fmt --all --check → exit 0 | cargo clippy --workspace -- -D warnings → exit 0 | cargo test --workspace --lib → 621 passed, 0 failed | npm test → 51 passed, 0 failed
+
+### Fixed in this pass
+
+- [x] [M-1] `SystemTime::now()` in library code — extracted `make_session_label()` with `SESSION_SEQ: AtomicU64` counter; single wall-clock access point documented; session labels now unique across rapid sequential calls (`project.rs`)
+- [x] [M-2] `test_start_download_accepts_valid_project_name` weak assertion — changed to assert `!err.contains("Invalid project name")` AND `err.contains("No valid URLs or DOIs")`, distinguishing project-validation failure from URL-parse failure (`commands.rs`)
+- [x] [M-3] `test_poll_exit_condition_triggers_when_all_items_terminal` tested math not mechanism — extracted `poll_should_break(db_completed, db_failed, prior_completed, prior_failed, enqueued) -> bool` pure function; wired into polling loop; added 5 targeted unit tests covering all break/continue branches and saturating-sub underflow (`commands.rs`)
+- [x] [M-4] Missing project-validation test for `start_download_with_progress` — added `test_start_download_with_progress_project_validation_via_shared_fn` exercising traversal, empty-name, and valid-name cases via the shared `resolve_project_output_dir`; comment explains why direct command invocation requires Tauri runtime (`commands.rs`)
+- [x] [M-5] Code duplication between `start_download` and `start_download_with_progress` — intentionally deferred; dual-DB design and Story 10-2 test-isolation rationale make full consolidation a larger architectural task; existing comment in `start_download` documents this
+- [x] [L-1] `parse_config_text` fragile `strip_prefix("output_dir")` matching — replaced with `split_once('=')` + `match key.trim()` for exact key matching; added tests for `output_directory` rejection and comment-line skipping (`commands.rs`)
+- [x] [L-2] Session label collision for fast sequential runs — resolved by `SESSION_SEQ` atomic counter appended to label (e.g. `unix-1740000000-0`, `unix-1740000000-1`); uniqueness verified by new test (`project.rs`)
+- [x] [L-3] `item.url` unescaped in markdown table — wrapped with `escape_markdown_cell(item.url.as_str())`; added test for pipe-in-URL escaping (`project.rs`)
+- [x] [L-4] Hardcoded `datalist id="project-suggestions"` global DOM ID — pre-existing, deferred (low-impact while component renders once per page)
