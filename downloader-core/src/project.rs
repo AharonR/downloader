@@ -88,7 +88,10 @@ pub fn resolve_project_output_dir(
         return Err(ProjectError::EmptyName);
     }
     if raw_segments.len() > MAX_PROJECT_SEGMENTS {
-        return Err(ProjectError::TooDeep(raw_segments.len(), MAX_PROJECT_SEGMENTS));
+        return Err(ProjectError::TooDeep(
+            raw_segments.len(),
+            MAX_PROJECT_SEGMENTS,
+        ));
     }
 
     let mut output_dir = base_output_dir.to_path_buf();
@@ -242,11 +245,7 @@ fn download_log_filename(attempt: &DownloadAttempt) -> String {
     attempt
         .file_path
         .as_deref()
-        .and_then(|path| {
-            Path::new(path)
-                .file_name()
-                .and_then(|name| name.to_str())
-        })
+        .and_then(|path| Path::new(path).file_name().and_then(|name| name.to_str()))
         .map(ToString::to_string)
         .or_else(|| attempt.title.clone())
         .unwrap_or_else(|| "n/a".to_string())
@@ -485,10 +484,7 @@ pub fn render_project_index_section(session_label: &str, items: &[QueueItem]) ->
     let mut out = String::new();
     let _ = write!(out, "## Session {session_label}\n\n");
 
-    let all_topics: Vec<String> = items
-        .iter()
-        .flat_map(QueueItem::parse_topics)
-        .collect();
+    let all_topics: Vec<String> = items.iter().flat_map(QueueItem::parse_topics).collect();
     let unique_topics = normalize_topics(all_topics);
     if !unique_topics.is_empty() {
         let _ = write!(
@@ -586,12 +582,8 @@ mod tests {
     #[test]
     fn test_resolve_project_output_dir_nested() {
         let base = PathBuf::from("/tmp/output");
-        let result =
-            resolve_project_output_dir(&base, Some("Climate/Emissions/2024")).unwrap();
-        assert_eq!(
-            result,
-            PathBuf::from("/tmp/output/Climate/Emissions/2024")
-        );
+        let result = resolve_project_output_dir(&base, Some("Climate/Emissions/2024")).unwrap();
+        assert_eq!(result, PathBuf::from("/tmp/output/Climate/Emissions/2024"));
     }
 
     #[test]
@@ -642,7 +634,10 @@ mod tests {
         assert_eq!(escape_markdown_cell("a|b"), "a\\|b");
         assert_eq!(escape_markdown_cell("a`b"), "a\\`b");
         assert_eq!(escape_markdown_cell("a\nb"), "a b");
-        assert_eq!(escape_markdown_cell("A|B\nline`one\rline2"), "A\\|B line\\`one line2");
+        assert_eq!(
+            escape_markdown_cell("A|B\nline`one\rline2"),
+            "A\\|B line\\`one line2"
+        );
     }
 
     fn make_test_attempt(id: i64, status_str: &str, file_path: Option<&str>) -> DownloadAttempt {
@@ -699,7 +694,10 @@ mod tests {
         let attempt = make_test_attempt(42, "success", Some("/tmp/paper.pdf"));
         let output = render_project_download_log_section("unix-1234567890", &[attempt]);
 
-        assert!(output.contains("## Session unix-1234567890"), "missing session header");
+        assert!(
+            output.contains("## Session unix-1234567890"),
+            "missing session header"
+        );
         assert!(output.contains("(1 attempts)"), "missing attempt count");
         assert!(output.contains("SUCCESS"), "missing status");
         assert!(output.contains("paper.pdf"), "missing filename");
@@ -720,7 +718,10 @@ mod tests {
         let output = render_project_download_log_section("unix-0", &[attempt]);
 
         assert!(output.contains("FAILED"), "missing FAILED status");
-        assert!(output.contains("reason=Connection refused"), "missing failure reason");
+        assert!(
+            output.contains("reason=Connection refused"),
+            "missing failure reason"
+        );
     }
 
     #[test]
@@ -728,7 +729,10 @@ mod tests {
         let item = make_test_item(7, None);
         let output = render_project_index_section("unix-1234567890", &[item]);
 
-        assert!(output.contains("## Session unix-1234567890"), "missing session header");
+        assert!(
+            output.contains("## Session unix-1234567890"),
+            "missing session header"
+        );
         assert!(output.contains("paper.pdf"), "missing filename");
         assert!(output.contains("Test Paper"), "missing title");
         assert!(output.contains("Smith, J."), "missing authors");
@@ -739,13 +743,19 @@ mod tests {
     fn test_render_project_index_section_topics_line_present_when_nonempty() {
         let item = make_test_item(1, Some(r#"["machine learning","neural networks"]"#));
         let output = render_project_index_section("unix-0", &[item]);
-        assert!(output.contains("**Topics detected:**"), "expected topics line");
+        assert!(
+            output.contains("**Topics detected:**"),
+            "expected topics line"
+        );
     }
 
     #[test]
     fn test_render_project_index_section_no_topics_line_when_empty() {
         let item = make_test_item(2, None);
         let output = render_project_index_section("unix-0", &[item]);
-        assert!(!output.contains("**Topics detected:**"), "topics line should be absent");
+        assert!(
+            !output.contains("**Topics detected:**"),
+            "topics line should be absent"
+        );
     }
 }
