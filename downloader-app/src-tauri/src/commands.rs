@@ -8,15 +8,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use downloader_core::project::{
+    append_project_download_log, append_project_index, generate_sidecars_for_completed,
+    project_history_key, resolve_project_output_dir,
+};
 use downloader_core::{
     DEFAULT_CONCURRENCY, Database, DownloadAttemptQuery, DownloadEngine, HttpClient, InputType,
     Queue, QueueMetadata, QueueStatus, RateLimiter, ResolveContext, RetryPolicy,
     build_default_resolver_registry, build_preferred_filename, extract_reference_confidence,
     parse_input,
-};
-use downloader_core::project::{
-    append_project_download_log, append_project_index, generate_sidecars_for_completed,
-    project_history_key, resolve_project_output_dir,
 };
 use serde::Serialize;
 use tauri::Emitter;
@@ -320,8 +320,8 @@ pub async fn start_download(
 ) -> Result<DownloadSummary, String> {
     let defaults = AppDefaults::load();
 
-    let output_dir = resolve_project_output_dir(&defaults.output_dir, project.as_deref())
-        .map_err(|e| {
+    let output_dir =
+        resolve_project_output_dir(&defaults.output_dir, project.as_deref()).map_err(|e| {
             format!(
                 "What: Invalid project name.\n\
                  Why: {e}\n\
@@ -435,8 +435,8 @@ pub async fn start_download_with_progress(
 ) -> Result<DownloadSummary, String> {
     let defaults = AppDefaults::load();
 
-    let output_dir = resolve_project_output_dir(&defaults.output_dir, project.as_deref())
-        .map_err(|e| {
+    let output_dir =
+        resolve_project_output_dir(&defaults.output_dir, project.as_deref()).map_err(|e| {
             format!(
                 "What: Invalid project name.\n\
                  Why: {e}\n\
@@ -753,8 +753,7 @@ mod tests {
         let db = Database::new(&db_path).await.expect("test DB");
         let queue = Queue::new(db);
 
-        let result =
-            resolve_and_enqueue(&["   ".to_string(), "\t".to_string()], &queue).await;
+        let result = resolve_and_enqueue(&["   ".to_string(), "\t".to_string()], &queue).await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("What: No input provided."));
@@ -768,11 +767,14 @@ mod tests {
         let db = Database::new(&db_path).await.expect("test DB");
         let queue = Queue::new(db);
 
-        let result =
-            resolve_and_enqueue(&["not a url or doi at all".to_string()], &queue).await;
+        let result = resolve_and_enqueue(&["not a url or doi at all".to_string()], &queue).await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("What: No valid URLs or DOIs found in input."));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("What: No valid URLs or DOIs found in input.")
+        );
 
         let _ = std::fs::remove_file(&db_path);
     }
@@ -826,9 +828,11 @@ mod tests {
         .await;
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("What: Download could not start."));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("What: Download could not start.")
+        );
 
         let _ = std::fs::remove_file(&db_path);
     }
@@ -933,17 +937,28 @@ mod tests {
     #[tokio::test]
     async fn test_start_download_rejects_invalid_project_name() {
         // "." is rejected by resolve_project_output_dir
-        let result = start_download(vec!["https://example.com/test.pdf".to_string()], Some(".".to_string())).await;
+        let result = start_download(
+            vec!["https://example.com/test.pdf".to_string()],
+            Some(".".to_string()),
+        )
+        .await;
         assert!(result.is_err(), "traversal token should fail");
         let err = result.unwrap_err();
-        assert!(err.contains("What:"), "error should follow What/Why/Fix format, got: {err}");
+        assert!(
+            err.contains("What:"),
+            "error should follow What/Why/Fix format, got: {err}"
+        );
     }
 
     #[tokio::test]
     async fn test_start_download_accepts_valid_project_name() {
         // A valid project name resolves correctly — even if the download fails (no network)
         // We just check the project validation step doesn't reject "Climate Research"
-        let result = start_download(vec!["not-a-url-or-doi".to_string()], Some("Climate Research".to_string())).await;
+        let result = start_download(
+            vec!["not-a-url-or-doi".to_string()],
+            Some("Climate Research".to_string()),
+        )
+        .await;
         assert!(result.is_err(), "invalid input should fail");
         let err = result.unwrap_err();
         // The error should be about the URL/DOI, not the project name

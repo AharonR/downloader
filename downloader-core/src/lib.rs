@@ -55,6 +55,10 @@ pub use parser::{
     Confidence, ConfidenceFactors, InputType, ParseResult, ParseTypeCounts, ParsedItem,
     ReferenceConfidence, ReferenceMetadata, extract_reference_confidence, parse_input,
 };
+pub use project::{
+    ProjectError, escape_markdown_cell, project_history_key, resolve_project_output_dir,
+    sanitize_project_name, truncate_field,
+};
 pub use queue::{
     DownloadAttempt, DownloadAttemptQuery, DownloadAttemptStatus, DownloadErrorType,
     DownloadSearchCandidate, DownloadSearchQuery, NewDownloadAttempt, Queue, QueueError, QueueItem,
@@ -65,10 +69,6 @@ pub use resolver::{
     ResolveError, ResolveStep, ResolvedUrl, Resolver, ResolverPriority, ResolverRegistry,
     STANDARD_METADATA_KEYS, ScienceDirectResolver, SpringerResolver,
     build_default_resolver_registry, configure_resolver_http_timeouts,
-};
-pub use project::{
-    ProjectError, escape_markdown_cell, project_history_key, resolve_project_output_dir,
-    sanitize_project_name, truncate_field,
 };
 pub use sidecar::{SidecarConfig, SidecarError, generate_sidecar};
 pub use topics::{
