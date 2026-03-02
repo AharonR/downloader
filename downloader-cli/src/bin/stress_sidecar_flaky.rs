@@ -41,6 +41,8 @@ fn main() -> Result<(), String> {
         let output = Command::new(&cargo)
             .args([
                 "test",
+                "-p",
+                "downloader-core",
                 "--lib",
                 &config.test_name,
                 "--",
