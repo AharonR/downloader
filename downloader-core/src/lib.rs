@@ -67,7 +67,7 @@ pub use queue::{
 pub use resolver::{
     ArxivResolver, CrossrefResolver, DirectResolver, IeeeResolver, PubMedResolver, ResolveContext,
     ResolveError, ResolveStep, ResolvedUrl, Resolver, ResolverPriority, ResolverRegistry,
-    STANDARD_METADATA_KEYS, ScienceDirectResolver, SpringerResolver,
+    STANDARD_METADATA_KEYS, ScienceDirectResolver, SpringerResolver, YouTubeResolver,
     build_default_resolver_registry, configure_resolver_http_timeouts,
 };
 pub use sidecar::{SidecarConfig, SidecarError, generate_sidecar};

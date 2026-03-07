@@ -310,23 +310,24 @@ fn extract_metadata(message: &CrossrefMessage, doi: &str) -> HashMap<String, Str
     }
 
     // Year - try published, then published-print, then published-online
-    let year = extract_year(message.published.as_ref())
-        .or_else(|| extract_year(message.published_print.as_ref()))
-        .or_else(|| extract_year(message.published_online.as_ref()));
+    let year = extract_year_from_date_parts(message.published.as_ref())
+        .or_else(|| extract_year_from_date_parts(message.published_print.as_ref()))
+        .or_else(|| extract_year_from_date_parts(message.published_online.as_ref()));
     if let Some(y) = year {
-        metadata.insert("year".to_string(), y.to_string());
+        metadata.insert("year".to_string(), y);
     }
 
     metadata
 }
 
 /// Extracts the year from a Crossref date field.
-fn extract_year(date: Option<&CrossrefDate>) -> Option<i32> {
+fn extract_year_from_date_parts(date: Option<&CrossrefDate>) -> Option<String> {
     date.and_then(|d| d.date_parts.as_ref())
         .and_then(|parts| parts.first())
         .and_then(|inner| inner.first())
         .copied()
         .flatten()
+        .map(|y| y.to_string())
 }
 
 #[cfg(test)]

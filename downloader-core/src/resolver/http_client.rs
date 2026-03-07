@@ -189,8 +189,14 @@ mod tests {
     /// When adding a new resolver that calls `standard_user_agent`, add its name here.
     /// Excludes "crossref" (until product decision) and "direct" (DirectResolver is a
     /// passthrough and does not use an HTTP client / standard_user_agent).
-    const NON_CROSSREF_RESOLVER_NAMES: &[&str] =
-        &["arxiv", "pubmed", "ieee", "springer", "sciencedirect"];
+    const NON_CROSSREF_RESOLVER_NAMES: &[&str] = &[
+        "arxiv",
+        "pubmed",
+        "ieee",
+        "springer",
+        "sciencedirect",
+        "youtube",
+    ];
 
     #[test]
     fn test_standard_user_agent_single_shared_format() {

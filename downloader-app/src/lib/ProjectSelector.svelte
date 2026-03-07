@@ -22,6 +22,7 @@
 <input
   id="project-input"
   class="project-input"
+  class:project-active={value.trim().length > 0}
   list="project-suggestions"
   bind:value
   placeholder="e.g. Climate Research"
@@ -55,8 +56,22 @@
     border-color: #396cd8;
   }
 
+  .project-input.project-active {
+    border-color: #396cd8;
+    background: #f0f7ff;
+  }
+
+  .project-input.project-active:focus {
+    border-color: #396cd8;
+    background: #f0f7ff;
+  }
+
   .project-input:disabled {
     background: #f5f5f5;
     color: #888;
+  }
+
+  .project-input.project-active:disabled {
+    background: #f5f5f5;
   }
 </style>

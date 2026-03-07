@@ -72,7 +72,7 @@ describe('DownloadForm', () => {
   it('submits trimmed line-split inputs to the progress command', async () => {
     invokeMock.mockImplementation((command) => {
       if (command === 'list_projects') return Promise.resolve([]);
-      return Promise.resolve({ completed: 2, failed: 0, output_dir: '/tmp/downloads' });
+      return Promise.resolve({ completed: 2, failed: 0, output_dir: '/tmp/downloads', failed_items: [] });
     });
 
     render(DownloadForm);
@@ -91,7 +91,7 @@ describe('DownloadForm', () => {
   it('passes project name to start_download_with_progress when project field is filled', async () => {
     invokeMock.mockImplementation((command) => {
       if (command === 'list_projects') return Promise.resolve([]);
-      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads/Climate-Research' });
+      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads/Climate-Research', failed_items: [] });
     });
 
     render(DownloadForm);
@@ -114,7 +114,7 @@ describe('DownloadForm', () => {
   it('does not clear projectName when reset after a successful download', async () => {
     invokeMock.mockImplementation((command) => {
       if (command === 'list_projects') return Promise.resolve([]);
-      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads/Climate-Research' });
+      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads/Climate-Research', failed_items: [] });
     });
 
     render(DownloadForm);
@@ -144,7 +144,7 @@ describe('DownloadForm', () => {
   it('registers the progress listener before invoking the download command', async () => {
     invokeMock.mockImplementation((command) => {
       if (command === 'list_projects') return Promise.resolve([]);
-      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads' });
+      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads', failed_items: [] });
     });
 
     render(DownloadForm);
@@ -167,7 +167,7 @@ describe('DownloadForm', () => {
   });
 
   it('shows downloading state immediately while invoke is pending', async () => {
-    const pending = deferred<{ completed: number; failed: number; output_dir: string }>();
+    const pending = deferred<{ completed: number; failed: number; output_dir: string; failed_items: { input: string; error: string }[] }>();
     invokeMock.mockReturnValue(pending.promise);
 
     render(DownloadForm);
@@ -181,7 +181,7 @@ describe('DownloadForm', () => {
     expect(screen.getByText(/Resolving…/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /cancel/i })).toBeDefined();
 
-    pending.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads' });
+    pending.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads', failed_items: [] });
     await waitFor(() => {
       expect(screen.getByText(/Downloaded 1 file to/)).toBeTruthy();
     });
@@ -210,7 +210,7 @@ describe('DownloadForm', () => {
     listenMock.mockResolvedValue(unlisten);
     invokeMock.mockImplementation((command) => {
       if (command === 'list_projects') return Promise.resolve([]);
-      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads' });
+      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads', failed_items: [] });
     });
 
     render(DownloadForm);
@@ -240,7 +240,7 @@ describe('DownloadForm', () => {
 
   it('calls unlisten on component destroy while a download is pending', async () => {
     const unlisten = vi.fn();
-    const pending = deferred<{ completed: number; failed: number; output_dir: string }>();
+    const pending = deferred<{ completed: number; failed: number; output_dir: string; failed_items: { input: string; error: string }[] }>();
     listenMock.mockResolvedValue(unlisten);
     invokeMock.mockReturnValue(pending.promise);
 
@@ -258,7 +258,7 @@ describe('DownloadForm', () => {
   });
 
   it('shows cancel only while downloading and invokes cancel once', async () => {
-    const pending = deferred<{ completed: number; failed: number; output_dir: string }>();
+    const pending = deferred<{ completed: number; failed: number; output_dir: string; failed_items: { input: string; error: string }[] }>();
     invokeMock.mockImplementation((command) => {
       if (command === 'cancel_download') {
         return Promise.resolve();
@@ -285,14 +285,14 @@ describe('DownloadForm', () => {
       1,
     );
 
-    pending.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads' });
+    pending.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads', failed_items: [] });
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: /cancel/i })).toBeNull();
     });
   });
 
   it('stays stable if cancel_download rejects', async () => {
-    const pending = deferred<{ completed: number; failed: number; output_dir: string }>();
+    const pending = deferred<{ completed: number; failed: number; output_dir: string; failed_items: { input: string; error: string }[] }>();
     invokeMock.mockImplementation((command) => {
       if (command === 'cancel_download') {
         return Promise.reject(new Error('cancel failed'));
@@ -311,7 +311,7 @@ describe('DownloadForm', () => {
     expect((cancelButton as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole('button', { name: /downloading/i })).toBeDefined();
 
-    pending.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads' });
+    pending.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads', failed_items: [] });
     await waitFor(() => {
       expect(screen.getByText(/Cancelled/)).toBeTruthy();
       expect(screen.getByText(/1 completed, 0 failed/)).toBeTruthy();

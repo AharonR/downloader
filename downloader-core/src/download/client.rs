@@ -265,6 +265,7 @@ impl HttpClient {
     }
 
     /// Inner implementation shared by both download methods.
+    #[allow(clippy::too_many_lines)]
     async fn download_to_file_inner(
         &self,
         url: &str,
@@ -311,6 +312,29 @@ impl HttpClient {
 
         let response_status = response.status();
         let response_filename = extract_filename(&response, &parsed_url);
+
+        // If preferred_filename has a .bin extension (unknown type at resolve time),
+        // correct it using the actual Content-Type from the response.
+        let preferred_filename = preferred_filename.map(|pf| {
+            if std::path::Path::new(&pf)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
+            {
+                let ct_ext = response
+                    .headers()
+                    .get("content-type")
+                    .and_then(|ct| ct.to_str().ok())
+                    .map_or(".bin", extension_from_content_type);
+                if ct_ext == ".bin" {
+                    pf
+                } else {
+                    format!("{}{ct_ext}", &pf[..pf.len() - 4])
+                }
+            } else {
+                pf
+            }
+        });
+
         // For resume: use the existing partial file path directly.
         // For fresh downloads: resolve a unique path from the response filename.
         let file_path = if use_resume && response_status.as_u16() == 206 {
@@ -701,7 +725,19 @@ fn extract_filename(response: &reqwest::Response, url: &Url) -> String {
                     );
                     last.into()
                 });
-                return sanitize_filename(&decoded);
+                let sanitized = sanitize_filename(&decoded);
+                // If no extension in URL segment, append one based on Content-Type
+                if !sanitized.contains('.') {
+                    let ct_ext = response
+                        .headers()
+                        .get("content-type")
+                        .and_then(|ct| ct.to_str().ok())
+                        .map(extension_from_content_type)
+                        .filter(|ext| *ext != ".bin")
+                        .unwrap_or("");
+                    return format!("{sanitized}{ct_ext}");
+                }
+                return sanitized;
             }
         }
     }

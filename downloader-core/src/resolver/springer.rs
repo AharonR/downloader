@@ -15,7 +15,8 @@ use crate::parser::InputType;
 
 use super::http_client::{build_resolver_http_client, standard_user_agent};
 use super::utils::{
-    CITATION_PDF_RE, absolutize_url, auth_requirement, compile_static_regex, extract_meta_value,
+    CITATION_DOI_RE, CITATION_PDF_RE, CITATION_PUBLICATION_DATE_RE, CITATION_TITLE_RE,
+    absolutize_url, auth_requirement, compile_static_regex, extract_meta_value,
     extract_year_from_str, hosts_match, is_auth_required_status, looks_like_doi,
     parse_host_or_fallback,
 };
@@ -27,21 +28,6 @@ const SPRINGER_DOI_PREFIX: &str = "10.1007/";
 
 static CONTENT_PDF_LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(r#"(?is)href\s*=\s*["']([^"']*/content/pdf/[^"']+\.pdf[^"']*)["']"#)
-});
-static TITLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    compile_static_regex(
-        r#"(?is)<meta\s+[^>]*(?:name|property)\s*=\s*["']citation_title["'][^>]*content\s*=\s*["']([^"']+)["']"#,
-    )
-});
-static DOI_RE: LazyLock<Regex> = LazyLock::new(|| {
-    compile_static_regex(
-        r#"(?is)<meta\s+[^>]*(?:name|property)\s*=\s*["']citation_doi["'][^>]*content\s*=\s*["']([^"']+)["']"#,
-    )
-});
-static YEAR_RE: LazyLock<Regex> = LazyLock::new(|| {
-    compile_static_regex(
-        r#"(?is)<meta\s+[^>]*(?:name|property)\s*=\s*["']citation_publication_date["'][^>]*content\s*=\s*["']([^"']+)["']"#,
-    )
 });
 
 /// Specialized resolver for Springer inputs.
@@ -176,13 +162,10 @@ impl Resolver for SpringerResolver {
 
         let final_url = response.url().clone();
         let Ok(html) = response.text().await else {
-            return Ok(ResolveStep::Failed(ResolveError::resolution_failed(
-                input,
-                "Springer response body could not be parsed",
-            )));
+            return Ok(ResolveStep::body_parse_failed(input, "Springer"));
         };
 
-        let doi = extract_meta_value(&html, &DOI_RE)
+        let doi = extract_meta_value(&html, &CITATION_DOI_RE)
             .or_else(|| extract_input_doi(input))
             .or_else(|| extract_doi_from_path(final_url.path()));
 
@@ -216,10 +199,10 @@ impl Resolver for SpringerResolver {
         if let Some(value) = doi {
             metadata.insert("doi".to_string(), value);
         }
-        if let Some(title) = extract_meta_value(&html, &TITLE_RE) {
+        if let Some(title) = extract_meta_value(&html, &CITATION_TITLE_RE) {
             metadata.insert("title".to_string(), title);
         }
-        if let Some(raw_date) = extract_meta_value(&html, &YEAR_RE)
+        if let Some(raw_date) = extract_meta_value(&html, &CITATION_PUBLICATION_DATE_RE)
             && let Some(year) = extract_year_from_str(&raw_date)
         {
             metadata.insert("year".to_string(), year);

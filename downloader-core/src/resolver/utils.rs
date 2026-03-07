@@ -20,6 +20,30 @@ pub static CITATION_PDF_RE: LazyLock<Regex> = LazyLock::new(|| {
     )
 });
 
+/// Shared regex for extracting `citation_title` from HTML meta tags.
+/// Used by `IEEE` and `Springer` resolvers.
+pub static CITATION_TITLE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    compile_static_regex(
+        r#"(?is)<meta\s+[^>]*(?:name|property)\s*=\s*["']citation_title["'][^>]*content\s*=\s*["']([^"']+)["']"#,
+    )
+});
+
+/// Shared regex for extracting `citation_doi` from HTML meta tags.
+/// Used by `IEEE` and `Springer` resolvers.
+pub static CITATION_DOI_RE: LazyLock<Regex> = LazyLock::new(|| {
+    compile_static_regex(
+        r#"(?is)<meta\s+[^>]*(?:name|property)\s*=\s*["']citation_doi["'][^>]*content\s*=\s*["']([^"']+)["']"#,
+    )
+});
+
+/// Shared regex for extracting `citation_publication_date` from HTML meta tags.
+/// Used by `IEEE` and `Springer` resolvers.
+pub static CITATION_PUBLICATION_DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    compile_static_regex(
+        r#"(?is)<meta\s+[^>]*(?:name|property)\s*=\s*["']citation_publication_date["'][^>]*content\s*=\s*["']([^"']+)["']"#,
+    )
+});
+
 /// Normalizes a host string: trim, strip leading "www.", trailing '.', and lowercases.
 #[must_use]
 pub fn canonical_host(host: &str) -> String {
@@ -224,6 +248,33 @@ mod tests {
         assert_eq!(
             absolutize_url("bar", &base),
             Some("https://example.com/foo/bar".to_string())
+        );
+    }
+
+    #[test]
+    fn test_citation_title_re_extracts_title() {
+        let html = r#"<meta name="citation_title" content="My Paper Title">"#;
+        assert_eq!(
+            extract_meta_value(html, &CITATION_TITLE_RE),
+            Some("My Paper Title".to_string())
+        );
+    }
+
+    #[test]
+    fn test_citation_doi_re_extracts_doi() {
+        let html = r#"<meta name="citation_doi" content="10.1109/5.771073">"#;
+        assert_eq!(
+            extract_meta_value(html, &CITATION_DOI_RE),
+            Some("10.1109/5.771073".to_string())
+        );
+    }
+
+    #[test]
+    fn test_citation_publication_date_re_extracts_date() {
+        let html = r#"<meta name="citation_publication_date" content="2024/06">"#;
+        assert_eq!(
+            extract_meta_value(html, &CITATION_PUBLICATION_DATE_RE),
+            Some("2024/06".to_string())
         );
     }
 

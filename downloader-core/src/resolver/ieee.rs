@@ -15,7 +15,8 @@ use crate::parser::InputType;
 
 use super::http_client::{build_resolver_http_client, standard_user_agent};
 use super::utils::{
-    CITATION_PDF_RE, absolutize_url, auth_requirement, compile_static_regex, extract_meta_value,
+    CITATION_DOI_RE, CITATION_PDF_RE, CITATION_PUBLICATION_DATE_RE, CITATION_TITLE_RE,
+    absolutize_url, auth_requirement, compile_static_regex, extract_meta_value,
     extract_year_from_str, hosts_match, is_auth_required_status, looks_like_doi,
     parse_host_or_fallback,
 };
@@ -28,21 +29,6 @@ const IEEE_DOI_PREFIX: &str = "10.1109/";
 static DOCUMENT_ID_RE: LazyLock<Regex> = LazyLock::new(|| compile_static_regex(r"/document/(\d+)"));
 static STAMP_URL_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_static_regex(r#"(?i)(/stamp/stamp\.jsp\?[^"']*arnumber=\d+[^"']*)"#));
-static TITLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    compile_static_regex(
-        r#"(?is)<meta\s+[^>]*(?:name|property)\s*=\s*["']citation_title["'][^>]*content\s*=\s*["']([^"']+)["']"#,
-    )
-});
-static DOI_RE: LazyLock<Regex> = LazyLock::new(|| {
-    compile_static_regex(
-        r#"(?is)<meta\s+[^>]*(?:name|property)\s*=\s*["']citation_doi["'][^>]*content\s*=\s*["']([^"']+)["']"#,
-    )
-});
-static YEAR_RE: LazyLock<Regex> = LazyLock::new(|| {
-    compile_static_regex(
-        r#"(?is)<meta\s+[^>]*(?:name|property)\s*=\s*["']citation_publication_date["'][^>]*content\s*=\s*["']([^"']+)["']"#,
-    )
-});
 
 /// Specialized resolver for IEEE URLs and DOI patterns.
 pub struct IeeeResolver {
@@ -169,10 +155,7 @@ impl Resolver for IeeeResolver {
 
         let final_url = response.url().clone();
         let Ok(html) = response.text().await else {
-            return Ok(ResolveStep::Failed(ResolveError::resolution_failed(
-                input,
-                "IEEE response body could not be parsed",
-            )));
+            return Ok(ResolveStep::body_parse_failed(input, "IEEE"));
         };
 
         if is_auth_page(&html, &final_url) {
@@ -205,13 +188,15 @@ impl Resolver for IeeeResolver {
         if let Some(id) = arnumber {
             metadata.insert("ieee_arnumber".to_string(), id);
         }
-        if let Some(title) = extract_meta_value(&html, &TITLE_RE) {
+        if let Some(title) = extract_meta_value(&html, &CITATION_TITLE_RE) {
             metadata.insert("title".to_string(), title);
         }
-        if let Some(doi) = extract_meta_value(&html, &DOI_RE).or_else(|| extract_input_doi(input)) {
+        if let Some(doi) =
+            extract_meta_value(&html, &CITATION_DOI_RE).or_else(|| extract_input_doi(input))
+        {
             metadata.insert("doi".to_string(), doi);
         }
-        if let Some(raw_date) = extract_meta_value(&html, &YEAR_RE)
+        if let Some(raw_date) = extract_meta_value(&html, &CITATION_PUBLICATION_DATE_RE)
             && let Some(year) = extract_year_from_str(&raw_date)
         {
             metadata.insert("year".to_string(), year);

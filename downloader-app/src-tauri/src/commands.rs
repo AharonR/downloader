@@ -32,6 +32,14 @@ pub struct DownloadSummary {
     pub completed: usize,
     pub failed: usize,
     pub output_dir: String,
+    pub failed_items: Vec<FailedItem>,
+}
+
+/// Per-item failure detail included in [`DownloadSummary`].
+#[derive(Debug, Serialize, Clone)]
+pub struct FailedItem {
+    pub input: String,
+    pub error: String,
 }
 
 /// Per-item progress snapshot emitted during active downloads.
@@ -332,6 +340,24 @@ async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, 
     Ok(enqueued)
 }
 
+/// Collects newly-failed items from the queue, excluding those that were
+/// already failed before this run (identified by `failed_before` IDs).
+async fn collect_failed_items(queue: &Queue, failed_before: &HashSet<i64>) -> Vec<FailedItem> {
+    queue
+        .list_by_status(QueueStatus::Failed)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|item| !failed_before.contains(&item.id))
+        .map(|item| FailedItem {
+            input: item.original_input.unwrap_or_else(|| item.url.clone()),
+            error: item
+                .last_error
+                .unwrap_or_else(|| "Unknown error".to_string()),
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
@@ -389,9 +415,17 @@ pub async fn start_download(
     let queue = Arc::new(Queue::new(db));
     resolve_and_enqueue(&inputs, &queue).await?;
 
-    // Capture state before this run to identify newly-completed items and bound the log.
+    // Capture state before this run to identify newly-completed/failed items and bound the log.
     let completed_before: HashSet<i64> = queue
         .list_by_status(QueueStatus::Completed)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|item| item.id)
+        .collect();
+
+    let failed_before: HashSet<i64> = queue
+        .list_by_status(QueueStatus::Failed)
         .await
         .unwrap_or_default()
         .into_iter()
@@ -439,10 +473,13 @@ pub async fn start_download(
         generate_sidecars_for_completed(&queue, &completed_before).await;
     }
 
+    let failed_items = collect_failed_items(&queue, &failed_before).await;
+
     Ok(DownloadSummary {
         completed: stats.completed(),
         failed: stats.failed(),
         output_dir: output_dir.display().to_string(),
+        failed_items,
     })
 }
 
@@ -509,9 +546,17 @@ pub async fn start_download_with_progress(
             )
         })?;
 
-    // Capture state before this run to identify newly-completed items and bound the log.
+    // Capture state before this run to identify newly-completed/failed items and bound the log.
     let completed_before: HashSet<i64> = queue
         .list_by_status(QueueStatus::Completed)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|item| item.id)
+        .collect();
+
+    let failed_before: HashSet<i64> = queue
+        .list_by_status(QueueStatus::Failed)
         .await
         .unwrap_or_default()
         .into_iter()
@@ -521,10 +566,7 @@ pub async fn start_download_with_progress(
     // Offsets for the polling loop: items completed/failed in prior runs must not count
     // toward the progress of THIS run (they are already Completed/Failed in the shared DB).
     let prior_completed = completed_before.len();
-    let prior_failed: usize = queue
-        .count_by_status(QueueStatus::Failed)
-        .await
-        .unwrap_or(0) as usize;
+    let prior_failed: usize = failed_before.len();
 
     // Watermark: max existing DownloadAttempt id for this project before the run.
     // Passed to append_project_download_log so only new attempts appear in the session section.
@@ -646,10 +688,13 @@ pub async fn start_download_with_progress(
         generate_sidecars_for_completed(&queue, &completed_before).await;
     }
 
+    let failed_items = collect_failed_items(&queue, &failed_before).await;
+
     Ok(DownloadSummary {
         completed: stats.completed(),
         failed: stats.failed(),
         output_dir: output_dir.display().to_string(),
+        failed_items,
     })
 }
 

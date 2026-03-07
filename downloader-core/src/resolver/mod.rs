@@ -14,6 +14,7 @@
 //! - [`IeeeResolver`] - Site-specific resolver for IEEE Xplore and `10.1109/*` DOI inputs
 //! - [`SpringerResolver`] - Site-specific resolver for Springer article/chapter URL inputs
 //! - [`ScienceDirectResolver`] - Site-specific resolver for `ScienceDirect` URLs/DOIs
+//! - [`YouTubeResolver`] - Site-specific resolver for `YouTube` watch URLs (oEmbed + transcript)
 //! - [`DirectResolver`] - Reference implementation (URL passthrough)
 //!
 //! # Example
@@ -45,6 +46,7 @@ mod registry;
 mod sciencedirect;
 mod springer;
 mod utils;
+mod youtube;
 
 pub use arxiv::ArxivResolver;
 pub use crossref::CrossrefResolver;
@@ -56,6 +58,7 @@ pub use pubmed::PubMedResolver;
 pub use registry::ResolverRegistry;
 pub use sciencedirect::ScienceDirectResolver;
 pub use springer::SpringerResolver;
+pub use youtube::YouTubeResolver;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -111,6 +114,14 @@ pub fn build_default_resolver_registry(
         Err(error) => warn!(
             error = %error,
             "ScienceDirect resolver unavailable; continuing with generic resolvers"
+        ),
+    }
+
+    match YouTubeResolver::new() {
+        Ok(resolver) => registry.register(Box::new(resolver)),
+        Err(error) => warn!(
+            error = %error,
+            "YouTube resolver unavailable; continuing with remaining resolvers"
         ),
     }
 
@@ -204,6 +215,19 @@ pub enum ResolveStep {
     Failed(ResolveError),
 }
 
+impl ResolveStep {
+    /// Constructs a parse-body failure for a named source.
+    ///
+    /// Produces: `ResolveStep::Failed(ResolveError::resolution_failed(input, "{source} response body could not be parsed"))`
+    #[must_use]
+    pub fn body_parse_failed(input: &str, source: &str) -> Self {
+        Self::Failed(ResolveError::resolution_failed(
+            input,
+            &format!("{source} response body could not be parsed"),
+        ))
+    }
+}
+
 /// Context passed to resolvers during resolution.
 #[derive(Debug)]
 pub struct ResolveContext {
@@ -290,5 +314,20 @@ mod tests {
         let req = AuthRequirement::new("example.com", "login required");
         assert_eq!(req.domain, "example.com");
         assert_eq!(req.message, "login required");
+    }
+
+    #[test]
+    fn test_body_parse_failed_message_contains_source() {
+        let step = ResolveStep::body_parse_failed("https://example.com", "TestSource");
+        match step {
+            ResolveStep::Failed(err) => {
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("TestSource response body could not be parsed"),
+                    "expected message to contain source text, got: {msg}"
+                );
+            }
+            other => panic!("expected ResolveStep::Failed, got: {other:?}"),
+        }
     }
 }

@@ -1,8 +1,14 @@
 <script lang="ts">
+  export interface FailedItem {
+    input: string;
+    error: string;
+  }
+
   export interface DownloadSummary {
     completed: number;
     failed: number;
     output_dir: string;
+    failed_items: FailedItem[];
   }
 
   let {
@@ -10,20 +16,23 @@
     onReset,
     cancelled = false,
   }: { summary: DownloadSummary; onReset: () => void; cancelled?: boolean } = $props();
+
+  let showFailedDetails = $state(false);
 </script>
 
-<div class="completion-summary" role="region" aria-label="Download complete">
+<div
+  class="completion-summary"
+  class:summary-success={!cancelled && summary.failed === 0}
+  class:summary-partial={!cancelled && summary.failed > 0 && summary.completed > 0}
+  class:summary-all-failed={!cancelled && summary.failed > 0 && summary.completed === 0}
+  class:summary-cancelled={cancelled}
+  role="region"
+  aria-label="Download complete"
+>
   {#if cancelled}
     <p class="status-cancelled">
       Cancelled — {summary.completed} completed, {summary.failed} failed
     </p>
-    {#if summary.failed > 0}
-      <p class="error-hint">
-        What: Some downloads did not complete before cancellation.<br />
-        Why: Downloads in flight were interrupted; others may have failed due to network or resolution errors.<br />
-        Fix: Re-run the download or check network connectivity.
-      </p>
-    {/if}
   {:else if summary.failed === 0}
     <p class="status-success">
       Downloaded {summary.completed} file{summary.completed !== 1 ? 's' : ''} to
@@ -36,12 +45,27 @@
         (saved to <code class="output-dir">{summary.output_dir}</code>)
       {/if}
     </p>
-    {#if summary.failed > 0}
-      <p class="error-hint">
-        What: Some downloads failed.<br />
-        Why: Network errors, paywalled content, or unresolvable DOIs.<br />
-        Fix: Check your network connection and verify URLs/DOIs are accessible.
-      </p>
+  {/if}
+
+  {#if summary.failed_items.length > 0}
+    <button
+      class="toggle-details"
+      type="button"
+      aria-expanded={showFailedDetails}
+      onclick={() => { showFailedDetails = !showFailedDetails; }}
+    >
+      {showFailedDetails ? 'Hide' : 'Show'} failed items ({summary.failed_items.length})
+    </button>
+
+    {#if showFailedDetails}
+      <ul class="failed-list">
+        {#each summary.failed_items as item}
+          <li class="failed-item">
+            <span class="failed-input">{item.input}</span>
+            <span class="failed-error">{item.error}</span>
+          </li>
+        {/each}
+      </ul>
     {/if}
   {/if}
 
@@ -56,6 +80,23 @@
     border-radius: 8px;
     background: #f0f7ff;
     margin-top: 1rem;
+    border-top: 3px solid transparent;
+  }
+
+  .summary-success {
+    border-top-color: #1a7a4a;
+  }
+
+  .summary-partial {
+    border-top-color: #c07000;
+  }
+
+  .summary-all-failed {
+    border-top-color: #c0392b;
+  }
+
+  .summary-cancelled {
+    border-top-color: #888;
   }
 
   .status-success {
@@ -83,15 +124,52 @@
     font-size: 0.85em;
   }
 
-  .error-hint {
-    font-size: 0.85rem;
+  .toggle-details {
+    background: none;
+    border: 1px solid #c0392b;
     color: #c0392b;
+    border-radius: 4px;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.82rem;
+    cursor: pointer;
+    margin-bottom: 0.5rem;
+    display: block;
+  }
+
+  .toggle-details:hover {
     background: #fff5f5;
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
+  }
+
+  .failed-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 0.75rem;
     border-left: 3px solid #c0392b;
-    margin: 0.5rem 0 0.75rem;
-    line-height: 1.6;
+    background: #fff5f5;
+    border-radius: 0 4px 4px 0;
+  }
+
+  .failed-item {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.83rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .failed-item + .failed-item {
+    border-top: 1px solid #f5d5d5;
+  }
+
+  .failed-input {
+    font-family: monospace;
+    color: #333;
+    word-break: break-all;
+  }
+
+  .failed-error {
+    color: #c0392b;
+    line-height: 1.4;
   }
 
   .reset-btn {

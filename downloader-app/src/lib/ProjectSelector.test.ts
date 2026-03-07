@@ -76,4 +76,18 @@ describe('ProjectSelector', () => {
     const input = screen.getByRole('combobox') as HTMLInputElement;
     expect(input.disabled).toBe(true);
   });
+
+  it('has project-active class when value is non-empty', async () => {
+    invokeMock.mockResolvedValue([]);
+    render(ProjectSelector, { props: { value: 'Climate Research' } });
+    const input = screen.getByRole('combobox') as HTMLInputElement;
+    expect(input.classList.contains('project-active')).toBe(true);
+  });
+
+  it('does not have project-active class when value is empty', async () => {
+    invokeMock.mockResolvedValue([]);
+    render(ProjectSelector, { props: { value: '' } });
+    const input = screen.getByRole('combobox') as HTMLInputElement;
+    expect(input.classList.contains('project-active')).toBe(false);
+  });
 });

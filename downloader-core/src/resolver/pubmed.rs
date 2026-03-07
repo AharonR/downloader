@@ -239,10 +239,7 @@ impl PubMedResolver {
 
         let final_url = response.url().clone();
         let Ok(html) = response.text().await else {
-            return Ok(ResolveStep::Failed(ResolveError::resolution_failed(
-                &pmc_article,
-                "PMC response body could not be parsed",
-            )));
+            return Ok(ResolveStep::body_parse_failed(&pmc_article, "PMC"));
         };
 
         let pdf_url = extract_pdf_url(&html, &final_url).or_else(|| {

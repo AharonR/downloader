@@ -55,15 +55,16 @@ pub fn extract_urls(input: &str) -> Vec<UrlExtractionResult> {
         let raw_url = url_match.as_str();
         // Clean up trailing punctuation that might have been captured
         let cleaned = clean_url_trailing(raw_url);
-        trace!(url = %cleaned, "found URL candidate");
+        let sanitized = strip_backslash_escapes(cleaned);
+        trace!(url = %sanitized, "found URL candidate");
 
-        match validate_url(cleaned) {
+        match validate_url(&sanitized) {
             Ok(validated) => {
                 debug!(url = %validated, "URL validated");
                 results.push(Ok(ParsedItem::url(raw_url, validated)));
             }
             Err(e) => {
-                debug!(url = %cleaned, error = %e, "URL validation failed");
+                debug!(url = %sanitized, error = %e, "URL validation failed");
                 results.push(Err(e));
             }
         }
@@ -82,6 +83,14 @@ fn has_file_extension(url: &str) -> bool {
     } else {
         false
     }
+}
+
+/// Removes backslash characters from a URL string.
+///
+/// Backslashes are not valid in URLs (RFC 3986) and typically appear as
+/// copy-paste artifacts from shells (`\&`), LaTeX (`\%`), or markdown.
+fn strip_backslash_escapes(url: &str) -> String {
+    url.replace('\\', "")
 }
 
 /// Strips one trailing closing bracket if it is unmatched (more closes than opens).
@@ -487,6 +496,57 @@ mod tests {
         assert_eq!(
             clean_url_trailing("https://example.com?foo=bar!!"),
             "https://example.com?foo=bar"
+        );
+    }
+
+    // ==================== Backslash escape stripping ====================
+
+    #[test]
+    fn test_extract_urls_strips_backslash_before_ampersand() {
+        let input = r"https://example.com/page?a=1\&b=2";
+        let results = extract_urls(input);
+        assert_eq!(results.len(), 1);
+        let item = results[0].as_ref().unwrap();
+        assert!(
+            item.value.contains("a=1&b=2"),
+            "backslash should be removed: {}",
+            item.value
+        );
+        assert!(
+            !item.value.contains("%5C"),
+            "should not percent-encode backslash: {}",
+            item.value
+        );
+    }
+
+    #[test]
+    fn test_extract_urls_strips_multiple_backslashes() {
+        let input = r"https://example.com/path\to\file?x=1\&y=2";
+        let results = extract_urls(input);
+        assert_eq!(results.len(), 1);
+        let item = results[0].as_ref().unwrap();
+        assert!(
+            !item.value.contains('\\'),
+            "all backslashes should be removed: {}",
+            item.value
+        );
+        assert!(
+            !item.value.contains("%5C"),
+            "no percent-encoded backslashes: {}",
+            item.value
+        );
+    }
+
+    #[test]
+    fn test_extract_urls_preserves_percent_encoded_backslash() {
+        let input = "https://example.com/%5Cpath";
+        let results = extract_urls(input);
+        assert_eq!(results.len(), 1);
+        let item = results[0].as_ref().unwrap();
+        assert!(
+            item.value.contains("%5C") || item.value.contains("%5c"),
+            "percent-encoded backslash should be preserved: {}",
+            item.value
         );
     }
 

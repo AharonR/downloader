@@ -899,6 +899,103 @@ async fn test_springer_resolver_paywall_path_returns_needs_auth() {
 }
 
 #[tokio::test]
+async fn test_ieee_resolver_direct_stamp_url_bypasses_page_fetch() {
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
+    let base_url = mock_server.uri();
+    let stamp_url = format!("{base_url}/stamp/stamp.jsp?tp=&arnumber=1234567");
+
+    let mut registry = ResolverRegistry::new();
+    registry.register(Box::new(
+        IeeeResolver::with_base_urls(None, &base_url, &base_url).unwrap(),
+    ));
+
+    let ctx = ResolveContext::default();
+    let result = registry
+        .resolve_to_url(&stamp_url, InputType::Url, &ctx)
+        .await
+        .unwrap();
+
+    assert_eq!(result.url, stamp_url);
+    let requests = mock_server.received_requests().await.unwrap();
+    assert!(
+        requests.is_empty(),
+        "direct stamp URLs should not trigger IEEE page fetches"
+    );
+}
+
+#[tokio::test]
+async fn test_springer_resolver_direct_pdf_url_bypasses_page_fetch() {
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
+    let base_url = mock_server.uri();
+    let pdf_url = format!("{base_url}/content/pdf/10.1007/s00134-020-06294-x.pdf");
+
+    let mut registry = ResolverRegistry::new();
+    registry.register(Box::new(
+        SpringerResolver::with_base_urls(None, &base_url, &base_url).unwrap(),
+    ));
+
+    let ctx = ResolveContext::default();
+    let result = registry
+        .resolve_to_url(&pdf_url, InputType::Url, &ctx)
+        .await
+        .unwrap();
+
+    assert_eq!(result.url, pdf_url);
+    let requests = mock_server.received_requests().await.unwrap();
+    assert!(
+        requests.is_empty(),
+        "direct /content/pdf/ URLs should not trigger Springer page fetches"
+    );
+}
+
+#[tokio::test]
+async fn test_springer_resolver_builds_canonical_pdf_url_when_citation_meta_absent() {
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
+    let doi = "10.1007/s00134-020-06294-x";
+    let article_path = format!("/article/{doi}");
+
+    // Page exposes the DOI but no citation_pdf_url — resolver must construct canonical URL.
+    Mock::given(method("GET"))
+        .and(path(&article_path))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"<meta name="citation_title" content="Canonical Fallback Test">
+               <meta name="citation_doi" content="{doi}">"#
+        )))
+        .mount(&mock_server)
+        .await;
+
+    let mut registry = ResolverRegistry::new();
+    registry.register(Box::new(
+        SpringerResolver::with_base_urls(None, mock_server.uri(), mock_server.uri()).unwrap(),
+    ));
+    registry.register(Box::new(DirectResolver::new()));
+
+    let ctx = ResolveContext::default();
+    let input_url = format!("{}{}", mock_server.uri(), article_path);
+    let result = registry
+        .resolve_to_url(&input_url, InputType::Url, &ctx)
+        .await
+        .unwrap();
+
+    let expected_pdf = format!(
+        "{}/content/pdf/{doi}.pdf",
+        mock_server.uri().trim_end_matches('/')
+    );
+    assert_eq!(result.url, expected_pdf);
+    assert_eq!(result.metadata.get("doi").unwrap(), doi);
+    assert_eq!(
+        result.metadata.get("title").unwrap(),
+        "Canonical Fallback Test"
+    );
+}
+
+#[tokio::test]
 async fn test_shared_default_registry_applies_specialized_priority_matrix() {
     let registry = build_default_resolver_registry(None, "test@example.com");
 
@@ -986,7 +1083,9 @@ async fn test_standard_metadata_contract_keys_present_for_specialized_resolvers(
             STANDARD_METADATA_KEYS.contains(&key.as_str())
                 || key == "pmcid"
                 || key == "pmid"
-                || key == "ieee_arnumber",
+                || key == "ieee_arnumber"
+                || key == "youtube_video_id"
+                || key == "transcript_lang",
             "unexpected metadata key in contract test: {key}"
         );
     }

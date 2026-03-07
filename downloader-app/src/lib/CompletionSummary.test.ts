@@ -7,6 +7,7 @@ describe('CompletionSummary', () => {
     completed: 3,
     failed: 0,
     output_dir: '/home/user/downloads',
+    failed_items: [],
     ...overrides,
   });
 
@@ -39,11 +40,18 @@ describe('CompletionSummary', () => {
     expect(screen.getByText(/2 downloaded, 1 failed/)).toBeTruthy();
   });
 
-  it('partial path: shows error-hint when failed > 0', () => {
+  it('partial path: shows toggle button when failed_items is non-empty', () => {
     render(CompletionSummary, {
-      props: { summary: makeSummary({ completed: 2, failed: 1 }), onReset: vi.fn() },
+      props: {
+        summary: makeSummary({
+          completed: 2,
+          failed: 1,
+          failed_items: [{ input: 'https://bad.example.com/paper.pdf', error: 'HTTP 403' }],
+        }),
+        onReset: vi.fn(),
+      },
     });
-    expect(screen.getByText(/Some downloads failed/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /show failed items \(1\)/i })).toBeTruthy();
   });
 
   it('partial path: omits output dir when nothing completed', () => {
@@ -62,18 +70,55 @@ describe('CompletionSummary', () => {
     expect(screen.getByText(/1 completed, 0 failed/)).toBeTruthy();
   });
 
-  it('cancel path: shows error-hint when failed > 0 after cancel', () => {
+  it('cancel path: shows toggle button when failed_items is non-empty after cancel', () => {
     render(CompletionSummary, {
-      props: { summary: makeSummary({ completed: 1, failed: 2 }), onReset: vi.fn(), cancelled: true },
+      props: {
+        summary: makeSummary({
+          completed: 1,
+          failed: 2,
+          failed_items: [
+            { input: 'https://a.example.com/1.pdf', error: 'Interrupted' },
+            { input: 'https://b.example.com/2.pdf', error: 'Interrupted' },
+          ],
+        }),
+        onReset: vi.fn(),
+        cancelled: true,
+      },
     });
-    expect(screen.getByText(/did not complete before cancellation/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /show failed items \(2\)/i })).toBeTruthy();
   });
 
-  it('cancel path: no error-hint when failed === 0 after cancel', () => {
+  it('cancel path: no toggle button when failed_items is empty after cancel', () => {
     render(CompletionSummary, {
-      props: { summary: makeSummary({ completed: 3, failed: 0 }), onReset: vi.fn(), cancelled: true },
+      props: { summary: makeSummary({ completed: 3, failed: 0, failed_items: [] }), onReset: vi.fn(), cancelled: true },
     });
-    expect(screen.queryByText(/did not complete before cancellation/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /failed items/i })).toBeNull();
+  });
+
+  it('clicking toggle expands to show per-item error details', async () => {
+    render(CompletionSummary, {
+      props: {
+        summary: makeSummary({
+          completed: 1,
+          failed: 1,
+          failed_items: [{ input: 'https://fail.example.com/paper.pdf', error: 'HTTP 404 Not Found' }],
+        }),
+        onReset: vi.fn(),
+      },
+    });
+
+    // Details hidden initially
+    expect(screen.queryByText(/HTTP 404 Not Found/)).toBeNull();
+
+    // Click toggle
+    await fireEvent.click(screen.getByRole('button', { name: /show failed items/i }));
+
+    // Details now visible
+    expect(screen.getByText(/HTTP 404 Not Found/)).toBeTruthy();
+    expect(screen.getByText(/https:\/\/fail\.example\.com\/paper\.pdf/)).toBeTruthy();
+
+    // Button label flips
+    expect(screen.getByRole('button', { name: /hide failed items/i })).toBeTruthy();
   });
 
   it('calls onReset when "Download more" is clicked', async () => {
