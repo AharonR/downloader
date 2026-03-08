@@ -429,6 +429,54 @@ Error::AuthRequired {
 Error::Forbidden
 ```
 
+## Error Message Convention
+
+All user-facing error messages follow the **What / Why / Fix** pattern. This applies to:
+
+- `downloader-cli` (surfaces via `anyhow` chains in `main.rs`)
+- `downloader-app` Tauri commands (surfaces via `commands.rs` `DownloadSummary.failed_items`)
+- `tracing::warn!` log messages for diagnostics visible in `--verbose` mode
+
+### Pattern
+
+```
+What: <what failed — concrete noun phrase>
+Why:  <why it likely happened — one sentence>
+Fix:  <what the user can do — actionable>
+```
+
+### Rules
+
+1. **What** — name the thing that failed: "DOI resolution", "Crossref API request", "PDF download"
+2. **Why** — give the most likely cause, not a stack trace
+3. **Fix** — give a concrete action: a flag to pass, a URL to check, a file to look at
+4. **Do NOT** extract a shared error module — keep the `thiserror` (library) / `anyhow` (binary)
+   boundary intact. Each crate formats its own errors.
+5. Tracing `warn!` messages use inline prose following the same pattern (see `crossref.rs` for
+   the established inline style).
+
+### Examples
+
+```rust
+// Good — all three elements present
+warn!(
+    "Crossref `date-parts` outer array is empty. \
+     Why: unexpected API response shape — expected [[year, month, day]]. \
+     Fix: none required — year will be omitted from metadata."
+);
+
+// Good — structured thiserror variant with suggestion field
+Error::AuthRequired {
+    domain: "sciencedirect.com",
+    suggestion: "Run `downloader auth capture` to authenticate"
+}
+
+// Bad — opaque, no guidance
+Error::Forbidden
+// Bad — cause only, no fix
+"HTTP 429 from Crossref"
+```
+
 ### Platform Compatibility
 - Use `PathBuf` for paths, never string concatenation
 - Normalize line endings in parsers

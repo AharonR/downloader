@@ -68,8 +68,19 @@ pub struct QueueMetadata {
     /// Extracted topics from title/abstract (Story 8.1)
     pub topics: Option<Vec<String>>,
     /// Parser confidence classification for reference-derived inputs.
+    ///
+    /// Valid values: `"high"`, `"medium"`, `"low"`, or `None` when the item
+    /// was not derived from a reference string (e.g. plain URL inputs).
+    /// Populated by [`crate::extract_reference_confidence`] during input parsing
+    /// and stored verbatim in the queue database for history queries.
     pub parse_confidence: Option<String>,
-    /// JSON payload for parser confidence factors.
+    /// JSON payload of parser confidence factors for reference-derived inputs.
+    ///
+    /// Stores a JSON object whose keys are factor names (e.g. `"has_doi"`,
+    /// `"has_year"`, `"has_author"`) and values are booleans. Populated
+    /// alongside `parse_confidence`; `None` when `parse_confidence` is `None`.
+    /// Used for debugging parsing quality and informational display only —
+    /// not used in any download control logic.
     pub parse_confidence_factors: Option<String>,
 }
 
@@ -105,9 +116,18 @@ pub struct QueueItem {
     pub meta_doi: Option<String>,
     /// Extracted topics as JSON array (Story 8.1)
     pub topics: Option<String>,
-    /// Parser confidence classification (`high`/`medium`/`low`) when present.
+    /// Parser confidence classification for reference-derived queue items.
+    ///
+    /// Valid values: `"high"`, `"medium"`, `"low"`, or `None` when the item
+    /// was not derived from a reference string (e.g. plain URL inputs).
+    /// Stored verbatim in the queue database; used for history queries and
+    /// UI display — not used in any download control logic.
     pub parse_confidence: Option<String>,
-    /// JSON payload of parser confidence factors when present.
+    /// JSON payload of parser confidence factors for reference-derived items.
+    ///
+    /// Stores a JSON object whose keys are factor names (e.g. `"has_doi"`,
+    /// `"has_year"`, `"has_author"`) and values are booleans. Always `None`
+    /// when `parse_confidence` is `None`. Used for debugging and display only.
     pub parse_confidence_factors: Option<String>,
     /// Final saved path when download completes.
     pub saved_path: Option<String>,
