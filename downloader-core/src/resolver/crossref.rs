@@ -321,13 +321,45 @@ fn extract_metadata(message: &CrossrefMessage, doi: &str) -> HashMap<String, Str
 }
 
 /// Extracts the year from a Crossref date field.
+///
+/// Logs a warning when the date array structure is malformed or unexpected
+/// (e.g. empty outer array, empty inner array, or a `None` year value).
 fn extract_year_from_date_parts(date: Option<&CrossrefDate>) -> Option<String> {
-    date.and_then(|d| d.date_parts.as_ref())
-        .and_then(|parts| parts.first())
-        .and_then(|inner| inner.first())
-        .copied()
-        .flatten()
-        .map(|y| y.to_string())
+    let d = date?;
+    let Some(parts) = d.date_parts.as_ref() else {
+        warn!(
+            "Crossref date field present but `date-parts` is missing. \
+             Why: API may have returned a partial date object. \
+             Fix: none required — year will be omitted from metadata."
+        );
+        return None;
+    };
+    let Some(inner) = parts.first() else {
+        warn!(
+            "Crossref `date-parts` outer array is empty. \
+             Why: unexpected API response shape — expected [[year, month, day]]. \
+             Fix: none required — year will be omitted from metadata."
+        );
+        return None;
+    };
+    let Some(year_opt) = inner.first() else {
+        warn!(
+            "Crossref `date-parts` inner array is empty. \
+             Why: unexpected API response shape — expected at least a year element. \
+             Fix: none required — year will be omitted from metadata."
+        );
+        return None;
+    };
+    if let Some(y) = year_opt {
+        Some(y.to_string())
+    } else {
+        warn!(
+            "Crossref year value is null in date-parts. \
+             Why: API returned null where an integer year was expected. \
+             Fix: none required — year will be omitted from metadata."
+        );
+        None
+    }
 }
 
 #[cfg(test)]

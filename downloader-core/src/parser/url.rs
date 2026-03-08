@@ -89,8 +89,16 @@ fn has_file_extension(url: &str) -> bool {
 ///
 /// Backslashes are not valid in URLs (RFC 3986) and typically appear as
 /// copy-paste artifacts from shells (`\&`), LaTeX (`\%`), or markdown.
+///
+/// The guard ensures this only applies to `http://` and `https://` URLs;
+/// other strings (e.g. local Windows paths) are returned unchanged.
 fn strip_backslash_escapes(url: &str) -> String {
-    url.replace('\\', "")
+    let lower = url.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
+        url.replace('\\', "")
+    } else {
+        url.to_string()
+    }
 }
 
 /// Strips one trailing closing bracket if it is unmatched (more closes than opens).
@@ -547,6 +555,29 @@ mod tests {
             item.value.contains("%5C") || item.value.contains("%5c"),
             "percent-encoded backslash should be preserved: {}",
             item.value
+        );
+    }
+
+    #[test]
+    fn test_strip_backslash_escapes_only_for_http_urls() {
+        // Only strips backslashes when URL starts with http:// or https://
+        // (backslashes are removed, not replaced — they are escape artifacts)
+        assert_eq!(
+            strip_backslash_escapes(r"https://example.com/page?a=1\&b=2"),
+            "https://example.com/page?a=1&b=2"
+        );
+        assert_eq!(
+            strip_backslash_escapes(r"http://example.com/page?a=1\&b=2"),
+            "http://example.com/page?a=1&b=2"
+        );
+        // Non-HTTP strings are preserved unchanged (e.g. Windows paths)
+        assert_eq!(
+            strip_backslash_escapes(r"C:\Users\test\file.pdf"),
+            r"C:\Users\test\file.pdf"
+        );
+        assert_eq!(
+            strip_backslash_escapes(r"\\server\share\path"),
+            r"\\server\share\path"
         );
     }
 

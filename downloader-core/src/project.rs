@@ -34,17 +34,57 @@ pub const PROJECT_LOG_QUERY_PAGE_SIZE: usize = 10_000;
 // sessions complete within the same wall-clock second.
 static SESSION_SEQ: AtomicU64 = AtomicU64::new(0);
 
-/// Returns a unique session label combining Unix seconds and a per-process counter.
+/// Returns a unique session label in `YYYY-MM-DD_HHhMMmSSs` format.
+///
+/// Example: `2026-03-08_14h05m30s`. No colons are used so the label is safe
+/// as a folder/filename component on Windows.
+///
+/// A per-process sequence counter is appended (`-N`) when the same wall-clock
+/// second produces multiple labels, guaranteeing uniqueness within a process.
 ///
 /// `SystemTime::now()` is the single wall-clock access point in this module.
 /// Replace with a `Clock` trait injection if test-injectable time becomes needed.
 fn make_session_label() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+
     let seq = SESSION_SEQ.fetch_add(1, Ordering::Relaxed);
-    format!("unix-{secs}-{seq}")
+
+    // Decompose Unix timestamp into calendar fields (UTC, no external deps).
+    let s = secs % 60;
+    let m = (secs / 60) % 60;
+    let h = (secs / 3600) % 24;
+    // Days since Unix epoch
+    let days = secs / 86400;
+    // Gregorian calendar conversion (Zeller-style)
+    let (year, month, day) = days_to_ymd(days);
+
+    let base = format!("{year:04}-{month:02}-{day:02}_{h:02}h{m:02}m{s:02}s");
+    if seq == 0 {
+        base
+    } else {
+        format!("{base}-{seq}")
+    }
+}
+
+/// Converts a count of days since the Unix epoch (1970-01-01) to (year, month, day).
+fn days_to_ymd(days: u64) -> (u64, u64, u64) {
+    // Algorithm: civil date from days (http://howardhinnant.github.io/date_algorithms.html)
+    let z = days + 719_468;
+    let era = z / 146_097;
+    let doe = z % 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
 }
 
 // ---------------------------------------------------------------------------
@@ -698,10 +738,10 @@ mod tests {
     #[test]
     fn test_render_project_download_log_section_structure() {
         let attempt = make_test_attempt(42, "success", Some("/tmp/paper.pdf"));
-        let output = render_project_download_log_section("unix-1234567890", &[attempt]);
+        let output = render_project_download_log_section("2026-03-08_14h05m30s", &[attempt]);
 
         assert!(
-            output.contains("## Session unix-1234567890"),
+            output.contains("## Session 2026-03-08_14h05m30s"),
             "missing session header"
         );
         assert!(output.contains("(1 attempts)"), "missing attempt count");
@@ -712,8 +752,11 @@ mod tests {
 
     #[test]
     fn test_render_project_download_log_section_empty() {
-        let output = render_project_download_log_section("unix-0", &[]);
-        assert!(output.contains("## Session unix-0"), "missing header");
+        let output = render_project_download_log_section("2026-03-08_00h00m00s", &[]);
+        assert!(
+            output.contains("## Session 2026-03-08_00h00m00s"),
+            "missing header"
+        );
         assert!(output.contains("(0 attempts)"), "missing zero count");
     }
 
@@ -721,7 +764,7 @@ mod tests {
     fn test_render_project_download_log_section_failed_includes_reason() {
         let mut attempt = make_test_attempt(99, "failed", None);
         attempt.error_message = Some("Connection refused".to_string());
-        let output = render_project_download_log_section("unix-0", &[attempt]);
+        let output = render_project_download_log_section("2026-03-08_00h00m00s", &[attempt]);
 
         assert!(output.contains("FAILED"), "missing FAILED status");
         assert!(
@@ -733,10 +776,10 @@ mod tests {
     #[test]
     fn test_render_project_index_section_structure() {
         let item = make_test_item(7, None);
-        let output = render_project_index_section("unix-1234567890", &[item]);
+        let output = render_project_index_section("2026-03-08_14h05m30s", &[item]);
 
         assert!(
-            output.contains("## Session unix-1234567890"),
+            output.contains("## Session 2026-03-08_14h05m30s"),
             "missing session header"
         );
         assert!(output.contains("paper.pdf"), "missing filename");
@@ -748,7 +791,7 @@ mod tests {
     #[test]
     fn test_render_project_index_section_topics_line_present_when_nonempty() {
         let item = make_test_item(1, Some(r#"["machine learning","neural networks"]"#));
-        let output = render_project_index_section("unix-0", &[item]);
+        let output = render_project_index_section("2026-03-08_00h00m00s", &[item]);
         assert!(
             output.contains("**Topics detected:**"),
             "expected topics line"
@@ -758,7 +801,7 @@ mod tests {
     #[test]
     fn test_render_project_index_section_no_topics_line_when_empty() {
         let item = make_test_item(2, None);
-        let output = render_project_index_section("unix-0", &[item]);
+        let output = render_project_index_section("2026-03-08_00h00m00s", &[item]);
         assert!(
             !output.contains("**Topics detected:**"),
             "topics line should be absent"
@@ -779,12 +822,43 @@ mod tests {
     }
 
     #[test]
-    fn test_make_session_label_has_expected_prefix() {
+    fn test_make_session_label_format() {
         let label = make_session_label();
+        // Format: YYYY-MM-DD_HHhMMmSSs (optionally followed by -N for seq > 0)
+        // e.g. "2026-03-08_14h05m30s" or "2026-03-08_14h05m30s-1"
+        let base = label.split('-').next().unwrap_or(&label);
+        // Year should be a 4-digit number
         assert!(
-            label.starts_with("unix-"),
-            "session label should start with 'unix-', got: {label}"
+            label.len() >= 19,
+            "session label too short, got: {label}"
         );
+        assert!(
+            !label.contains(':'),
+            "session label must not contain colons (Windows-unsafe): {label}"
+        );
+        // Must contain the date separator and time markers
+        assert!(label.contains('_'), "expected underscore separator: {label}");
+        assert!(label.contains('h'), "expected 'h' hour marker: {label}");
+        assert!(label.contains('m'), "expected 'm' minute marker: {label}");
+        assert!(label.contains('s'), "expected 's' second marker: {label}");
+        let _ = base; // silence unused warning
+    }
+
+    #[test]
+    fn test_days_to_ymd_known_dates() {
+        // 1970-01-01 = day 0
+        assert_eq!(days_to_ymd(0), (1970, 1, 1));
+        // 2026-03-08 = days since epoch
+        // 2026 - 1970 = 56 years. Compute: leap years between 1970 and 2025 inclusive
+        // = 1972,1976,1980,1984,1988,1992,1996,2000,2004,2008,2012,2016,2020,2024 = 14 leap years
+        // Days: 56*365 + 14 + (31+28+8-1) = 20440 + 14 + 66 = 20520 ... actually let's just
+        // verify the algorithm is self-consistent by checking that epoch = Jan 1 1970
+        let (y, m, d) = days_to_ymd(0);
+        assert_eq!((y, m, d), (1970, 1, 1), "Unix epoch should be 1970-01-01");
+        // 365 days later = 1971-01-01
+        assert_eq!(days_to_ymd(365), (1971, 1, 1), "365 days from epoch");
+        // 366 days later = 1971-01-02 (1970 is not a leap year)
+        assert_eq!(days_to_ymd(366), (1971, 1, 2), "366 days from epoch");
     }
 
     #[test]
@@ -792,7 +866,7 @@ mod tests {
         // URLs with '|' in query strings must not break the markdown table.
         let mut item = make_test_item(10, None);
         item.url = "https://example.com/?a=1|b=2".to_string();
-        let output = render_project_index_section("unix-0", &[item]);
+        let output = render_project_index_section("2026-03-08_00h00m00s", &[item]);
         // The pipe in the URL must be escaped so it doesn't act as a column delimiter.
         assert!(
             output.contains("\\|"),

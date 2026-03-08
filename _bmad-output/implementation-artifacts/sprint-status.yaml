@@ -132,6 +132,15 @@ development_status:
   10-3-progress-display-completion-summary: done
   epic-10-retrospective: done
 
+  # Epic 11: Backlog Cleanup - "Rough edges filed down, docs complete"
+  epic-11: done
+  11-1-bug-fixes-micro-improvements: done
+  11-2-code-quality-convention-documentation: done
+  11-3-ci-hardening: done
+  11-4-youtube-shorts-ui-enhancements: done
+  11-5-documentation-batch: done
+  11-6-backlog-closure: done
+
 # NFR Assessment Gate
 nfr_assessment_status: PASS
 nfr_assessment_file: _bmad-output/nfr-assessment.md
