@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [Epic 11] — 2026-03-08 — Backlog Cleanup
+
+### Added
+
+- **YouTube Shorts support** — `resolver/youtube`: `extract_video_id` now handles
+  `/shorts/<id>` URLs for `www.youtube.com` and `youtube.com`
+  (e.g. `https://www.youtube.com/shorts/dQw4w9WgXcQ`). Full test coverage added.
+- **CompletionSummary expand/collapse all** — When there are more than 5 failed
+  downloads, an "Expand all / Collapse all" toggle button appears in the desktop
+  app completion summary, synced with the per-item show/hide state.
+- **cargo deny** — `deny.toml` created at project root; `cargo deny check` added
+  as a named CI step in `phase-rollout-gates.yml`. Accepted advisories match
+  `.cargo/audit.toml` (RUSTSEC-2023-0071, RUSTSEC-2025-0119).
+- **Critical regression tests as named CI step** — `cargo test --test critical`
+  now runs as a distinct named step in CI, separate from the full test suite.
+- **Architecture doc** — `_bmad-output/as-built-architecture.md` created with
+  module map and key data flows.
+- **Desktop app smoke test checklist** — `downloader-app/SMOKE_TEST.md` created
+  with manual smoke test checklist for the Tauri app.
+
+### Changed
+
+- **Session label format** — `project.rs` `make_session_label()` changed from
+  `unix-{secs}-{seq}` to `YYYY-MM-DD_HHhMMmSSs` (e.g. `2026-03-08_14h05m30s`).
+  No colons — the new format is safe as a filename component on Windows.
+- **ProjectSelector keyboard nav** — Added decision comment explaining why native
+  `<datalist>` keyboard navigation (arrow+Enter) works without custom handlers.
+
+### Fixed
+
+- **URL backslash-strip guard** — `parser/url: strip_backslash_escapes` now only
+  strips backslashes when the string starts with `http://` or `https://`,
+  preventing over-eager stripping of Windows paths passed as inputs.
+- **Crossref malformed date warning** — `resolver/crossref:
+  extract_year_from_date_parts` now emits `tracing::warn!` for malformed or
+  unexpected date array structures instead of silently returning `None`.
+
+### Documentation
+
+- **Error Message Convention** — `_bmad-output/project-context.md` now has a
+  dedicated `## Error Message Convention` section formalizing the What/Why/Fix
+  pattern for user-facing errors and diagnostic `warn!` messages.
+- **`parse_confidence` doc comments** — Both `QueueItem` and `QueueMetadata` in
+  `queue/item.rs` have expanded doc comments on `parse_confidence` and
+  `parse_confidence_factors` fields documenting valid values, storage contract,
+  and usage scope.
+- **CI socket test env var** — Added comment in `phase-rollout-gates.yml`
+  explaining why `DOWNLOADER_REQUIRE_SOCKET_TESTS=1` is required.
+- **`AppState` concurrency contract** — `commands.rs` `AppState` doc comment now
+  explains why `Arc<Mutex>` cancel flag is safe (one active download per window).
+- **README** — Added YouTube resolver to Supported Resolvers table, mixed
+  stdin + positional input examples, and CLI/GUI config alignment note.
+
+
 ### Added
 - **Input pipeline implementation** — The core functionality to read URLs from stdin or command-line arguments, parse them, enqueue them, and download them. This was the critical missing piece that made the binary functional.
 - **Positional URL arguments** — Users can now pass URLs directly as arguments: `downloader https://example.com/file.pdf`

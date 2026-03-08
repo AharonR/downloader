@@ -25,6 +25,12 @@ downloader https://example.com/paper.pdf -q
 # Pipe from a file
 cat urls.txt | downloader
 
+# Mix stdin with positional arguments — URLs from both are merged
+cat urls.txt | downloader https://example.com/extra.pdf
+
+# Mixed stdin + positional with a project
+cat urls.txt | downloader --project myproject https://example.com/extra.pdf
+
 # Download to a specific directory
 downloader -o ./downloads https://example.com/file.pdf
 
@@ -57,6 +63,7 @@ Resolver dispatch is priority-ordered (`Specialized` before `General` before `Fa
 | `ieee` | `https://ieeexplore.ieee.org/document/<id>/`, `10.1109/*`, DOI URLs for `10.1109/*` | Extracts/normalizes IEEE stamp PDF URL from document metadata | Returns `NeedsAuth` for likely paywall/sign-in responses |
 | `springer` | `https://link.springer.com/article/10.1007/*`, `https://link.springer.com/chapter/10.1007/*`, `10.1007/*` | Extracts canonical `/content/pdf/<doi>.pdf` URL from metadata with deterministic fallback | Returns `NeedsAuth` for paywall/subscription signals |
 | `sciencedirect` | `https://www.sciencedirect.com/science/article/*`, `10.1016/*`, DOI URLs for `10.1016/*` | Extracts ScienceDirect PDF endpoint and metadata from article page | Returns `NeedsAuth` when auth/session is required |
+| `youtube` | `https://www.youtube.com/watch?v=ID`, `https://youtube.com/watch?v=ID`, `https://youtu.be/ID`, `https://www.youtube.com/shorts/ID` | Fetches oEmbed JSON metadata; if an English transcript is available via the timedtext API, saves the transcript XML instead. Falls back to oEmbed JSON when transcript is unavailable. | Open-access; no auth required |
 | `crossref` | DOI input (`InputType::Doi`) | Resolves DOI metadata via Crossref; may redirect to `doi.org` fallback | N/A |
 | `direct` | Direct URL input (`InputType::Url`) | Pass-through fallback resolver | N/A |
 
@@ -97,6 +104,23 @@ However, sites using enterprise WAF/CDN protection (Akamai, Cloudflare Enterpris
 - Site-wide access restrictions
 
 These blocks occur at the edge layer before the request reaches the origin server, so User-Agent spoofing alone cannot bypass them. This is expected behavior for sites with strict programmatic access controls.
+
+## CLI vs Desktop App Configuration
+
+The Downloader ships as two interfaces that share the same core library (`downloader-core`):
+
+| | CLI (`downloader-cli`) | Desktop App (`downloader-app`) |
+|---|---|---|
+| Config file | `config.toml` (TOML, read at startup) | Tauri app settings panel (stored per-user) |
+| Output directory | `--output-dir` flag or `config.toml` `output_dir` | Settings → Output Directory |
+| Concurrency | `--concurrency` flag or `config.toml` | Settings → Concurrency |
+| Projects | `--project` flag | Project input field |
+| Download history | Shared SQLite DB (`.downloader/queue.db`) | Same shared DB |
+| Sidecar files | Written to project folder | Written to same folder |
+
+Both interfaces produce the same folder structure: `<output_dir>/<project>/` with
+`index.md`, `download.log`, and JSON-LD sidecar files. Downloads made by the CLI
+are visible in the app's history and vice versa.
 
 ## Building
 
