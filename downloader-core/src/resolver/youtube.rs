@@ -93,6 +93,8 @@ impl YouTubeResolver {
     /// - `https://www.youtube.com/watch?v=ID`
     /// - `https://youtube.com/watch?v=ID`
     /// - `https://youtu.be/ID`
+    /// - `https://www.youtube.com/shorts/ID`
+    /// - `https://youtube.com/shorts/ID`
     fn extract_video_id(input: &str) -> Option<String> {
         let url = reqwest::Url::parse(input).ok()?;
         let host = url.host_str()?;
@@ -106,12 +108,22 @@ impl YouTubeResolver {
             return Some(id.to_string());
         }
 
-        // youtube.com variants
-        if (host == "www.youtube.com" || host == "youtube.com") && url.path() == "/watch" {
-            return url
-                .query_pairs()
-                .find(|(k, _)| k == "v")
-                .map(|(_, v)| v.into_owned());
+        if host == "www.youtube.com" || host == "youtube.com" {
+            // Standard watch URL
+            if url.path() == "/watch" {
+                return url
+                    .query_pairs()
+                    .find(|(k, _)| k == "v")
+                    .map(|(_, v)| v.into_owned());
+            }
+
+            // YouTube Shorts URL: /shorts/<id>
+            if let Some(id) = url.path().strip_prefix("/shorts/") {
+                let id = id.trim_start_matches('/');
+                if !id.is_empty() {
+                    return Some(id.to_string());
+                }
+            }
         }
 
         None
@@ -331,6 +343,45 @@ mod tests {
     fn test_extract_video_id_homepage_returns_none() {
         let id = YouTubeResolver::extract_video_id("https://www.youtube.com/");
         assert!(id.is_none());
+    }
+
+    #[test]
+    fn test_extract_video_id_shorts_url() {
+        let id = YouTubeResolver::extract_video_id(
+            "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+        );
+        assert_eq!(id, Some("dQw4w9WgXcQ".to_string()));
+    }
+
+    #[test]
+    fn test_extract_video_id_shorts_url_no_www() {
+        let id =
+            YouTubeResolver::extract_video_id("https://youtube.com/shorts/dQw4w9WgXcQ");
+        assert_eq!(id, Some("dQw4w9WgXcQ".to_string()));
+    }
+
+    #[test]
+    fn test_extract_video_id_shorts_empty_id_returns_none() {
+        let id = YouTubeResolver::extract_video_id("https://www.youtube.com/shorts/");
+        assert!(id.is_none());
+    }
+
+    #[test]
+    fn test_can_handle_youtube_shorts_url() {
+        let resolver = YouTubeResolver::new().unwrap();
+        assert!(resolver.can_handle(
+            "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+            InputType::Url
+        ));
+    }
+
+    #[test]
+    fn test_can_handle_youtube_shorts_url_no_www() {
+        let resolver = YouTubeResolver::new().unwrap();
+        assert!(resolver.can_handle(
+            "https://youtube.com/shorts/dQw4w9WgXcQ",
+            InputType::Url
+        ));
     }
 
     // ==================== resolve integration tests (wiremock) ====================

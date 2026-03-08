@@ -18,6 +18,16 @@
   });
 </script>
 
+<!--
+  Keyboard navigation decision: this component uses a native <datalist> element
+  rather than a custom dropdown. Native <datalist> provides arrow-key + Enter
+  navigation out of the box in Chrome and Safari without any additional event
+  handlers. Firefox shows a custom UI as well. This avoids re-implementing
+  accessibility (focus management, ARIA live regions, keyboard trap prevention)
+  that browsers already handle correctly for the <input list="..."> pattern.
+  If richer filtering or multi-select is ever needed, replace with a dedicated
+  accessible combobox component at that point.
+-->
 <label for="project-input" class="input-label">Project (optional)</label>
 <input
   id="project-input"

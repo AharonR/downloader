@@ -18,6 +18,14 @@
   }: { summary: DownloadSummary; onReset: () => void; cancelled?: boolean } = $props();
 
   let showFailedDetails = $state(false);
+  // Threshold above which an expand/collapse all toggle is shown.
+  const EXPAND_ALL_THRESHOLD = 5;
+  let expandAll = $state(false);
+
+  function toggleExpandAll() {
+    expandAll = !expandAll;
+    showFailedDetails = expandAll;
+  }
 </script>
 
 <div
@@ -48,14 +56,25 @@
   {/if}
 
   {#if summary.failed_items.length > 0}
-    <button
-      class="toggle-details"
-      type="button"
-      aria-expanded={showFailedDetails}
-      onclick={() => { showFailedDetails = !showFailedDetails; }}
-    >
-      {showFailedDetails ? 'Hide' : 'Show'} failed items ({summary.failed_items.length})
-    </button>
+    <div class="failed-controls">
+      <button
+        class="toggle-details"
+        type="button"
+        aria-expanded={showFailedDetails}
+        onclick={() => { showFailedDetails = !showFailedDetails; }}
+      >
+        {showFailedDetails ? 'Hide' : 'Show'} failed items ({summary.failed_items.length})
+      </button>
+      {#if summary.failed_items.length > EXPAND_ALL_THRESHOLD}
+        <button
+          class="toggle-expand-all"
+          type="button"
+          onclick={toggleExpandAll}
+        >
+          {expandAll ? 'Collapse all' : 'Expand all'}
+        </button>
+      {/if}
+    </div>
 
     {#if showFailedDetails}
       <ul class="failed-list">
@@ -124,6 +143,13 @@
     font-size: 0.85em;
   }
 
+  .failed-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
   .toggle-details {
     background: none;
     border: 1px solid #c0392b;
@@ -132,12 +158,24 @@
     padding: 0.25rem 0.6rem;
     font-size: 0.82rem;
     cursor: pointer;
-    margin-bottom: 0.5rem;
-    display: block;
   }
 
   .toggle-details:hover {
     background: #fff5f5;
+  }
+
+  .toggle-expand-all {
+    background: none;
+    border: 1px solid #888;
+    color: #555;
+    border-radius: 4px;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+
+  .toggle-expand-all:hover {
+    background: #f5f5f5;
   }
 
   .failed-list {
