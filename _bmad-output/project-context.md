@@ -500,6 +500,14 @@ Error::Forbidden
 
 ---
 
+## Story Closure Checklist
+
+Use this checklist before marking any story as `done`:
+
+- [ ] All acceptance criteria verified
+- [ ] Verification gates pass (`cargo clippy --workspace -- -D warnings`, `cargo test --workspace --lib`, `cargo test --test critical -p downloader-core`)
+- [ ] Sprint status updated (`_bmad-output/implementation-artifacts/sprint-status.yaml`)
+
 ## Usage Guidelines
 
 **For AI Agents:**
