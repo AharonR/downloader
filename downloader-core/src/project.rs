@@ -828,16 +828,16 @@ mod tests {
         // e.g. "2026-03-08_14h05m30s" or "2026-03-08_14h05m30s-1"
         let base = label.split('-').next().unwrap_or(&label);
         // Year should be a 4-digit number
-        assert!(
-            label.len() >= 19,
-            "session label too short, got: {label}"
-        );
+        assert!(label.len() >= 19, "session label too short, got: {label}");
         assert!(
             !label.contains(':'),
             "session label must not contain colons (Windows-unsafe): {label}"
         );
         // Must contain the date separator and time markers
-        assert!(label.contains('_'), "expected underscore separator: {label}");
+        assert!(
+            label.contains('_'),
+            "expected underscore separator: {label}"
+        );
         assert!(label.contains('h'), "expected 'h' hour marker: {label}");
         assert!(label.contains('m'), "expected 'm' minute marker: {label}");
         assert!(label.contains('s'), "expected 's' second marker: {label}");

@@ -1255,7 +1255,7 @@ mod tests {
             .unwrap();
 
         let index = std::fs::read_to_string(output_dir.path().join("index.md")).unwrap();
-        assert!(index.contains("## Session unix-"));
+        assert!(index.contains("## Session 20"));
         assert!(index.contains("New_2026_Item.pdf"));
         assert!(!index.contains("Old_2023_Item.pdf"));
     }
