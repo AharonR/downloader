@@ -114,7 +114,7 @@ The system requires 5 major capability areas:
 
 ### Primary Technology Domain
 
-Desktop CLI tool (Rust) with future GUI (Tauri 2.0)
+Desktop CLI tool (Rust) + Tauri 2.x desktop app (Svelte/TypeScript)
 
 ### Starter Options Considered
 
@@ -248,26 +248,43 @@ downloader/
 **Build Commands:**
 
 ```bash
-cargo build --lib              # Library only
-cargo build --bin downloader   # CLI binary
-cargo test --lib               # Unit + lib integration tests
-cargo test --bin downloader    # CLI tests
-cargo test                     # All tests
+cargo build --workspace        # All crates
+cargo test --workspace --lib   # Unit + lib integration tests
+cargo test --test critical     # Adversarial regression suite
+cargo clippy --workspace -- -D warnings
 ```
 
-**Migration Path to Tauri (v2):**
+**As-Built: Tauri Desktop App (completed Epic 10)**
 
-v1 ships as CLI only. GUI migration is the planned next phase.
+The lib/bin split → Cargo workspace migration was completed as planned. The workspace now contains three crates:
 
-When ready for GUI, extract to workspace:
-1. Create `downloader-app/` with `cargo create-tauri-app`
-2. Move `src/lib.rs` tree to `downloader-core/src/`
-3. Update workspace `Cargo.toml` to include both crates
-4. Tauri app imports `downloader_core` as dependency
+```
+downloader/                         # Cargo workspace root
+├── Cargo.toml                      # [workspace] members
+├── downloader-core/                # Library crate (all domain logic)
+│   └── src/                        # auth, db, download, parser, queue, resolver, sidecar, topics, ...
+├── downloader-cli/                 # CLI binary crate
+│   └── src/                        # main.rs, cli.rs, commands/, app/, output/, ...
+└── downloader-app/                 # Tauri 2.x desktop app
+    ├── src-tauri/src/
+    │   ├── commands.rs             # start_download, start_download_with_progress Tauri commands
+    │   ├── lib.rs                  # Tauri app setup + command registration
+    │   └── main.rs
+    └── src/                        # Svelte/TypeScript frontend
+        ├── DownloadForm.svelte     # Input textarea + Download button
+        ├── ProgressDisplay.svelte  # Live progress bar + in-progress item list
+        ├── CompletionSummary.svelte# Result summary with expand/collapse
+        ├── ProjectSelector.svelte  # Project folder selection (keyboard nav)
+        ├── StatusDisplay.svelte    # Idle/downloading/done/error state display
+        └── utils.ts                # Shared utilities
+```
 
-Estimated refactor effort: minimal — the lib/bin split was validated across all 8 implementation epics; the public API surface in `lib.rs` is stable and behavior contracts are tested.
+**Frontend stack:** Svelte 5 + TypeScript. Tauri IPC via `@tauri-apps/api`. Tests: Vitest (16 tests covering all components + utils). Progress events streamed via `"download://progress"` Tauri event channel every 300ms. Cancel via `Arc<AtomicBool>` interrupt passed through to `downloader-core`.
 
-**Note:** Project initialization using these commands should be the first implementation story.
+**Frontend test commands:**
+```bash
+cd downloader-app && npm test      # 16 Vitest tests (components + utils)
+```
 
 ## Core Architectural Decisions
 

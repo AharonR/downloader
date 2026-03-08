@@ -93,7 +93,7 @@ workflow_status:
         status: "_bmad-output/implementation-artifacts/sprint-status.yaml"
         agent: "sm"
         command: "/bmad:bmm:workflows:sprint-planning"
-        note: "Complete - 8 epics, 47 stories extracted. Epic 1 done, Epic 2 in-progress."
+        note: "Complete - 11 epics, all done. Epics 1-8 (original plan) + Epic 9 (post-launch maintenance), Epic 10 (Tauri desktop app), Epic 11 (backlog cleanup). NFR gate: PASS. Project retrospective complete."
 
 # User context captured during init
 user_description: |

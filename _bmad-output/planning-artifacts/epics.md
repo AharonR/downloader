@@ -177,7 +177,9 @@ This document provides the complete epic and story breakdown for Downloader, dec
 - Epic 7: 4 FRs + 4 UX (Professional CLI) - 8 stories
 - Epic 8: 5 Should items (Polish) - 5 stories
 
-**Total: 47 stories across 8 epics**
+**Original plan: 47 stories across 8 epics**
+
+**Final as-built: 11 epics (Epics 9-11 added during/after implementation)**
 
 ## Epic Structure
 
@@ -193,6 +195,9 @@ This document provides the complete epic and story breakdown for Downloader, dec
 | 6 | Download History | "I can see what I've downloaded" | FR-4.* | Epic 3 |
 | 7 | Professional CLI | "The tool feels polished and helpful" | FR-5.1, FR-5.5-5.7, UX-4-7 | Epics 3, 5, 6 |
 | 8 | Polish & Enhancements | "Everything works even better" | All Should items | All Must epics |
+| 9 | Post-Launch Maintenance | "The docs and decisions reflect reality" | — (maintenance) | Epic 8 |
+| 10 | Tauri Desktop App | "I can use a native desktop GUI" | GUI layer over core | Epic 9 |
+| 11 | Backlog Cleanup | "Rough edges filed down, docs complete" | — (quality/docs) | Epic 10 |
 
 **MVP Cut Line:** Epics 1-5 = Minimum Viable Product
 
@@ -1249,4 +1254,167 @@ So that **I can download from various sources**.
 **And** resolvers are prioritized by specificity
 **And** resolver documentation lists supported sites
 **And** community resolver contributions are easy to add
+
+---
+
+## Epic 9: Post-Launch Maintenance & Planning
+
+**Goal:** "The docs and decisions reflect reality"
+
+**Added:** Post Epic 8 completion. Covers as-built documentation correction and UI scope evaluation.
+
+**Scope:**
+- Architecture as-built amendment (correct actual vs. planned module layout, cookie storage approach, CI workflows)
+- UI scope evaluation: scored decision matrix for Tauri desktop app vs. web frontend vs. deferred, resulting in Tauri selection and Epic 10 outline
+
+**Stories:** 2 stories
+
+### Story 9.1: Architecture As-Built Amendment
+
+As a **developer working on the Downloader codebase**,
+I want **the architecture document to reflect the actual as-built module layout**,
+So that **future contributors and AI agents use an accurate reference instead of a plan that was superseded during implementation**.
+
+**Key changes made:**
+- Updated Project Directory Structure to actual `src/` tree
+- Corrected Module Ownership Mapping (removed planned-but-absent modules, added actual ones)
+- Corrected cookie storage: spec'd SQLite table → actual XChaCha20Poly1305 encrypted file + OS keychain key
+- Updated CI workflow list to actual (`phase-rollout-gates.yml`, `coverage.yml`)
+- All ADRs preserved verbatim — as-built amendment, not redesign
+
+---
+
+### Story 9.2: UI Scope Evaluation
+
+As the **project lead**,
+I want **a clear, written decision on whether and how to add a UI layer**,
+So that **the next planning cycle starts with an explicit scope**.
+
+**Decision:** Tauri 2.x desktop app selected (scored matrix). Deferred web frontend (local-first constraint conflict). Epic 10 outline drafted with 3 story candidates.
+
+**Output:** `_bmad-output/planning-artifacts/ui-scope-decision.md`
+
+---
+
+## Epic 10: Tauri Desktop App
+
+**Goal:** "I can use a native desktop GUI"
+
+**Added:** Based on Epic 9 decision. Builds a native desktop app using Tauri 2.x + Svelte/TypeScript over the `downloader-core` library extracted in this epic.
+
+**Scope:**
+- Cargo workspace extraction: `downloader-core`, `downloader-cli`, `downloader-app` crates
+- Tauri app scaffold with Svelte/TypeScript frontend
+- Basic download trigger UI (textarea input, Download button, status display)
+- Real-time progress display via Tauri events + CompletionSummary component
+- Cancel support via `Arc<AtomicBool>` interrupt mechanism
+
+**Stories:** 3 stories
+
+### Story 10.1: Workspace Extraction + Tauri Init
+
+As a **developer**,
+I want **the codebase restructured as a Cargo workspace**,
+So that **the Tauri desktop app can import the core library without duplicating logic**.
+
+**Key deliverables:**
+- `downloader-core/` — all library modules, same public API
+- `downloader-cli/` — all binary-only modules, depends on `downloader-core`
+- `downloader-app/` — scaffolded with Tauri 2.x, minimal empty window
+- All 566+ tests pass; `cargo build --workspace` exits 0
+
+---
+
+### Story 10.2: Basic Download Trigger UI
+
+As a **user**,
+I want **a minimal desktop window where I can paste a URL or DOI and trigger a download**,
+So that **I can start a download without using the terminal**.
+
+**Key deliverables:**
+- `DownloadForm` Svelte component: textarea + Download button + status area
+- Tauri command `start_download(inputs: Vec<String>) -> Result<DownloadSummary, String>`
+- What/Why/Fix error display for invalid/empty input
+- Vitest unit tests; 16 total frontend tests passing
+
+---
+
+### Story 10.3: Progress Display + Completion Summary
+
+As a **user**,
+I want **real-time per-download progress and a completion summary in the desktop app**,
+So that **I can see what's happening and know when my batch is done**.
+
+**Key deliverables:**
+- `start_download_with_progress` Tauri command emitting `"download://progress"` events every 300ms
+- `ProgressDisplay` Svelte component: aggregate progress bar + in-progress item list + spinner
+- `CompletionSummary` component with expand/collapse; Cancel button with graceful interrupt
+- `cargo test --workspace --lib`: 570 tests passing (566 core + 4 app)
+
+---
+
+## Epic 11: Backlog Cleanup
+
+**Goal:** "Rough edges filed down, docs complete"
+
+**Added:** Post Epic 10 completion. Addressed accumulated technical debt, CI hardening, YouTube Shorts support, and final documentation.
+
+**Stories:** 6 stories
+
+### Story 11.1: Bug Fixes & Micro-Improvements
+
+Bug fixes and small quality-of-life improvements identified during Epic 10 development and retrospective.
+
+---
+
+### Story 11.2: Code Quality & Convention Documentation
+
+Code quality improvements and documentation of coding conventions and patterns established during implementation.
+
+---
+
+### Story 11.3: CI Hardening
+
+- Added `cargo deny` for dependency vetting
+- Added critical test step to CI pipeline
+- Introduced `DOWNLOADER_REQUIRE_SOCKET_TESTS` env var to control socket-binding test behavior
+- Fixed stale session label assertion in tests
+
+---
+
+### Story 11.4: YouTube Shorts Support + UI Enhancements
+
+- YouTube Shorts URL resolver support
+- `CompletionSummary` expand/collapse UI in Tauri app
+- `ProjectSelector` keyboard navigation improvements
+
+---
+
+### Story 11.5: Documentation Batch
+
+- CHANGELOG updated to reflect full project history
+- README updated with current feature set and workspace structure
+- Architecture doc updated with as-built Tauri app details
+- Manual smoke test checklist documented
+
+---
+
+### Story 11.6: Backlog Closure
+
+- `OPEN_TASKS.md` final state (all items resolved or explicitly deferred)
+- Sprint status final update — all epics marked done
+- Project retrospective finalized
+
+---
+
+## Project Completion Summary
+
+**Final state (as of 2026-02-27):**
+- 11 epics, all `done`
+- NFR gate: **PASS**
+- 570 tests passing (566 core + 4 app)
+- 16 Vitest frontend tests passing
+- `cargo clippy --workspace -- -D warnings` → exit 0
+- `cargo audit` → exit 0 (2 advisories accepted with rationale)
+- Line coverage: ~89.55% (Phase 1 baseline, CI monitored)
 
