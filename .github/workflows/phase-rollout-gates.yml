@@ -82,10 +82,25 @@ jobs:
             probe.close()
           PY
 
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: cargo deny check
+        run: cargo deny check
+
       - name: Core test gate
+        # DOWNLOADER_REQUIRE_SOCKET_TESTS=1 forces wiremock-based tests that require
+        # localhost socket binding to run in strict mode. Without this env var set, those
+        # tests are silently skipped, producing false-positive green results locally.
+        # Always set this in CI where socket binding is available.
         env:
           DOWNLOADER_REQUIRE_SOCKET_TESTS: "1"
         run: cargo test --workspace --all-targets
+
+      - name: Critical regression tests
+        env:
+          DOWNLOADER_REQUIRE_SOCKET_TESTS: "1"
+        run: cargo test --test critical -p downloader-core
 
       - name: Targeted integration gate
         env:

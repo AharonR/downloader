@@ -64,6 +64,15 @@ pub struct ProgressPayload {
 // ---------------------------------------------------------------------------
 
 /// Shared state managed by Tauri. Holds the current download's interrupt flag.
+///
+/// # Concurrency contract
+///
+/// The `interrupted` field is wrapped in `Mutex<Option<Arc<AtomicBool>>>` because
+/// only **one active download task** exists per app window at a time — `start_download`
+/// is gated by the `running` flag and returns an error if called while another download
+/// is in progress. This means the `Mutex` is never contested across two concurrent
+/// download tasks; it is only used to safely hand the `Arc<AtomicBool>` from the
+/// main command to the `cancel_download` handler on the Tauri executor thread.
 pub struct AppState {
     /// Set to `Some(flag)` while a `start_download_with_progress` call is active.
     /// `cancel_download` stores the flag here; each new run creates a fresh Arc.
