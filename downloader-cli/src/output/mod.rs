@@ -75,6 +75,16 @@ pub fn print_quick_start_guidance(empty_stdin: bool) {
     }
 }
 
+/// Prints a dry-run summary for bibliography-only runs (no text input, only `--bibliography`).
+pub fn print_bibliography_dry_run_summary(item_count: usize) {
+    let width = terminal_width().min(80);
+    let msg = format!(
+        "Dry run: {item_count} items parsed from bibliography file(s). \
+         Remove --dry-run to download."
+    );
+    println!("{}", truncate_to_width(&msg, width));
+}
+
 pub(crate) fn log_parse_feedback(parse_result: &downloader_core::ParseResult) {
     let summary = build_parse_feedback_summary(parse_result);
     let width = terminal_width();

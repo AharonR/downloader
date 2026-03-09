@@ -27,6 +27,7 @@ mod doi;
 mod error;
 mod input;
 mod reference;
+mod ris;
 mod url;
 
 pub use bibliography::{
@@ -41,6 +42,7 @@ pub use reference::{
     Confidence, ConfidenceFactors, ReferenceConfidence, ReferenceMetadata,
     extract_reference_confidence, extract_references, parse_reference_metadata,
 };
+pub use ris::{RisEntry, RisParseResult, parse_ris_content};
 pub use url::extract_urls;
 
 use std::collections::HashSet;

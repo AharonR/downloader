@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
-use std::io::{self, IsTerminal};
+use std::io::{self, BufRead as _, IsTerminal, Write as _};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,13 +14,116 @@ use crate::app::{
     exit_handler, input_processor, progress_manager, queue_manager, resolution_orchestrator,
     terminal,
 };
+use crate::app_config::{load_default_file_config, write_tos_acknowledged};
 use crate::{ProcessExit, commands, output, project};
+
+/// Checks whether the user has acknowledged their Terms of Service responsibilities.
+///
+/// - If the config already records `tos_acknowledged = true`, returns immediately.
+/// - If stdin is not a TTY (non-interactive) and `quiet` is false, prints a one-line warning
+///   and continues.
+/// - If stdin is a TTY, shows a brief acknowledgment prompt.  A `y`/`Y` response records the
+///   acknowledgment in the config file and continues.  Any other response (including Ctrl-C or
+///   empty) exits with a helpful message.
+fn check_tos_acknowledgment(quiet: bool) -> Result<ProcessExit> {
+    let loaded = load_default_file_config()?;
+    let already_acked = loaded
+        .config
+        .as_ref()
+        .and_then(|c| c.tos_acknowledged)
+        .unwrap_or(false);
+
+    if already_acked {
+        return Ok(ProcessExit::Success);
+    }
+
+    let is_tty = io::stdin().is_terminal();
+
+    if !is_tty {
+        if !quiet {
+            // Non-interactive: warn once but do not block.
+            eprintln!(
+                "WARNING: Downloader automates HTTP requests on your behalf. You are \
+                 responsible for complying with each publisher's Terms of Service. Run \
+                 interactively once to acknowledge this and suppress this warning."
+            );
+        }
+        return Ok(ProcessExit::Success);
+    }
+
+    // Interactive: show the acknowledgment prompt.
+    eprintln!();
+    eprintln!("==========================================================================");
+    eprintln!("  Downloader — Terms of Service Responsibility Notice");
+    eprintln!("==========================================================================");
+    eprintln!();
+    eprintln!("  This tool automates HTTP downloads on your behalf. By using it you");
+    eprintln!("  acknowledge that:");
+    eprintln!();
+    eprintln!("  1. You are responsible for complying with the Terms of Service of every");
+    eprintln!("     publisher or repository you access.");
+    eprintln!();
+    eprintln!("  2. This tool does not bypass paywalls, authentication, or DRM. It can");
+    eprintln!("     only download content you are already entitled to access.");
+    eprintln!();
+    eprintln!("  3. If you access content through an institutional license, verify that");
+    eprintln!("     automated downloading is permitted under your license agreement.");
+    eprintln!();
+    eprintln!("  4. The authors of this tool accept no liability for your use of it.");
+    eprintln!();
+    eprintln!("  See README.md § Responsible Use for rate-limit guidance and the full");
+    eprintln!("  legal risk assessment.");
+    eprintln!();
+    eprint!("  Do you acknowledge? [y/N] ");
+    io::stderr().flush().ok();
+
+    let mut line = String::new();
+    let read_result = io::stdin().lock().read_line(&mut line);
+
+    match read_result {
+        Ok(0) | Err(_) => {
+            // EOF or read error — treat as no.
+            eprintln!();
+            eprintln!("No acknowledgment received. Exiting.");
+            eprintln!(
+                "Run the tool interactively and type 'y' to acknowledge, or set \
+                 `tos_acknowledged = true` in your config file."
+            );
+            return Ok(ProcessExit::Failure);
+        }
+        Ok(_) => {}
+    }
+
+    let trimmed = line.trim();
+    if trimmed.eq_ignore_ascii_case("y") {
+        // Persist the acknowledgment so we never prompt again.
+        if let Err(err) = write_tos_acknowledged() {
+            // Non-fatal: warn but proceed.
+            warn!(?err, "Could not persist tos_acknowledged to config file");
+        }
+        eprintln!();
+        return Ok(ProcessExit::Success);
+    }
+
+    eprintln!();
+    eprintln!("Acknowledgment declined. Exiting.");
+    eprintln!(
+        "Run the tool again and type 'y' to acknowledge, or set \
+         `tos_acknowledged = true` in your config file."
+    );
+    Ok(ProcessExit::Failure)
+}
 
 pub(crate) async fn run_downloader() -> Result<ProcessExit> {
     let (cli, cli_sources) = config_runtime::parse_cli_with_sources();
 
     if let Some(exit) = command_dispatcher::try_dispatch(&cli, &cli_sources).await? {
         return Ok(exit);
+    }
+
+    let tos_result = check_tos_acknowledgment(cli.download.quiet)?;
+    if tos_result != ProcessExit::Success {
+        return Ok(tos_result);
     }
 
     let resolved = config_manager::resolve_config(&cli, &cli_sources)?;
@@ -44,7 +147,7 @@ pub(crate) async fn run_downloader() -> Result<ProcessExit> {
         info!(project_dir = %output_dir.display(), "Project folder ready");
     }
 
-    let (cookie_jar, input_text, piped_stdin_was_empty) =
+    let (cookie_jar, input_text, piped_stdin_was_empty, bibliography_items) =
         input_processor::process_input(&resolved.args)?;
 
     let ctx = context::RunContext {
@@ -55,11 +158,15 @@ pub(crate) async fn run_downloader() -> Result<ProcessExit> {
         cookie_jar,
         input_text,
         piped_stdin_was_empty,
+        bibliography_items,
     };
 
     if ctx.args.dry_run {
         if let Some(input_text) = ctx.input_text.as_deref() {
             commands::run_dry_run_preview(input_text, ctx.cookie_jar.clone()).await?;
+        } else if !ctx.bibliography_items.is_empty() {
+            // Bibliography-only dry run: report item count as a preview.
+            output::print_bibliography_dry_run_summary(ctx.bibliography_items.len());
         } else if ctx.piped_stdin_was_empty {
             output::print_quick_start_guidance(true);
         } else {
@@ -71,7 +178,7 @@ pub(crate) async fn run_downloader() -> Result<ProcessExit> {
     let state_dir = ctx.output_dir.join(".downloader");
     let has_prior_state = state_dir.exists();
 
-    if ctx.input_text.is_none() && !has_prior_state {
+    if ctx.input_text.is_none() && ctx.bibliography_items.is_empty() && !has_prior_state {
         output::print_quick_start_guidance(ctx.piped_stdin_was_empty);
         return Ok(ProcessExit::Success);
     }

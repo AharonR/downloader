@@ -243,10 +243,7 @@ fn clear_interrupt_slot(state: &AppState) {
 // Shared resolve-and-enqueue helper
 // ---------------------------------------------------------------------------
 
-/// Parse `inputs`, resolve each item, and enqueue into `queue`.
-/// Returns the number of items successfully enqueued.
-/// On total failure returns an error string.
-async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, String> {
+fn validate_inputs(inputs: &[String]) -> Result<(), String> {
     let joined = inputs
         .iter()
         .map(|s| s.trim())
@@ -273,6 +270,23 @@ async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, 
         );
     }
 
+    Ok(())
+}
+
+/// Parse `inputs`, resolve each item, and enqueue into `queue`.
+/// Returns the number of items successfully enqueued.
+/// On total failure returns an error string.
+async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, String> {
+    validate_inputs(inputs)?;
+
+    let joined = inputs
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let parse_result = parse_input(&joined);
     let resolver_registry = build_default_resolver_registry(None, "downloader-app@downloader");
     let resolve_context = ResolveContext::default();
 
@@ -388,6 +402,8 @@ pub async fn start_download(
                  Fix: Use a simple name like 'Climate Research' without special characters."
             )
         })?;
+
+    validate_inputs(&inputs)?;
 
     if let Err(e) = std::fs::create_dir_all(&output_dir) {
         return Err(format!(
@@ -514,6 +530,8 @@ pub async fn start_download_with_progress(
                  Fix: Use a simple name like 'Climate Research' without special characters."
             )
         })?;
+
+    validate_inputs(&inputs)?;
 
     if let Err(e) = std::fs::create_dir_all(&output_dir) {
         return Err(format!(

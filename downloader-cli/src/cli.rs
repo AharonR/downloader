@@ -44,6 +44,42 @@ pub enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    /// Export a corpus directory's sidecar metadata to BibTeX or RIS bibliography format.
+    Export(ExportArgs),
+}
+
+/// Export format selection for `downloader export`.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormatArg {
+    /// BibTeX format (`.bib`) — importable by Zotero, JabRef, Mendeley, and most reference managers.
+    Bibtex,
+    /// RIS format (`.ris`) — importable by Zotero, Mendeley, EndNote, and most reference managers.
+    Ris,
+}
+
+impl From<ExportFormatArg> for downloader_core::ExportFormat {
+    fn from(arg: ExportFormatArg) -> Self {
+        match arg {
+            ExportFormatArg::Bibtex => downloader_core::ExportFormat::BibTex,
+            ExportFormatArg::Ris => downloader_core::ExportFormat::Ris,
+        }
+    }
+}
+
+/// Arguments for `downloader export`.
+#[derive(ClapArgs, Debug, Clone, PartialEq, Eq)]
+pub struct ExportArgs {
+    /// Corpus directory containing downloaded files and `.json` sidecar metadata.
+    #[arg(value_name = "CORPUS_DIR")]
+    pub corpus_dir: PathBuf,
+
+    /// Bibliography output format.
+    #[arg(short = 'f', long = "format", value_enum, default_value_t = ExportFormatArg::Bibtex)]
+    pub format: ExportFormatArg,
+
+    /// Output file path. Use `-` to write to stdout (default: `bibliography.bib` or `bibliography.ris`).
+    #[arg(short = 'o', long = "output", value_name = "FILE")]
+    pub output: Option<PathBuf>,
 }
 
 /// Auth command variants.
@@ -220,6 +256,14 @@ pub struct DownloadArgs {
     /// Write a JSON-LD sidecar file alongside each downloaded file (Story 8.2)
     #[arg(long = "sidecar")]
     pub sidecar: bool,
+
+    /// Bibliography file(s) to import (.bib or .ris format).
+    ///
+    /// Each file is parsed for DOIs, URLs, and reference metadata. DOIs are
+    /// preferred over URLs when both appear in the same entry. Multiple files
+    /// can be supplied by repeating the flag.
+    #[arg(long = "bibliography", short = 'B', value_name = "FILE", action = clap::ArgAction::Append)]
+    pub bibliography_files: Vec<PathBuf>,
 
     /// URLs to download (reads from stdin if not provided).
     /// Flags may appear before or after URLs. Use `--` to pass a URL that starts with `-`.
@@ -919,5 +963,59 @@ mod tests {
             err.kind(),
             clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
         );
+    }
+
+    // ==================== Export Command Tests ====================
+
+    fn parse_export(args: impl IntoIterator<Item = &'static str>) -> ExportArgs {
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Some(Command::Export(export)) => export,
+            _ => panic!("expected export command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_export_command_parses_defaults() {
+        let args = parse_export(["downloader", "export", "/my/corpus"]);
+        assert_eq!(args.corpus_dir, PathBuf::from("/my/corpus"));
+        assert_eq!(args.format, ExportFormatArg::Bibtex);
+        assert!(args.output.is_none());
+    }
+
+    #[test]
+    fn test_cli_export_ris_format_flag() {
+        let args = parse_export(["downloader", "export", "/my/corpus", "--format", "ris"]);
+        assert_eq!(args.format, ExportFormatArg::Ris);
+    }
+
+    #[test]
+    fn test_cli_export_bibtex_format_flag_explicit() {
+        let args = parse_export(["downloader", "export", "/my/corpus", "-f", "bibtex"]);
+        assert_eq!(args.format, ExportFormatArg::Bibtex);
+    }
+
+    #[test]
+    fn test_cli_export_output_flag_sets_path() {
+        let args = parse_export(["downloader", "export", "/my/corpus", "--output", "refs.bib"]);
+        assert_eq!(args.output, Some(PathBuf::from("refs.bib")));
+    }
+
+    #[test]
+    fn test_cli_export_requires_corpus_dir() {
+        let result = Cli::try_parse_from(["downloader", "export"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn test_cli_export_format_arg_converts_to_export_format() {
+        use downloader_core::ExportFormat;
+        assert_eq!(
+            ExportFormat::from(ExportFormatArg::Bibtex),
+            ExportFormat::BibTex
+        );
+        assert_eq!(ExportFormat::from(ExportFormatArg::Ris), ExportFormat::Ris);
     }
 }

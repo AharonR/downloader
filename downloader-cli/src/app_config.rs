@@ -2,6 +2,7 @@
 
 use std::env;
 use std::fs;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -39,6 +40,8 @@ pub struct FileConfig {
     pub db_max_connections: Option<u32>,
     /// Optional database busy timeout in milliseconds.
     pub db_busy_timeout_ms: Option<u32>,
+    /// Whether the user has acknowledged Terms of Service responsibilities.
+    pub tos_acknowledged: Option<bool>,
 }
 
 impl FileConfig {
@@ -197,6 +200,76 @@ pub fn load_default_file_config() -> Result<LoadedConfig> {
     })
 }
 
+/// Persists `tos_acknowledged = true` to the config file, creating it (and its parent
+/// directories) if they do not yet exist.  This is a best-effort append: if the config file
+/// already contains the key the line will be duplicated (harmless — the last value wins in our
+/// parser, but we always write it first and update it if already present).
+pub fn write_tos_acknowledged() -> Result<()> {
+    let Some(config_path) = resolve_default_config_path() else {
+        bail!("Cannot determine config file path: HOME and XDG_CONFIG_HOME are both unset");
+    };
+
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create config directory '{}'", parent.display()))?;
+    }
+
+    if config_path.exists() {
+        // File exists: check whether tos_acknowledged is already present.
+        let raw = fs::read_to_string(&config_path)
+            .with_context(|| format!("Failed to read config file '{}'", config_path.display()))?;
+        let already_present = raw.lines().any(|line| {
+            let stripped = strip_inline_comment(line).trim().to_owned();
+            stripped
+                .split_once('=')
+                .is_some_and(|(k, _)| k.trim() == "tos_acknowledged")
+        });
+        if already_present {
+            // Replace existing line in-place.
+            let updated: String = raw
+                .lines()
+                .map(|line| {
+                    let stripped = strip_inline_comment(line).trim().to_owned();
+                    if stripped
+                        .split_once('=')
+                        .is_some_and(|(k, _)| k.trim() == "tos_acknowledged")
+                    {
+                        "tos_acknowledged = true\n".to_owned()
+                    } else {
+                        format!("{line}\n")
+                    }
+                })
+                .collect();
+            fs::write(&config_path, updated).with_context(|| {
+                format!("Failed to write config file '{}'", config_path.display())
+            })?;
+            return Ok(());
+        }
+        // Append the key.
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(&config_path)
+            .with_context(|| {
+                format!(
+                    "Failed to open config file '{}' for append",
+                    config_path.display()
+                )
+            })?;
+        writeln!(file, "tos_acknowledged = true").with_context(|| {
+            format!(
+                "Failed to append to config file '{}'",
+                config_path.display()
+            )
+        })?;
+    } else {
+        // Create a new file.
+        fs::write(&config_path, "tos_acknowledged = true\n")
+            .with_context(|| format!("Failed to create config file '{}'", config_path.display()))?;
+    }
+
+    Ok(())
+}
+
 fn load_file_config(path: &Path) -> Result<FileConfig> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("Failed to read config file '{}'", path.display()))?;
@@ -340,6 +413,15 @@ fn parse_config_str(raw: &str) -> Result<FileConfig> {
                 let n = u32::try_from(parsed)
                     .map_err(|_| anyhow::anyhow!("db_busy_timeout_ms out of range for u32"))?;
                 cfg.db_busy_timeout_ms = Some(n);
+            }
+            "tos_acknowledged" => {
+                let parsed = parse_boolean(value).with_context(|| {
+                    format!(
+                        "Invalid `tos_acknowledged` value on line {}",
+                        line_index + 1
+                    )
+                })?;
+                cfg.tos_acknowledged = Some(parsed);
             }
             unknown => {
                 bail!(

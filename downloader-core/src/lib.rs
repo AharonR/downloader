@@ -16,6 +16,7 @@
 //! - [`sidecar`] - JSON-LD sidecar file generation for downloaded documents
 //!
 //! - [`auth`] - Cookie/credential management
+//! - [`export`] - BibTeX/RIS bibliography export from corpus sidecar files
 
 // Clippy lints - strict for library code
 #![deny(clippy::unwrap_used)]
@@ -26,6 +27,7 @@
 pub mod auth;
 pub mod db;
 pub mod download;
+pub mod export;
 pub mod parser;
 pub mod project;
 pub mod queue;
@@ -51,9 +53,14 @@ pub use download::{
     RetryPolicy, RobotsCache, RobotsDecision, RobotsError, build_preferred_filename,
     classify_error, origin_for_robots,
 };
+pub use export::{
+    ExportError, ExportFormat, SidecarAuthor, SidecarEntry, SidecarIdentifier, generate_bibtex,
+    generate_ris, scan_corpus,
+};
 pub use parser::{
     Confidence, ConfidenceFactors, InputType, ParseResult, ParseTypeCounts, ParsedItem,
-    ReferenceConfidence, ReferenceMetadata, extract_reference_confidence, parse_input,
+    ReferenceConfidence, ReferenceMetadata, RisEntry, RisParseResult, extract_reference_confidence,
+    parse_input, parse_ris_content,
 };
 pub use project::{
     ProjectError, escape_markdown_cell, project_history_key, resolve_project_output_dir,

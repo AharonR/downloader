@@ -88,6 +88,63 @@ When adding a new site resolver:
 5. Verify deterministic priority behavior against overlapping DOI/URL patterns.
 6. Update this README section with supported inputs and auth expectations.
 
+## Responsible Use
+
+Downloader is a research automation tool. Using it responsibly means understanding both what it
+does on your behalf and what remains your responsibility.
+
+### What the tool does to be a good citizen
+
+- **Respects robots.txt**: Before downloading from any origin, Downloader checks the site's
+  `robots.txt` for the `downloader` user-agent. Results are cached for 24 hours per origin to
+  avoid repeated lookups. Sites that disallow programmatic access are not downloaded.
+
+- **Per-domain rate limiting**: Requests to the same domain are spaced by a configurable delay
+  (default 1000 ms, adjustable via `--rate-limit` or `config.toml`). Optional jitter randomizes
+  the gap to avoid predictable burst patterns.
+
+- **No paywall circumvention**: When a publisher signals that authentication or a subscription
+  is required, Downloader surfaces that signal to you (`NeedsAuth`) instead of attempting to
+  bypass it. It never forges sessions, injects cookies, or routes requests through unauthorized
+  proxies.
+
+- **No DRM bypass**: Files are downloaded exactly as served by the origin server. Downloader
+  does not attempt to strip or circumvent any digital rights management layer.
+
+### Your responsibility
+
+You are responsible for ensuring your use complies with the Terms of Service of every publisher
+and repository you access. This tool makes it easier to download materials you are already
+entitled to access — it does not grant access you do not have.
+
+**Institutional users**: If you access content through an institutional license (library proxy,
+VPN, campus network), confirm with your institution that automated downloading is permitted under
+your license agreement. Many institutional licenses restrict bulk or automated downloads even for
+authorized users. That restriction applies to this tool.
+
+### Recommended rate limits for major publishers
+
+Conservative per-domain rate limits reduce the risk of triggering automated access policies.
+These are starting-point suggestions, not guarantees of policy compliance:
+
+| Publisher / Repository | Suggested `--rate-limit` (ms) | Notes |
+|---|---|---|
+| Elsevier (ScienceDirect) | 3000–5000 | Strict bot-detection; use `respectful = true` |
+| Springer / SpringerLink | 3000–5000 | — |
+| IEEE Xplore | 3000–5000 | — |
+| Wiley Online Library | 3000–5000 | — |
+| ACM Digital Library | 3000–5000 | — |
+| arXiv | 1000–2000 | Open-access; arXiv requests polite crawlers |
+| PubMed Central | 1000–2000 | NCBI E-utilities rate limit: 3 req/s without API key |
+
+Enable the `respectful` config flag to automatically apply conservative concurrency and retry
+settings across all domains.
+
+### Legal risk assessment
+
+For a detailed discussion of legal considerations, see:
+[`_bmad-output/planning-artifacts/legal-risk-assessment-Downloader-2026-03-09.md`](_bmad-output/planning-artifacts/legal-risk-assessment-Downloader-2026-03-09.md)
+
 ## Known Limitations
 
 **Bot Detection & WAF Blocking**

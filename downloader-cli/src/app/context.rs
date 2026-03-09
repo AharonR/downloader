@@ -7,7 +7,7 @@ use reqwest::cookie::Jar;
 
 use crate::app::config_runtime::HttpTimeoutSettings;
 use crate::cli::DownloadArgs;
-use downloader_core::DatabaseOptions;
+use downloader_core::{DatabaseOptions, ParsedItem};
 
 /// Holds shared state built during startup so the rest of `run_downloader`
 /// can use `ctx.args`, `ctx.output_dir`, etc., instead of passing many arguments.
@@ -19,4 +19,10 @@ pub(crate) struct RunContext {
     pub(crate) cookie_jar: Option<Arc<Jar>>,
     pub(crate) input_text: Option<String>,
     pub(crate) piped_stdin_was_empty: bool,
+    /// Pre-parsed items from bibliography files (`--bibliography`).
+    ///
+    /// These are injected directly into the resolution pipeline alongside
+    /// items produced by `parse_input(input_text)`, preserving full metadata
+    /// (title, authors, year) extracted from `.bib` and `.ris` files.
+    pub(crate) bibliography_items: Vec<ParsedItem>,
 }

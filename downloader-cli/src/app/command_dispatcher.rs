@@ -46,6 +46,9 @@ pub(crate) async fn try_dispatch(
                 commands::run_config_show_command(&cli.download, cli_sources)?;
             }
         },
+        Command::Export(export_args) => {
+            commands::run_export_command(export_args).await?;
+        }
     }
 
     Ok(Some(ProcessExit::Success))

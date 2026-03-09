@@ -24,40 +24,63 @@ pub(crate) struct ResolutionOutcome {
 }
 
 /// Parses input text, resolves each item to a URL, enqueues with metadata.
-/// When `ctx.input_text` is None, returns zeros (no input to parse).
+///
+/// When `ctx.input_text` is `None` and `ctx.bibliography_items` is empty, returns zeros.
+/// Bibliography items (from `--bibliography` files) are resolved alongside items extracted
+/// from `parse_input(ctx.input_text)`.
 pub(crate) async fn run_resolution(
     ctx: &RunContext,
     queue: Arc<Queue>,
 ) -> Result<ResolutionOutcome> {
-    let Some(input_text) = &ctx.input_text else {
+    // When there is neither text input nor pre-parsed bibliography items, there is nothing to do.
+    if ctx.input_text.is_none() && ctx.bibliography_items.is_empty() {
         return Ok(ResolutionOutcome {
             parsed_item_count: 0,
             resolution_failed_count: 0,
             first_resolution_error: None,
         });
+    }
+
+    // Parse the text input (URLs, DOIs, BibTeX inline, references).
+    let parse_result = if let Some(input_text) = &ctx.input_text {
+        let result = parse_input(input_text);
+        let counts = result.type_counts();
+        info!(
+            parsed_total = result.len(),
+            urls = counts.urls,
+            dois = counts.dois,
+            references = counts.references,
+            bibtex = counts.bibtex,
+            skipped = result.skipped_count(),
+            "Parsed input"
+        );
+        for skipped in &result.skipped {
+            warn!(skipped = %skipped, "Skipped unrecognized input");
+        }
+        result
+    } else {
+        downloader_core::ParseResult::new()
     };
 
-    let parse_result = parse_input(input_text);
-    let parsed_item_count = parse_result.len();
-
-    let counts = parse_result.type_counts();
-    info!(
-        parsed_total = parse_result.len(),
-        urls = counts.urls,
-        dois = counts.dois,
-        references = counts.references,
-        bibtex = counts.bibtex,
-        skipped = parse_result.skipped_count(),
-        "Parsed input"
-    );
-    for skipped in &parse_result.skipped {
-        warn!(skipped = %skipped, "Skipped unrecognized input");
-    }
+    // Merge text-parsed items with pre-parsed bibliography file items.
+    let all_items: Vec<_> = parse_result
+        .items
+        .iter()
+        .chain(ctx.bibliography_items.iter())
+        .collect();
+    let parsed_item_count = all_items.len();
 
     let mut resolution_failed_count = 0usize;
     let mut first_resolution_error: Option<String> = None;
 
-    if parse_result.is_empty() {
+    if !ctx.bibliography_items.is_empty() {
+        info!(
+            bibliography_item_count = ctx.bibliography_items.len(),
+            "Added bibliography file items to resolution queue"
+        );
+    }
+
+    if all_items.is_empty() {
         return Ok(ResolutionOutcome {
             parsed_item_count,
             resolution_failed_count: 0,
@@ -96,7 +119,7 @@ pub(crate) async fn run_resolution(
         Vec::new()
     };
 
-    for item in &parse_result.items {
+    for item in &all_items {
         let resolver_input = if item.input_type == InputType::BibTex {
             item.raw.as_str()
         } else {
@@ -241,6 +264,7 @@ mod tests {
             cookie_jar: None,
             input_text: None,
             piped_stdin_was_empty: false,
+            bibliography_items: Vec::new(),
         };
 
         let outcome = run_resolution(&ctx, queue).await.unwrap();
