@@ -1,8 +1,16 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import CompletionSummary from './CompletionSummary.svelte';
 
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe('CompletionSummary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   const makeSummary = (overrides = {}) => ({
     completed: 3,
     failed: 0,
@@ -126,5 +134,49 @@ describe('CompletionSummary', () => {
     render(CompletionSummary, { props: { summary: makeSummary(), onReset } });
     await fireEvent.click(screen.getByRole('button', { name: /download more/i }));
     expect(onReset).toHaveBeenCalledOnce();
+  });
+
+  it('shows "Open output folder" button when output_dir is non-empty and files completed', () => {
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ output_dir: '/home/user/papers', completed: 2 }), onReset: vi.fn() },
+    });
+    expect(screen.getByRole('button', { name: /open output folder/i })).toBeTruthy();
+  });
+
+  it('hides "Open output folder" button when no files completed', () => {
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ output_dir: '/home/user/papers', completed: 0, failed: 2 }), onReset: vi.fn() },
+    });
+    expect(screen.queryByRole('button', { name: /open output folder/i })).toBeNull();
+  });
+
+  it('invokes open_folder with the correct path when "Open output folder" is clicked', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const invokeMock = vi.mocked(invoke);
+
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ output_dir: '/home/user/papers' }), onReset: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /open output folder/i }));
+
+    expect(invokeMock).toHaveBeenCalledWith('open_folder', { path: '/home/user/papers' });
+  });
+
+  it('shows an error message when open_folder rejects', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockRejectedValueOnce('Permission denied');
+
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ output_dir: '/home/user/papers' }), onReset: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /open output folder/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.getByText(/Permission denied/)).toBeTruthy();
+    });
   });
 });

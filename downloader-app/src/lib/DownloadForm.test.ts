@@ -84,6 +84,7 @@ describe('DownloadForm', () => {
       expect(invokeMock).toHaveBeenCalledWith('start_download_with_progress', {
         inputs: ['https://example.com/a.pdf', '10.1000/xyz123'],
         project: null,
+        bibliography_paths: [],
       });
     });
   });
@@ -107,6 +108,7 @@ describe('DownloadForm', () => {
       expect(invokeMock).toHaveBeenCalledWith('start_download_with_progress', {
         inputs: ['https://example.com/paper.pdf'],
         project: 'Climate Research',
+        bibliography_paths: [],
       });
     });
   });
@@ -288,6 +290,145 @@ describe('DownloadForm', () => {
     pending.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads', failed_items: [] });
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: /cancel/i })).toBeNull();
+    });
+  });
+
+  it('shows inline error when pick_bibliography_files rejects with an Error object', async () => {
+    invokeMock.mockImplementation((command) => {
+      if (command === 'list_projects') return Promise.resolve([]);
+      if (command === 'pick_bibliography_files') return Promise.reject(new Error('IPC failed'));
+      return Promise.resolve(undefined);
+    });
+
+    render(DownloadForm);
+    await enterInput('https://example.com/paper.pdf');
+
+    await fireEvent.click(screen.getByRole('button', { name: /add \.bib \/ \.ris file/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.getByText(/Could not open file picker/)).toBeTruthy();
+    });
+
+    // Download button must still be enabled
+    const downloadBtn = screen.getByRole('button', { name: /^Download$/i }) as HTMLButtonElement;
+    expect(downloadBtn.disabled).toBe(false);
+  });
+
+  it('clears bibPickerError when a subsequent pick succeeds', async () => {
+    let callCount = 0;
+    invokeMock.mockImplementation((command) => {
+      if (command === 'list_projects') return Promise.resolve([]);
+      if (command === 'pick_bibliography_files') {
+        callCount += 1;
+        if (callCount === 1) return Promise.reject('OS dialog failed');
+        return Promise.resolve(['/home/user/refs.bib']);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(DownloadForm);
+
+    // First pick fails — error appears
+    await fireEvent.click(screen.getByRole('button', { name: /add \.bib \/ \.ris file/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+    });
+
+    // Second pick succeeds — error disappears, chip appears
+    await fireEvent.click(screen.getByRole('button', { name: /add \.bib \/ \.ris file/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.getByText('refs.bib')).toBeTruthy();
+    });
+  });
+
+  it('shows inline error when pick_bibliography_files rejects, without affecting download status', async () => {
+    invokeMock.mockImplementation((command) => {
+      if (command === 'list_projects') return Promise.resolve([]);
+      if (command === 'pick_bibliography_files') return Promise.reject('OS dialog failed');
+      return Promise.resolve(undefined);
+    });
+
+    render(DownloadForm);
+    await enterInput('https://example.com/paper.pdf');
+
+    await fireEvent.click(screen.getByRole('button', { name: /add \.bib \/ \.ris file/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.getByText(/OS dialog failed/)).toBeTruthy();
+    });
+
+    // Download button must still be enabled — status not corrupted
+    const downloadBtn = screen.getByRole('button', { name: /^Download$/i }) as HTMLButtonElement;
+    expect(downloadBtn.disabled).toBe(false);
+
+    // CompletionSummary must not have appeared
+    expect(screen.queryByRole('button', { name: /download more/i })).toBeNull();
+  });
+
+  it('shows bib file chip after pick_bibliography_files returns a path', async () => {
+    invokeMock.mockImplementation((command) => {
+      if (command === 'list_projects') return Promise.resolve([]);
+      if (command === 'pick_bibliography_files') return Promise.resolve(['/home/user/refs.bib']);
+      return Promise.resolve(undefined);
+    });
+
+    render(DownloadForm);
+    const addBibBtn = screen.getByRole('button', { name: /add \.bib \/ \.ris file/i });
+    await fireEvent.click(addBibBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('refs.bib')).toBeTruthy();
+    });
+  });
+
+  it('removes a bib file chip when the × button is clicked', async () => {
+    invokeMock.mockImplementation((command) => {
+      if (command === 'list_projects') return Promise.resolve([]);
+      if (command === 'pick_bibliography_files') return Promise.resolve(['/home/user/refs.bib']);
+      return Promise.resolve(undefined);
+    });
+
+    render(DownloadForm);
+
+    await fireEvent.click(screen.getByRole('button', { name: /add \.bib \/ \.ris file/i }));
+    await waitFor(() => {
+      expect(screen.getByText('refs.bib')).toBeTruthy();
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /remove.*refs\.bib/i }));
+    await waitFor(() => {
+      expect(screen.queryByText('refs.bib')).toBeNull();
+    });
+  });
+
+  it('includes selected bib file paths in start_download_with_progress', async () => {
+    invokeMock.mockImplementation((command) => {
+      if (command === 'list_projects') return Promise.resolve([]);
+      if (command === 'pick_bibliography_files') return Promise.resolve(['/home/user/refs.bib']);
+      return Promise.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads', failed_items: [] });
+    });
+
+    render(DownloadForm);
+
+    // Pick a bib file
+    await fireEvent.click(screen.getByRole('button', { name: /add \.bib \/ \.ris file/i }));
+    await waitFor(() => {
+      expect(screen.getByText('refs.bib')).toBeTruthy();
+    });
+
+    // Submit with a URL too
+    await enterInput('https://example.com/paper.pdf');
+    await fireEvent.submit(screen.getByRole('button', { name: /download/i }).closest('form')!);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('start_download_with_progress', {
+        inputs: ['https://example.com/paper.pdf'],
+        project: null,
+        bibliography_paths: ['/home/user/refs.bib'],
+      });
     });
   });
 

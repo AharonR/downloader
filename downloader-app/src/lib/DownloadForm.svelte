@@ -11,6 +11,8 @@
 
   let projectName = $state('');
   let inputText = $state('');
+  let bibFiles = $state<string[]>([]);
+  let bibPickerError = $state<string | null>(null);
   let status = $state<'idle' | 'downloading' | 'done' | 'error'>('idle');
   let message = $state('');
   let progressPayload = $state<ProgressPayload | null>(null);
@@ -21,7 +23,7 @@
   // Unlisten function for the progress event listener (not reactive — not rendered).
   let unlisten: (() => void) | null = null;
 
-  let isInputEmpty = $derived(inputText.trim() === '');
+  let isInputEmpty = $derived(inputText.trim() === '' && bibFiles.length === 0);
   let isDownloading = $derived(status === 'downloading');
 
   async function handleDownload(event: Event) {
@@ -34,6 +36,7 @@
     summary = null;
     cancelled = false;
     cancelRequested = false;
+    bibPickerError = null;
 
     try {
       // Set up progress event listener before invoking so no events are missed.
@@ -49,6 +52,7 @@
       const result = await invoke<DownloadSummary>('start_download_with_progress', {
         inputs,
         project: projectName || null,
+        bibliography_paths: bibFiles,
       });
 
       summary = result;
@@ -74,6 +78,20 @@
     }
   }
 
+  async function handleAddBibFiles() {
+    bibPickerError = null;
+    try {
+      const paths = await invoke<string[]>('pick_bibliography_files');
+      bibFiles = [...bibFiles, ...paths];
+    } catch (err) {
+      bibPickerError = typeof err === 'string' ? err : 'Could not open file picker';
+    }
+  }
+
+  function removeBibFile(index: number) {
+    bibFiles = bibFiles.filter((_, i) => i !== index);
+  }
+
   function handleReset() {
     status = 'idle';
     message = '';
@@ -82,6 +100,8 @@
     cancelled = false;
     cancelRequested = false;
     inputText = '';
+    bibFiles = [];
+    bibPickerError = null;
   }
 
   onDestroy(() => {
@@ -100,11 +120,40 @@
       id="url-input"
       class="url-input"
       bind:value={inputText}
-      placeholder="https://arxiv.org/abs/2301.00001&#10;10.1000/xyz123"
+      placeholder="https://arxiv.org/abs/2301.00001&#10;10.1000/xyz123&#10;&#10;Or use &quot;Add .bib / .ris file&quot; to import from Zotero, Mendeley, or EndNote"
       rows={5}
       disabled={isDownloading}
       aria-label="URLs or DOIs to download"
     ></textarea>
+
+    <div class="bib-row">
+      <button
+        type="button"
+        class="add-bib-btn"
+        disabled={isDownloading}
+        onclick={handleAddBibFiles}
+      >
+        Add .bib / .ris file
+      </button>
+      {#if bibFiles.length > 0}
+        <ul class="bib-chips">
+          {#each bibFiles as filePath, i}
+            <li class="bib-chip">
+              <span class="bib-chip-name">{filePath.split(/[\\/]/).pop() ?? filePath}</span>
+              <button
+                type="button"
+                class="bib-chip-remove"
+                aria-label="Remove {filePath}"
+                onclick={() => removeBibFile(i)}
+              >×</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+    {#if bibPickerError}
+      <p class="bib-picker-error" role="alert">{bibPickerError}</p>
+    {/if}
 
     <div class="button-row">
       <button
@@ -189,6 +238,83 @@
   .url-input:disabled {
     background: #f5f5f5;
     color: #888;
+  }
+
+  .bib-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .add-bib-btn {
+    background: transparent;
+    color: #396cd8;
+    border: 1px solid #396cd8;
+    border-radius: 6px;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .add-bib-btn:hover:not(:disabled) {
+    background: #eef2fc;
+  }
+
+  .add-bib-btn:disabled {
+    color: #999;
+    border-color: #ccc;
+    cursor: not-allowed;
+  }
+
+  .bib-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .bib-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    border-radius: 12px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.8rem;
+    color: #2e7d32;
+  }
+
+  .bib-chip-name {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bib-chip-remove {
+    background: none;
+    border: none;
+    color: #2e7d32;
+    cursor: pointer;
+    padding: 0;
+    font-size: 1rem;
+    line-height: 1;
+    opacity: 0.7;
+  }
+
+  .bib-chip-remove:hover {
+    opacity: 1;
+  }
+
+  .bib-picker-error {
+    color: #c0392b;
+    font-size: 0.82rem;
+    margin: 0;
   }
 
   .button-row {

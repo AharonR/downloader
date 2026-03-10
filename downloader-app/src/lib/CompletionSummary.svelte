@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { invoke } from '@tauri-apps/api/core';
+
   export interface FailedItem {
     input: string;
     error: string;
@@ -18,6 +20,16 @@
   }: { summary: DownloadSummary; onReset: () => void; cancelled?: boolean } = $props();
 
   let showFailedDetails = $state(false);
+  let openFolderError = $state<string | null>(null);
+
+  async function handleOpenFolder() {
+    openFolderError = null;
+    try {
+      await invoke('open_folder', { path: summary.output_dir });
+    } catch (err) {
+      openFolderError = typeof err === 'string' ? err : 'Could not open folder';
+    }
+  }
   // Threshold above which an expand/collapse all toggle is shown.
   const EXPAND_ALL_THRESHOLD = 5;
   let expandAll = $state(false);
@@ -88,9 +100,19 @@
     {/if}
   {/if}
 
-  <button class="reset-btn" onclick={onReset} type="button">
-    Download more
-  </button>
+  <div class="action-row">
+    {#if summary.output_dir && summary.completed > 0}
+      <button class="open-folder-btn" onclick={handleOpenFolder} type="button">
+        Open output folder
+      </button>
+    {/if}
+    <button class="reset-btn" onclick={onReset} type="button">
+      Download more
+    </button>
+  </div>
+  {#if openFolderError}
+    <p class="open-folder-error" role="alert">{openFolderError}</p>
+  {/if}
 </div>
 
 <style>
@@ -210,6 +232,28 @@
     line-height: 1.4;
   }
 
+  .action-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 0.25rem;
+    flex-wrap: wrap;
+  }
+
+  .open-folder-btn {
+    background: transparent;
+    color: #396cd8;
+    border: 1px solid #396cd8;
+    border-radius: 6px;
+    padding: 0.5rem 1.2rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+
+  .open-folder-btn:hover {
+    background: #eef2fc;
+  }
+
   .reset-btn {
     background: #396cd8;
     color: white;
@@ -218,10 +262,15 @@
     padding: 0.5rem 1.2rem;
     font-size: 0.9rem;
     cursor: pointer;
-    margin-top: 0.25rem;
   }
 
   .reset-btn:hover {
     background: #2a55c0;
+  }
+
+  .open-folder-error {
+    color: #c0392b;
+    font-size: 0.82rem;
+    margin: 0.4rem 0 0;
   }
 </style>

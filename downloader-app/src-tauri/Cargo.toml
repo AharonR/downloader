@@ -21,6 +21,8 @@ tauri-build = { version = "2", features = [] }
 # Tauri runtime
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+# OS file picker for .bib/.ris bibliography import; official Tauri 2.x plugin
+tauri-plugin-dialog = "2"
 
 # Core business logic
 downloader-core = { path = "../../downloader-core" }

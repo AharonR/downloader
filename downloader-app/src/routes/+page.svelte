@@ -9,7 +9,7 @@
 <main>
   <header class="app-header">
     <h1>Downloader</h1>
-    <p class="app-subtitle">Paste URLs or DOIs and download papers to your local library</p>
+    <p class="app-subtitle">Paste a reference list, DOIs, or bibliography files. Get organized, citable files.</p>
   </header>
 
   <DownloadForm />

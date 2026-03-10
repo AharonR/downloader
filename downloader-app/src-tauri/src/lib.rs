@@ -7,12 +7,15 @@ mod commands;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(commands::AppState::default())
         .invoke_handler(tauri::generate_handler![
             commands::start_download,
             commands::start_download_with_progress,
             commands::cancel_download,
             commands::list_projects,
+            commands::open_folder,
+            commands::pick_bibliography_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

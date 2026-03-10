@@ -16,7 +16,7 @@ use downloader_core::{
     DEFAULT_CONCURRENCY, Database, DownloadAttemptQuery, DownloadEngine, HttpClient, InputType,
     Queue, QueueMetadata, QueueStatus, RateLimiter, ResolveContext, ResolveError, RetryPolicy,
     build_default_resolver_registry, build_preferred_filename, extract_reference_confidence,
-    parse_input,
+    parse_input, parse_ris_content,
 };
 use serde::Serialize;
 use tauri::Emitter;
@@ -580,11 +580,12 @@ pub async fn start_download(
 ///
 /// Emits `"download://progress"` events every 300 ms while downloads are in flight.
 /// The `state.interrupted` flag can be set by `cancel_download` to stop the engine.
-#[tracing::instrument(skip(window, state))]
+#[tracing::instrument(skip(window, state, bibliography_paths))]
 #[tauri::command]
 pub async fn start_download_with_progress(
     inputs: Vec<String>,
     project: Option<String>,
+    bibliography_paths: Option<Vec<String>>,
     window: tauri::Window,
     state: tauri::State<'_, AppState>,
 ) -> Result<DownloadSummary, String> {
@@ -599,9 +600,42 @@ pub async fn start_download_with_progress(
             )
         })?;
 
-    validate_inputs(&inputs)?;
+    // Process bibliography files and augment the input list.
+    let mut augmented_inputs = inputs;
+    let bib_paths = bibliography_paths.unwrap_or_default();
+    let had_bib_files = !bib_paths.is_empty();
+    for path in &bib_paths {
+        let content = tokio::fs::read_to_string(path).await.map_err(|e| {
+            format!(
+                "What: Could not read bibliography file.\n\
+                 Why: {e}\n\
+                 Fix: Check that '{path}' is accessible and readable."
+            )
+        })?;
+        if path.to_lowercase().ends_with(".ris") {
+            let ris_result = parse_ris_content(&content);
+            for item in ris_result.items {
+                augmented_inputs.push(item.value);
+            }
+        } else {
+            // .bib and any other format: append raw content for parse_input to handle
+            augmented_inputs.push(content);
+        }
+    }
 
-    if let Err(e) = std::fs::create_dir_all(&output_dir) {
+    // Give a targeted error when bibliography files were provided but produced no parseable content.
+    if had_bib_files && augmented_inputs.iter().all(|s| s.trim().is_empty()) {
+        return Err(
+            "What: No references found in bibliography files.\n\
+             Why: The provided .bib or .ris files contained no extractable DOIs or URLs.\n\
+             Fix: Check that the files are valid BibTeX or RIS format with DO or UR fields."
+                .to_string(),
+        );
+    }
+
+    validate_inputs(&augmented_inputs)?;
+
+    if let Err(e) = tokio::fs::create_dir_all(&output_dir).await {
         return Err(format!(
             "What: Could not create output directory.\n\
              Why: {e}\n\
@@ -624,7 +658,7 @@ pub async fn start_download_with_progress(
     })?;
 
     let queue = Arc::new(Queue::new(db));
-    let enqueued = resolve_and_enqueue(&inputs, &queue).await?;
+    let enqueued = resolve_and_enqueue(&augmented_inputs, &queue).await?;
 
     // Create a fresh interrupt flag for this run; register it for cancel_download.
     let flag = Arc::new(AtomicBool::new(false));
@@ -799,6 +833,53 @@ pub async fn start_download_with_progress(
 pub async fn cancel_download(state: tauri::State<'_, AppState>) -> Result<(), String> {
     mark_interrupt_requested(&state);
     Ok(())
+}
+
+/// Opens a folder in the OS file manager (Finder, Explorer, Nautilus, etc.).
+#[tracing::instrument(skip(app_handle))]
+#[tauri::command]
+pub async fn open_folder(path: String, app_handle: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app_handle
+        .opener()
+        .open_path(&path, None::<&str>)
+        .map_err(|e| {
+            format!(
+                "What: Could not open the output folder.\n\
+                 Why: {e}\n\
+                 Fix: The folder may have been moved or deleted. Check that '{path}' still exists."
+            )
+        })
+}
+
+/// Opens an OS file picker filtered to .bib and .ris files and returns the selected paths.
+#[tracing::instrument(skip(app_handle))]
+#[tauri::command]
+pub async fn pick_bibliography_files(
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<Vec<tauri_plugin_dialog::FilePath>>>();
+    app_handle
+        .dialog()
+        .file()
+        .add_filter("Bibliography files", &["bib", "ris"])
+        .pick_files(move |files| {
+            let _ = tx.send(files);
+        });
+    let files = rx.await.ok().flatten().unwrap_or_default();
+    Ok(files
+        .into_iter()
+        .filter_map(|f| f.into_path().ok())
+        .filter_map(|p| {
+            if let Some(s) = p.to_str() {
+                Some(s.to_string())
+            } else {
+                warn!(path = ?p, "Skipping selected file: path contains non-UTF-8 characters");
+                None
+            }
+        })
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
