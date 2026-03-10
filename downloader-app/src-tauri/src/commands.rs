@@ -625,12 +625,10 @@ pub async fn start_download_with_progress(
 
     // Give a targeted error when bibliography files were provided but produced no parseable content.
     if had_bib_files && augmented_inputs.iter().all(|s| s.trim().is_empty()) {
-        return Err(
-            "What: No references found in bibliography files.\n\
+        return Err("What: No references found in bibliography files.\n\
              Why: The provided .bib or .ris files contained no extractable DOIs or URLs.\n\
              Fix: Check that the files are valid BibTeX or RIS format with DO or UR fields."
-                .to_string(),
-        );
+            .to_string());
     }
 
     validate_inputs(&augmented_inputs)?;
@@ -855,9 +853,7 @@ pub async fn open_folder(path: String, app_handle: tauri::AppHandle) -> Result<(
 /// Opens an OS file picker filtered to .bib and .ris files and returns the selected paths.
 #[tracing::instrument(skip(app_handle))]
 #[tauri::command]
-pub async fn pick_bibliography_files(
-    app_handle: tauri::AppHandle,
-) -> Result<Vec<String>, String> {
+pub async fn pick_bibliography_files(app_handle: tauri::AppHandle) -> Result<Vec<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let (tx, rx) = tokio::sync::oneshot::channel::<Option<Vec<tauri_plugin_dialog::FilePath>>>();
     app_handle
