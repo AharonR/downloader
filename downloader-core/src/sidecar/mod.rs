@@ -233,7 +233,7 @@ fn looks_like_full_name(token: &str) -> bool {
 mod tests {
     use super::*;
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, OnceLock};
 
     use tracing::field::{Field, Visit};
     use tracing::{Event, Subscriber};
@@ -274,6 +274,11 @@ mod tests {
     #[derive(Clone)]
     struct EventCaptureLayer {
         events: Arc<Mutex<Vec<CapturedEvent>>>,
+    }
+
+    fn log_capture_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
     }
 
     impl<S> Layer<S> for EventCaptureLayer
@@ -590,6 +595,7 @@ mod tests {
 
     #[test]
     fn test_generate_sidecar_existing_sidecar_logs_skip_with_path() {
+        let _guard = log_capture_test_lock().lock().unwrap();
         let tmp = tempfile::TempDir::new().unwrap();
         let pdf_path = tmp.path().join("paper.pdf");
         std::fs::write(&pdf_path, b"fake pdf").unwrap();
@@ -611,6 +617,7 @@ mod tests {
             });
 
         tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
             let first = generate_sidecar(&item).unwrap();
             assert!(first.is_some(), "first sidecar creation should succeed");
 
