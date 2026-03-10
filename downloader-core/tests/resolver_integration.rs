@@ -6,9 +6,9 @@ use std::sync::Arc;
 
 use downloader_core::parser::InputType;
 use downloader_core::resolver::{
-    ArxivResolver, CrossrefResolver, DirectResolver, IeeeResolver, PubMedResolver, ResolveContext,
-    ResolvedUrl, ResolverRegistry, STANDARD_METADATA_KEYS, ScienceDirectResolver, SpringerResolver,
-    build_default_resolver_registry,
+    ArxivResolver, CrossrefResolver, DirectResolver, IeeeResolver, OxfordAcademicResolver,
+    PubMedResolver, ResolveContext, ResolvedUrl, ResolverRegistry, STANDARD_METADATA_KEYS,
+    ScienceDirectResolver, SpringerResolver, build_default_resolver_registry,
 };
 use reqwest::cookie::Jar;
 use wiremock::matchers::{header_regex, method, path, path_regex};
@@ -510,6 +510,96 @@ async fn regression_sciencedirect_sends_user_agent_header() {
     );
 }
 
+#[tokio::test]
+async fn regression_oxford_sends_shared_user_agent() {
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
+    let article_path = "/chemse/article/doi/10.1093/chemse/bjag003/8489487";
+    let pdf_path = "/chemse/article-pdf/doi/10.1093/chemse/bjag003/8489487/bjag003.pdf";
+
+    Mock::given(method("GET"))
+        .and(path(article_path))
+        .and(header_regex(
+            "user-agent",
+            r"downloader/[0-9.]+ \(research-tool; \+https://github\.com/nicksrandall/Downloader\)",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"<meta name="citation_title" content="Oxford UA Test">
+               <meta name="citation_pdf_url" content="{pdf_path}">"#
+        )))
+        .mount(&mock_server)
+        .await;
+
+    let mut registry = ResolverRegistry::new();
+    registry.register(Box::new(
+        OxfordAcademicResolver::with_base_urls(None, mock_server.uri(), mock_server.uri()).unwrap(),
+    ));
+    registry.register(Box::new(DirectResolver::new()));
+
+    let ctx = ResolveContext::default();
+    let article_url = format!("{}{}", mock_server.uri(), article_path);
+    let result = registry
+        .resolve_to_url(&article_url, InputType::Url, &ctx)
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Request should succeed when Oxford User-Agent is shared format: {:?}",
+        result.err()
+    );
+}
+
+#[tokio::test]
+async fn regression_oxford_redirect_to_non_academic_host_fails_cleanly() {
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
+    let doi = "10.1093/chemse/bjag003";
+    let base_uri = mock_server.uri();
+    let foreign_base = if base_uri.contains("127.0.0.1") {
+        base_uri.replace("127.0.0.1", "localhost")
+    } else {
+        base_uri.replace("localhost", "127.0.0.1")
+    };
+    let foreign_article = "/foreign/article/8489487";
+
+    Mock::given(method("GET"))
+        .and(path("/10.1093/chemse/bjag003"))
+        .respond_with(
+            ResponseTemplate::new(302)
+                .append_header("location", format!("{foreign_base}{foreign_article}")),
+        )
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path(foreign_article))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"<meta name="citation_pdf_url" content="/foreign/article-pdf/test.pdf">"#,
+        ))
+        .mount(&mock_server)
+        .await;
+
+    let mut registry = ResolverRegistry::new();
+    registry.register(Box::new(
+        OxfordAcademicResolver::with_base_urls(None, mock_server.uri(), mock_server.uri()).unwrap(),
+    ));
+
+    let ctx = ResolveContext::default();
+    let err = registry
+        .resolve_to_url(doi, InputType::Doi, &ctx)
+        .await
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        !err.contains("authentication required"),
+        "redirect off Oxford host should fail cleanly, not as auth: {err}"
+    );
+    assert!(err.contains("all resolvers failed"));
+}
+
 /// Regression: Springer (and all resolvers) must send the shared UA format, not per-resolver UA.
 #[tokio::test]
 async fn regression_springer_sends_shared_user_agent() {
@@ -829,6 +919,165 @@ async fn test_ieee_resolver_surfaces_auth_required_for_paywalled_page() {
 }
 
 #[tokio::test]
+async fn test_oxford_resolver_extracts_pdf_and_metadata() {
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
+    let article_path = "/chemse/article/doi/10.1093/chemse/bjag003/8489487";
+    let pdf_path = "/chemse/article-pdf/doi/10.1093/chemse/bjag003/8489487/bjag003.pdf";
+
+    Mock::given(method("GET"))
+        .and(path(article_path))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"<meta name="citation_title" content="Oxford Integration">
+               <meta name="citation_author" content="Alice Researcher">
+               <meta name="citation_author" content="Bob Scientist">
+               <meta name="citation_doi" content="10.1093/chemse/bjag003">
+               <meta name="citation_publication_date" content="2024-02-01">
+               <meta name="citation_pdf_url" content="{pdf_path}">"#
+        )))
+        .mount(&mock_server)
+        .await;
+
+    let mut registry = ResolverRegistry::new();
+    registry.register(Box::new(
+        OxfordAcademicResolver::with_base_urls(None, mock_server.uri(), mock_server.uri()).unwrap(),
+    ));
+    registry.register(Box::new(DirectResolver::new()));
+
+    let ctx = ResolveContext::default();
+    let article_url = format!("{}{}", mock_server.uri(), article_path);
+    let result = registry
+        .resolve_to_url(&article_url, InputType::Url, &ctx)
+        .await
+        .unwrap();
+
+    assert_eq!(result.url, format!("{}{}", mock_server.uri(), pdf_path));
+    assert_eq!(result.metadata.get("title").unwrap(), "Oxford Integration");
+    assert_eq!(
+        result.metadata.get("authors").unwrap(),
+        "Alice Researcher; Bob Scientist"
+    );
+    assert_eq!(
+        result.metadata.get("doi").unwrap(),
+        "10.1093/chemse/bjag003"
+    );
+    assert_eq!(result.metadata.get("year").unwrap(), "2024");
+    assert_eq!(result.metadata.get("source_url").unwrap(), &article_url);
+}
+
+#[tokio::test]
+async fn test_oxford_resolver_resolves_1093_doi_through_redirect() {
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
+    let doi = "10.1093/chemse/bjag004";
+    let article_path = "/chemse/advance-article/8490030";
+    let pdf_path = "/chemse/advance-article-pdf/doi/10.1093/chemse/bjag004/8490030/bjag004.pdf";
+
+    Mock::given(method("GET"))
+        .and(path("/10.1093/chemse/bjag004"))
+        .respond_with(
+            ResponseTemplate::new(302)
+                .append_header("location", format!("{}{}", mock_server.uri(), article_path)),
+        )
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path(article_path))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"<meta name="citation_title" content="Oxford DOI Integration">
+               <meta name="citation_doi" content="{doi}">
+               <meta name="citation_pdf_url" content="{pdf_path}">"#
+        )))
+        .mount(&mock_server)
+        .await;
+
+    let mut registry = ResolverRegistry::new();
+    registry.register(Box::new(
+        OxfordAcademicResolver::with_base_urls(None, mock_server.uri(), mock_server.uri()).unwrap(),
+    ));
+    registry.register(Box::new(
+        CrossrefResolver::with_base_url("test@example.com", mock_server.uri()).unwrap(),
+    ));
+    registry.register(Box::new(DirectResolver::new()));
+
+    let ctx = ResolveContext::default();
+    let result = registry
+        .resolve_to_url(doi, InputType::Doi, &ctx)
+        .await
+        .unwrap();
+
+    assert_eq!(result.url, format!("{}{}", mock_server.uri(), pdf_path));
+    assert_eq!(result.metadata.get("doi").unwrap(), doi);
+    assert_eq!(
+        result.metadata.get("source_url").unwrap(),
+        &format!("{}{}", mock_server.uri(), article_path)
+    );
+}
+
+#[tokio::test]
+async fn test_oxford_resolver_paywall_path_returns_needs_auth() {
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
+    let article_path = "/chemse/article/doi/10.1093/chemse/bjag003/8489487";
+
+    Mock::given(method("GET"))
+        .and(path(article_path))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            "<html><body>You do not currently have access to this article.</body></html>",
+        ))
+        .mount(&mock_server)
+        .await;
+
+    let mut registry = ResolverRegistry::new();
+    registry.register(Box::new(
+        OxfordAcademicResolver::with_base_urls(None, mock_server.uri(), mock_server.uri()).unwrap(),
+    ));
+
+    let ctx = ResolveContext::default();
+    let input_url = format!("{}{}", mock_server.uri(), article_path);
+    let err = registry
+        .resolve_to_url(&input_url, InputType::Url, &ctx)
+        .await
+        .unwrap_err()
+        .to_string();
+
+    assert!(err.contains("authentication required"));
+}
+
+#[tokio::test]
+async fn test_oxford_resolver_raw_403_returns_needs_auth() {
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
+    let article_path = "/chemse/article/doi/10.1093/chemse/bjag003/8489487";
+
+    Mock::given(method("GET"))
+        .and(path(article_path))
+        .respond_with(ResponseTemplate::new(403))
+        .mount(&mock_server)
+        .await;
+
+    let mut registry = ResolverRegistry::new();
+    registry.register(Box::new(
+        OxfordAcademicResolver::with_base_urls(None, mock_server.uri(), mock_server.uri()).unwrap(),
+    ));
+
+    let ctx = ResolveContext::default();
+    let input_url = format!("{}{}", mock_server.uri(), article_path);
+    let err = registry
+        .resolve_to_url(&input_url, InputType::Url, &ctx)
+        .await
+        .unwrap_err()
+        .to_string();
+
+    assert!(err.contains("authentication required"));
+}
+
+#[tokio::test]
 async fn test_springer_resolver_extracts_canonical_pdf_url() {
     let Some(mock_server) = start_mock_server_or_skip().await else {
         return;
@@ -926,6 +1175,61 @@ async fn test_ieee_resolver_direct_stamp_url_bypasses_page_fetch() {
 }
 
 #[tokio::test]
+async fn test_oxford_resolver_direct_pdf_url_bypasses_page_fetch() {
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
+    let base_url = mock_server.uri();
+    let pdf_url =
+        format!("{base_url}/chemse/article-pdf/doi/10.1093/chemse/bjag003/8489487/bjag003.pdf");
+
+    let mut registry = ResolverRegistry::new();
+    registry.register(Box::new(
+        OxfordAcademicResolver::with_base_urls(None, &base_url, &base_url).unwrap(),
+    ));
+
+    let ctx = ResolveContext::default();
+    let result = registry
+        .resolve_to_url(&pdf_url, InputType::Url, &ctx)
+        .await
+        .unwrap();
+
+    assert_eq!(result.url, pdf_url);
+    let requests = mock_server.received_requests().await.unwrap();
+    assert!(
+        requests.is_empty(),
+        "direct Oxford PDF URLs should not trigger Oxford page fetches"
+    );
+}
+
+#[tokio::test]
+async fn test_oxford_resolver_legacy_direct_pdf_url_bypasses_page_fetch() {
+    let Some(mock_server) = start_mock_server_or_skip().await else {
+        return;
+    };
+    let base_url = mock_server.uri();
+    let pdf_url = format!("{base_url}/chemse/article-pdf/36/2/NP/854590/bjr004.pdf");
+
+    let mut registry = ResolverRegistry::new();
+    registry.register(Box::new(
+        OxfordAcademicResolver::with_base_urls(None, &base_url, &base_url).unwrap(),
+    ));
+
+    let ctx = ResolveContext::default();
+    let result = registry
+        .resolve_to_url(&pdf_url, InputType::Url, &ctx)
+        .await
+        .unwrap();
+
+    assert_eq!(result.url, pdf_url);
+    let requests = mock_server.received_requests().await.unwrap();
+    assert!(
+        requests.is_empty(),
+        "legacy Oxford PDF URLs should not trigger Oxford page fetches"
+    );
+}
+
+#[tokio::test]
 async fn test_springer_resolver_direct_pdf_url_bypasses_page_fetch() {
     let Some(mock_server) = start_mock_server_or_skip().await else {
         return;
@@ -1002,6 +1306,7 @@ async fn test_shared_default_registry_applies_specialized_priority_matrix() {
     let cases = [
         ("10.48550/arXiv.2301.12345", InputType::Doi, "arxiv"),
         ("10.1109/5.771073", InputType::Doi, "ieee"),
+        ("10.1093/brain/awab497", InputType::Doi, "oxford"),
         ("10.1007/s00134-020-06294-x", InputType::Doi, "springer"),
         (
             "10.1016/j.future.2018.10.001",

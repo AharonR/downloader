@@ -12,6 +12,7 @@
 //! - [`ArxivResolver`] - Site-specific resolver for `arXiv` URLs/DOIs
 //! - [`PubMedResolver`] - Site-specific resolver for PubMed/PMC URL resolution
 //! - [`IeeeResolver`] - Site-specific resolver for IEEE Xplore and `10.1109/*` DOI inputs
+//! - [`OxfordAcademicResolver`] - Site-specific resolver for Oxford Academic URLs and `10.1093/*` DOI inputs
 //! - [`SpringerResolver`] - Site-specific resolver for Springer article/chapter URL inputs
 //! - [`ScienceDirectResolver`] - Site-specific resolver for `ScienceDirect` URLs/DOIs
 //! - [`YouTubeResolver`] - Site-specific resolver for `YouTube` watch URLs (oEmbed + transcript)
@@ -41,6 +42,7 @@ mod direct;
 mod error;
 mod http_client;
 mod ieee;
+mod oxford;
 mod pubmed;
 mod registry;
 mod sciencedirect;
@@ -54,6 +56,7 @@ pub use direct::DirectResolver;
 pub use error::ResolveError;
 pub use http_client::configure_resolver_http_timeouts;
 pub use ieee::IeeeResolver;
+pub use oxford::OxfordAcademicResolver;
 pub use pubmed::PubMedResolver;
 pub use registry::ResolverRegistry;
 pub use sciencedirect::ScienceDirectResolver;
@@ -98,6 +101,14 @@ pub fn build_default_resolver_registry(
         Err(error) => warn!(
             error = %error,
             "IEEE resolver unavailable; continuing with remaining resolvers"
+        ),
+    }
+
+    match OxfordAcademicResolver::new(cookie_jar.clone()) {
+        Ok(resolver) => registry.register(Box::new(resolver)),
+        Err(error) => warn!(
+            error = %error,
+            "Oxford Academic resolver unavailable; continuing with remaining resolvers"
         ),
     }
 

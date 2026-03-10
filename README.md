@@ -61,6 +61,7 @@ Resolver dispatch is priority-ordered (`Specialized` before `General` before `Fa
 | `arxiv` | `https://arxiv.org/abs/<id>`, `https://arxiv.org/pdf/<id>.pdf`, `10.48550/arXiv.*` | Normalizes to canonical `https://arxiv.org/pdf/<id>.pdf` | Open-access; no auth flow expected |
 | `pubmed` | `https://pubmed.ncbi.nlm.nih.gov/<pmid>/`, `https://pmc.ncbi.nlm.nih.gov/articles/PMC*` | Resolves PubMed records through PMC full-text links to a PDF target | Returns structured failure when no PMC full text is available |
 | `ieee` | `https://ieeexplore.ieee.org/document/<id>/`, `10.1109/*`, DOI URLs for `10.1109/*` | Extracts/normalizes IEEE stamp PDF URL from document metadata | Returns `NeedsAuth` for likely paywall/sign-in responses |
+| `oxford` | `https://academic.oup.com/*/article/*`, `https://academic.oup.com/*/advance-article*`, `10.1093/*`, DOI URLs for `10.1093/*` | Extracts explicit Oxford Academic PDF targets and metadata from article pages | Returns `NeedsAuth` for Oxford paywall/login responses |
 | `springer` | `https://link.springer.com/article/10.1007/*`, `https://link.springer.com/chapter/10.1007/*`, `10.1007/*` | Extracts canonical `/content/pdf/<doi>.pdf` URL from metadata with deterministic fallback | Returns `NeedsAuth` for paywall/subscription signals |
 | `sciencedirect` | `https://www.sciencedirect.com/science/article/*`, `10.1016/*`, DOI URLs for `10.1016/*` | Extracts ScienceDirect PDF endpoint and metadata from article page | Returns `NeedsAuth` when auth/session is required |
 | `youtube` | `https://www.youtube.com/watch?v=ID`, `https://youtube.com/watch?v=ID`, `https://youtu.be/ID`, `https://www.youtube.com/shorts/ID` | Fetches oEmbed JSON metadata; if an English transcript is available via the timedtext API, saves the transcript XML instead. Falls back to oEmbed JSON when transcript is unavailable. | Open-access; no auth required |
@@ -131,6 +132,7 @@ These are starting-point suggestions, not guarantees of policy compliance:
 |---|---|---|
 | Elsevier (ScienceDirect) | 3000–5000 | Strict bot-detection; use `respectful = true` |
 | Springer / SpringerLink | 3000–5000 | — |
+| Oxford Academic | 3000–5000 | Subscription content; use `respectful = true` |
 | IEEE Xplore | 3000–5000 | — |
 | Wiley Online Library | 3000–5000 | — |
 | ACM Digital Library | 3000–5000 | — |

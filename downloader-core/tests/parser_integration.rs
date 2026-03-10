@@ -222,6 +222,24 @@ fn test_parse_input_non_doi_url_still_url() {
     assert_eq!(result.items[0].input_type, InputType::Url);
 }
 
+/// Publisher URLs that embed a DOI path should remain URL inputs only.
+#[test]
+fn test_parse_input_oxford_article_urls_do_not_spawn_embedded_dois() {
+    let input = r#"
+https://academic.oup.com/chemse/article/doi/10.1093/chemse/bjag003/8489487?login=true&guestAccessKey=
+https://academic.oup.com/chemse/article/doi/10.1093/chemse/bjag004/8490030?login=true&guestAccessKey=
+"#;
+    let result = parse_input(input);
+
+    assert_eq!(
+        result.len(),
+        2,
+        "Oxford article URLs should remain 2 URL items"
+    );
+    assert_eq!(result.urls().count(), 2);
+    assert_eq!(result.dois().count(), 0);
+}
+
 /// Test dois() iterator returns only DOI items.
 #[test]
 fn test_parse_input_dois_iterator() {

@@ -2,7 +2,7 @@
 //!
 //! Bridges the Svelte frontend to `downloader_core` via Tauri's IPC layer.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -14,7 +14,7 @@ use downloader_core::project::{
 };
 use downloader_core::{
     DEFAULT_CONCURRENCY, Database, DownloadAttemptQuery, DownloadEngine, HttpClient, InputType,
-    Queue, QueueMetadata, QueueStatus, RateLimiter, ResolveContext, RetryPolicy,
+    Queue, QueueMetadata, QueueStatus, RateLimiter, ResolveContext, ResolveError, RetryPolicy,
     build_default_resolver_registry, build_preferred_filename, extract_reference_confidence,
     parse_input,
 };
@@ -291,7 +291,7 @@ async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, 
     let resolve_context = ResolveContext::default();
 
     let mut enqueued = 0usize;
-    let mut resolve_errors = 0usize;
+    let mut resolve_failures = ResolveFailureSummary::default();
 
     for item in &parse_result.items {
         let resolver_input = if item.input_type == InputType::BibTex {
@@ -306,7 +306,7 @@ async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, 
         {
             Ok(r) => r,
             Err(e) => {
-                resolve_errors += 1;
+                resolve_failures.record(&e);
                 warn!(error = %e, "Skipped unresolved item");
                 continue;
             }
@@ -348,19 +348,87 @@ async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, 
     }
 
     if enqueued == 0 {
-        let reason = if resolve_errors > 0 {
-            format!("All {resolve_errors} item(s) failed to resolve to a download URL.")
-        } else {
-            "No items could be enqueued.".to_string()
-        };
-        return Err(format!(
-            "What: Download could not start.\n\
-             Why: {reason}\n\
-             Fix: Verify the URLs/DOIs are correct and that network access is available."
-        ));
+        return Err(resolve_failures.render_start_download_error());
     }
 
     Ok(enqueued)
+}
+
+#[derive(Debug, Default)]
+struct ResolveFailureSummary {
+    auth_errors: usize,
+    other_errors: usize,
+    auth_domains: BTreeSet<String>,
+}
+
+impl ResolveFailureSummary {
+    fn record(&mut self, error: &ResolveError) {
+        match error {
+            ResolveError::AuthRequired { domain, .. } => {
+                self.auth_errors += 1;
+                self.auth_domains.insert(domain.clone());
+            }
+            _ => {
+                self.other_errors += 1;
+            }
+        }
+    }
+
+    fn render_start_download_error(&self) -> String {
+        if self.auth_errors > 0 && self.other_errors == 0 {
+            let domain_phrase = format_auth_domain_phrase(&self.auth_domains);
+            return format!(
+                "What: Download could not start.\n\
+                 Why: All {} item(s) require authentication{} before download can start.\n\
+                 Fix: Run `downloader auth capture` to authenticate, then retry.",
+                self.auth_errors, domain_phrase
+            );
+        }
+
+        if self.auth_errors > 0 && self.other_errors > 0 {
+            let domain_phrase = format_auth_domain_phrase(&self.auth_domains);
+            return format!(
+                "What: Download could not start.\n\
+                 Why: {} item(s) require authentication{} and {} item(s) failed to resolve to a download URL.\n\
+                 Fix: Run `downloader auth capture` to authenticate, then verify the remaining URLs/DOIs and network access.",
+                self.auth_errors, domain_phrase, self.other_errors
+            );
+        }
+
+        if self.other_errors > 0 {
+            return format!(
+                "What: Download could not start.\n\
+                 Why: All {} item(s) failed to resolve to a download URL.\n\
+                 Fix: Verify the URLs/DOIs are correct and that network access is available.",
+                self.other_errors
+            );
+        }
+
+        "What: Download could not start.\n\
+         Why: No items could be enqueued.\n\
+         Fix: Remove duplicates or verify that the queue does not already contain these items."
+            .to_string()
+    }
+}
+
+fn format_auth_domain_phrase(domains: &BTreeSet<String>) -> String {
+    if domains.is_empty() {
+        String::new()
+    } else if domains.len() == 1 {
+        format!(
+            " for {}",
+            domains
+                .iter()
+                .next()
+                .map(String::as_str)
+                .unwrap_or_default()
+        )
+    } else {
+        format!(
+            " for {}",
+            domains.iter().cloned().collect::<Vec<_>>().join(", ")
+        )
+    }
 }
 
 /// Collects newly-failed items from the queue, excluding those that were
@@ -965,6 +1033,43 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn test_resolve_failure_summary_renders_auth_only_message() {
+        let mut summary = ResolveFailureSummary::default();
+        summary.record(&ResolveError::auth_required(
+            "academic.oup.com",
+            "subscription required",
+        ));
+        summary.record(&ResolveError::auth_required(
+            "academic.oup.com",
+            "subscription required",
+        ));
+
+        let message = summary.render_start_download_error();
+        assert!(message.contains("All 2 item(s) require authentication"));
+        assert!(message.contains("academic.oup.com"));
+        assert!(message.contains("downloader auth capture"));
+        assert!(!message.contains("failed to resolve to a download URL"));
+    }
+
+    #[test]
+    fn test_resolve_failure_summary_renders_mixed_auth_and_resolve_message() {
+        let mut summary = ResolveFailureSummary::default();
+        summary.record(&ResolveError::auth_required(
+            "academic.oup.com",
+            "subscription required",
+        ));
+        summary.record(&ResolveError::resolution_failed(
+            "https://example.com/paper",
+            "no PDF link found",
+        ));
+
+        let message = summary.render_start_download_error();
+        assert!(message.contains("1 item(s) require authentication"));
+        assert!(message.contains("1 item(s) failed to resolve"));
+        assert!(message.contains("downloader auth capture"));
     }
 
     #[test]

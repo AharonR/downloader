@@ -193,6 +193,7 @@ mod tests {
         "arxiv",
         "pubmed",
         "ieee",
+        "oxford",
         "springer",
         "sciencedirect",
         "youtube",

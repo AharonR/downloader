@@ -109,7 +109,7 @@ Review these rows and add the correct DOI or URL to re-download them.
 
 ## 3. Authenticated Downloads (Institutional / Subscription Sites)
 
-IEEE, Springer, and ScienceDirect require a valid session. Capture your browser cookies once and the downloader reuses them for every subsequent run.
+IEEE, Springer, ScienceDirect, and Oxford Academic may require a valid session. Capture your browser cookies once and the downloader reuses them for every subsequent run.
 
 **Step 1: Export cookies from your browser**
 
@@ -127,10 +127,10 @@ Cookies are encrypted and stored on disk. All future runs use them automatically
 
 ```bash
 downloader \
-  --project "IEEE Signal Processing 2025" \
+  --project "Oxford Academic Batch" \
   --output-dir ~/papers \
   --respectful \
-  < ieee-dois.txt
+  < oxford-dois.txt
 ```
 
 `--respectful` sets conservative defaults (concurrency 2, rate-limit 3 s, robots.txt checked) — a good idea on publisher sites that have strict crawl policies.
@@ -141,7 +141,7 @@ downloader \
 downloader log \
   --output-dir ~/papers \
   --failed \
-  --domain ieeexplore.ieee.org
+  --domain academic.oup.com
 ```
 
 If cookies have expired, re-run `auth capture` and retry the failed items. To clear stored cookies:
@@ -155,8 +155,8 @@ downloader auth clear
 ```bash
 downloader \
   --cookies session-cookies.txt \
-  --project "Springer Batch" \
-  < springer-urls.txt
+  --project "Springer or Oxford Batch" \
+  < springer-or-oxford-urls.txt
 ```
 
 ---

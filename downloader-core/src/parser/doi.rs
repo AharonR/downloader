@@ -95,6 +95,9 @@ pub fn extract_dois(input: &str) -> Vec<DoiExtractionResult> {
         if overlaps(&seen_ranges, m.start(), m.end()) {
             continue;
         }
+        if appears_inside_url_token(input, m.start()) {
+            continue;
+        }
         // Check preceding character to reject false positives:
         // - IP-like patterns (e.g., 192.10.1234/24) - preceded by digit or dot
         // - Version numbers (e.g., v10.1234/rc1) - preceded by letter
@@ -111,6 +114,16 @@ pub fn extract_dois(input: &str) -> Vec<DoiExtractionResult> {
     }
 
     results
+}
+
+fn appears_inside_url_token(input: &str, start: usize) -> bool {
+    let prefix = &input[..start];
+    let token_start = prefix.rfind(char::is_whitespace).map_or(0, |idx| {
+        let ws_len = prefix[idx..].chars().next().map_or(0, char::len_utf8);
+        idx + ws_len
+    });
+
+    input[token_start..start].contains("://")
 }
 
 /// Check if a range overlaps with any already-seen range.
@@ -503,6 +516,17 @@ mod tests {
         assert!(
             results.is_empty(),
             "10.12/something should not match (registrant < 4 digits)"
+        );
+    }
+
+    #[test]
+    fn test_extract_dois_ignores_doi_embedded_in_publisher_url() {
+        let results = extract_dois(
+            "https://academic.oup.com/chemse/article/doi/10.1093/chemse/bjag003/8489487?login=true&guestAccessKey=",
+        );
+        assert!(
+            results.is_empty(),
+            "publisher URLs should remain URL inputs, not spawn bare DOI matches"
         );
     }
 }
