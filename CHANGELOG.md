@@ -4,6 +4,67 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [Phase 1 — Wedge Hardening] — 2026-03-09/10
+
+### Added
+
+- **RIS bibliography input** — `parser/ris`: new `parse_ris_content()` parses
+  `.ris` files (RIS tagged format) into `ParsedItem`s for the download pipeline.
+  Handles tags `TY`, `DO`, `UR`, `TI`, `AU`, `PY`, `ER`. DOI is preferred over
+  URL when both appear in the same entry; DOI normalized to bare form via
+  existing `extract_dois`. Returns `RisParseResult` with entries, resolved items,
+  skipped count, and total found. 15 unit tests.
+
+- **BibTeX bibliography input** — `--bibliography` / `-B` flag added to
+  `DownloadArgs`. Accepts one or more `.bib` or `.ris` files; multiple files
+  can be supplied by repeating the flag. Parsed entries merge with any plain
+  URL/DOI inputs before queue insertion. Dry-run mode prints a bibliography
+  summary instead of downloading.
+
+- **Corpus export to BibTeX/RIS** — new `export` module in `downloader-core`
+  and `downloader export` CLI subcommand. Scans a corpus directory for `.json`
+  sidecar files, deserializes as Schema.org `ScholarlyArticle`, and renders
+  a bibliography in BibTeX (`.bib`) or RIS (`.ris`) format.
+  - `scan_corpus()` — directory scanner; silently skips non-sidecar `.json` files
+  - `generate_bibtex()` — produces `@article` blocks; citation key is
+    `{lastname}{year}` with fallbacks (year-only → lastname-only → path stem);
+    ampersands in titles escaped as `\&`; authors joined with ` and `
+  - `generate_ris()` — produces standard `TY/TI/AU/PY/DO/UR/ER` records;
+    one `AU` line per author
+  - Output: file path or `-` for stdout; format defaulting to BibTeX
+
+  ```bash
+  downloader export ./corpus --output bibliography.bib
+  downloader export ./corpus --format ris --output refs.ris
+  downloader export ./corpus --format bibtex --output -
+  ```
+
+- **Oxford Academic resolver** — `resolver/oxford`: site-specific resolver for
+  `academic.oup.com` URLs and `10.1093/*` DOIs. Encodes OUP-specific URL
+  patterns, PDF endpoint construction, and auth-aware failure reporting.
+
+- **ToS acknowledgment** — first-run prompt informing the user of their
+  responsibility to comply with publisher Terms of Service. Persisted as
+  `tos_acknowledged = true` in the CLI config file after acknowledgment.
+  Non-interactive (non-tty) mode logs a warning instead of blocking.
+
+- **Responsible Use documentation** — README "Responsible Use" section covering
+  robots.txt compliance, per-domain rate limiting, no paywall/DRM bypass policy,
+  user responsibility for ToS compliance, institutional proxy guidance, and
+  conservative rate limit recommendations per major publisher domain (3–5 s for
+  Elsevier/Springer/IEEE/Wiley/ACM; 1–2 s for arXiv/PubMed).
+
+- **Planning artifacts v2** — 10-expert adversarial audit of March 8 strategy
+  documents surfaced 16 high + 14 medium severity gaps. Applied v2 revisions to
+  product brief, strategic roadmap, and market research; added five companion
+  documents: audit record, GTM acquisition playbook, legal risk assessment,
+  competitive velocity tracker, Zotero batch benchmark.
+
+### Changed
+
+- **Test count** — 570 → 702 lib tests (+132: RIS parser ×15, export modules
+  ×31, CLI export ×6, integration plumbing). All pass. Clippy clean.
+
 ## [Epic 11] — 2026-03-08 — Backlog Cleanup
 
 ### Added
