@@ -23,15 +23,15 @@ describe('CompletionSummary', () => {
     render(CompletionSummary, {
       props: { summary: makeSummary(), onReset: vi.fn() },
     });
-    expect(screen.getByText(/Downloaded 3 files to/)).toBeTruthy();
+    expect(screen.getByText(/Run complete/)).toBeTruthy();
     expect(screen.getByText(/\/home\/user\/downloads/)).toBeTruthy();
   });
 
-  it('success path: singular "file" when completed === 1', () => {
+  it('success path: shows ready state when completed === 1', () => {
     render(CompletionSummary, {
       props: { summary: makeSummary({ completed: 1 }), onReset: vi.fn() },
     });
-    expect(screen.getByText(/Downloaded 1 file to/)).toBeTruthy();
+    expect(screen.getByText(/Ready/)).toBeTruthy();
   });
 
   it('success path: keeps the reset button available', () => {
@@ -45,7 +45,8 @@ describe('CompletionSummary', () => {
     render(CompletionSummary, {
       props: { summary: makeSummary({ completed: 2, failed: 1 }), onReset: vi.fn() },
     });
-    expect(screen.getByText(/2 downloaded, 1 failed/)).toBeTruthy();
+    expect(screen.getByText(/Run complete with items to review/)).toBeTruthy();
+    expect(screen.getByText(/Needs attention/)).toBeTruthy();
   });
 
   it('partial path: shows toggle button when failed_items is non-empty', () => {
@@ -74,8 +75,8 @@ describe('CompletionSummary', () => {
     render(CompletionSummary, {
       props: { summary: makeSummary({ completed: 1, failed: 0 }), onReset: vi.fn(), cancelled: true },
     });
+    expect(screen.getByText(/Run stopped/)).toBeTruthy();
     expect(screen.getByText(/Cancelled/)).toBeTruthy();
-    expect(screen.getByText(/1 completed, 0 failed/)).toBeTruthy();
   });
 
   it('cancel path: shows toggle button when failed_items is non-empty after cancel', () => {

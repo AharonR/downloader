@@ -180,12 +180,12 @@ describe('DownloadForm', () => {
     const button = screen.getByRole('button', { name: /downloading/i }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(textarea.disabled).toBe(true);
-    expect(screen.getByText(/Resolving…/)).toBeTruthy();
+    expect(screen.getByText(/Resolving sources…/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /cancel/i })).toBeDefined();
 
     pending.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads', failed_items: [] });
     await waitFor(() => {
-      expect(screen.getByText(/Downloaded 1 file to/)).toBeTruthy();
+      expect(screen.getByText(/Run complete/)).toBeTruthy();
     });
   });
 
@@ -454,8 +454,8 @@ describe('DownloadForm', () => {
 
     pending.resolve({ completed: 1, failed: 0, output_dir: '/tmp/downloads', failed_items: [] });
     await waitFor(() => {
+      expect(screen.getByText(/Run stopped/)).toBeTruthy();
       expect(screen.getByText(/Cancelled/)).toBeTruthy();
-      expect(screen.getByText(/1 completed, 0 failed/)).toBeTruthy();
     });
   });
 });

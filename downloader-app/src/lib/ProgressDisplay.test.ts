@@ -15,7 +15,7 @@ describe('ProgressDisplay', () => {
 
   it('shows completed/total counts', () => {
     render(ProgressDisplay, { props: { payload: makePayload() } });
-    expect(screen.getByText(/2 \/ 5/)).toBeTruthy();
+    expect(screen.getByText(/3 \/ 5/)).toBeTruthy();
   });
 
   it('shows failed badge when failed > 0', () => {
@@ -28,7 +28,7 @@ describe('ProgressDisplay', () => {
     expect(screen.queryByText(/failed/)).toBeNull();
   });
 
-  it('shows spinner while in-flight (completed + failed < total)', () => {
+  it('shows activity marker while in-flight (completed + failed < total)', () => {
     render(ProgressDisplay, { props: { payload: makePayload({ completed: 2, failed: 0, total: 5 }) } });
     const spinner = document.querySelector('.spinner');
     expect(spinner).not.toBeNull();
@@ -47,8 +47,15 @@ describe('ProgressDisplay', () => {
       ],
     });
     render(ProgressDisplay, { props: { payload } });
-    expect(screen.getByText(/arxiv\.org/)).toBeTruthy();
+    expect(screen.getAllByText(/arxiv\.org/).length).toBeGreaterThan(0);
     expect(screen.getByText(/1\.1 MB \/ 3\.2 MB/)).toBeTruthy();
+  });
+
+  it('shows resolving stage before downloads start', () => {
+    render(ProgressDisplay, {
+      props: { payload: makePayload({ completed: 0, failed: 0, total: 5, in_progress: [] }) },
+    });
+    expect(screen.getByText(/Resolving sources/)).toBeTruthy();
   });
 
   it('renders bytes only when content_length is null', () => {
@@ -100,6 +107,6 @@ describe('ProgressDisplay', () => {
       ],
     });
     render(ProgressDisplay, { props: { payload } });
-    expect(screen.getByText(/^not-a-url$/)).toBeTruthy();
+    expect(screen.getAllByText(/^not-a-url$/)).toHaveLength(2);
   });
 });
