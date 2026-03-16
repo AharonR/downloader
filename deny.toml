@@ -17,6 +17,26 @@ version = 2
 ignore = [
     { id = "RUSTSEC-2023-0071", reason = "Transitive via sqlx-mysql (unused at runtime); no rsa invocation path exists" },
     { id = "RUSTSEC-2025-0119", reason = "Unmaintained warning only — transitive via indicatif; no CVE, no security impact" },
+    # Tauri transitive deps — GTK3 bindings unmaintained, no replacements available upstream
+    { id = "RUSTSEC-2024-0411", reason = "Unmaintained — gdkwayland-sys transitive via Tauri/tao; no replacement available" },
+    { id = "RUSTSEC-2024-0412", reason = "Unmaintained — gdk transitive via Tauri; no replacement available" },
+    { id = "RUSTSEC-2024-0413", reason = "Unmaintained — atk transitive via Tauri; no replacement available" },
+    { id = "RUSTSEC-2024-0414", reason = "Unmaintained — gdkx11-sys transitive via Tauri; no replacement available" },
+    { id = "RUSTSEC-2024-0415", reason = "Unmaintained — gtk transitive via Tauri; no replacement available" },
+    { id = "RUSTSEC-2024-0416", reason = "Unmaintained — atk-sys transitive via Tauri; no replacement available" },
+    { id = "RUSTSEC-2024-0417", reason = "Unmaintained — gdkx11 transitive via Tauri; no replacement available" },
+    { id = "RUSTSEC-2024-0418", reason = "Unmaintained — gdk-sys transitive via Tauri; no replacement available" },
+    { id = "RUSTSEC-2024-0419", reason = "Unmaintained — gtk3-macros transitive via Tauri; no replacement available" },
+    { id = "RUSTSEC-2024-0420", reason = "Unmaintained — gtk-sys transitive via Tauri; no replacement available" },
+    { id = "RUSTSEC-2024-0429", reason = "Unsoundness in glib VariantStrIter — transitive via Tauri; VariantStrIter not used in any app code path" },
+    { id = "RUSTSEC-2024-0370", reason = "Unmaintained — proc-macro-error transitive via gtk3-macros/Tauri; no CVE, no security impact" },
+    # Tauri transitive deps — unic crates unmaintained, no replacements available
+    { id = "RUSTSEC-2025-0057", reason = "Unmaintained — fxhash transitive via Tauri/kuchikiki; no CVE, no security impact" },
+    { id = "RUSTSEC-2025-0075", reason = "Unmaintained — unic-char-range transitive via Tauri; no CVE, no security impact" },
+    { id = "RUSTSEC-2025-0080", reason = "Unmaintained — unic-common transitive via Tauri; no CVE, no security impact" },
+    { id = "RUSTSEC-2025-0081", reason = "Unmaintained — unic-char-property transitive via Tauri; no CVE, no security impact" },
+    { id = "RUSTSEC-2025-0098", reason = "Unmaintained — unic-ucd-version transitive via Tauri; no CVE, no security impact" },
+    { id = "RUSTSEC-2025-0100", reason = "Unmaintained — unic-ucd-ident transitive via Tauri; no CVE, no security impact" },
 ]
 
 # ---------------------------------------------------------------------------
