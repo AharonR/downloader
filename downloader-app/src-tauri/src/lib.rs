@@ -16,6 +16,10 @@ pub fn run() {
             commands::list_projects,
             commands::open_folder,
             commands::pick_bibliography_files,
+            commands::import_cookies,
+            commands::import_cookies_from_file,
+            commands::get_cookie_status,
+            commands::clear_cookies,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

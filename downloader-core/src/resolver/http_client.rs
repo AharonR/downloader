@@ -190,9 +190,11 @@ mod tests {
     /// Excludes "crossref" (until product decision) and "direct" (DirectResolver is a
     /// passthrough and does not use an HTTP client / standard_user_agent).
     const NON_CROSSREF_RESOLVER_NAMES: &[&str] = &[
+        "acm",
         "arxiv",
         "pubmed",
         "ieee",
+        "mdpi",
         "oxford",
         "springer",
         "sciencedirect",

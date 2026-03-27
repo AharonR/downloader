@@ -72,7 +72,7 @@ pub use queue::{
     QueueMetadata, QueueStatus,
 };
 pub use resolver::{
-    ArxivResolver, CrossrefResolver, DirectResolver, IeeeResolver, PubMedResolver, ResolveContext,
+    AcmResolver, ArxivResolver, CrossrefResolver, DirectResolver, IeeeResolver, MdpiResolver, PubMedResolver, ResolveContext,
     ResolveError, ResolveStep, ResolvedUrl, Resolver, ResolverPriority, ResolverRegistry,
     STANDARD_METADATA_KEYS, ScienceDirectResolver, SpringerResolver, YouTubeResolver,
     build_default_resolver_registry, configure_resolver_http_timeouts,

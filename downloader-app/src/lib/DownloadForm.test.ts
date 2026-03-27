@@ -36,9 +36,11 @@ describe('DownloadForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listenMock.mockResolvedValue(() => {});
-    // Provide a default mock for list_projects (used by ProjectSelector on mount)
+    // Provide default mocks for commands invoked on mount by child components
     invokeMock.mockImplementation((command) => {
       if (command === 'list_projects') return Promise.resolve([]);
+      if (command === 'get_cookie_status')
+        return Promise.resolve({ has_cookies: false, domain_count: 0, domains: [] });
       return Promise.resolve(undefined);
     });
   });

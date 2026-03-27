@@ -13,6 +13,7 @@ use tracing::{debug, warn};
 use crate::parser::InputType;
 
 use super::http_client::{build_resolver_http_client, standard_user_agent};
+use super::utils::validate_crossref_mailto;
 use super::{ResolveContext, ResolveError, ResolveStep, ResolvedUrl, Resolver, ResolverPriority};
 
 /// Default Crossref API base URL.
@@ -38,6 +39,25 @@ pub(crate) struct CrossrefMessage {
     pub published: Option<CrossrefDate>,
     pub published_print: Option<CrossrefDate>,
     pub published_online: Option<CrossrefDate>,
+    #[serde(rename = "DOI")]
+    pub doi: Option<String>,
+    pub volume: Option<String>,
+    pub issue: Option<String>,
+    #[allow(dead_code)] // Deserialized from Crossref API; available for future site resolvers
+    pub article_number: Option<String>,
+    /// Full journal name, e.g. `["Sensors"]` or `["Applied Sciences"]`.
+    /// Used by the MDPI resolver to derive the CDN path slug.
+    pub container_title: Option<Vec<String>>,
+}
+
+impl CrossrefMessage {
+    /// Returns the first container-title string, if any.
+    pub fn container_title_str(&self) -> Option<&str> {
+        self.container_title
+            .as_ref()
+            .and_then(|v| v.first())
+            .map(String::as_str)
+    }
 }
 
 /// An author entry from the Crossref response.
@@ -65,6 +85,20 @@ pub(crate) struct CrossrefLink {
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct CrossrefDate {
     pub date_parts: Option<Vec<Vec<Option<i32>>>>,
+}
+
+/// Top-level Crossref search API response (for `/works?filter=...` queries).
+#[derive(Debug, Deserialize)]
+pub(crate) struct CrossrefSearchResponse {
+    pub status: String,
+    pub message: CrossrefSearchMessage,
+}
+
+/// The `message` field from a Crossref search response.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct CrossrefSearchMessage {
+    pub items: Option<Vec<CrossrefMessage>>,
 }
 
 // ==================== CrossrefResolver ====================
@@ -114,12 +148,7 @@ impl CrossrefResolver {
     }
 
     fn build(mailto: String, base_url: String) -> Result<Self, ResolveError> {
-        if mailto.chars().any(|c| c == '\n' || c == '\r' || c == '\0') {
-            return Err(ResolveError::resolution_failed(
-                &mailto,
-                "mailto contains invalid control characters",
-            ));
-        }
+        validate_crossref_mailto(&mailto)?;
         let user_agent = standard_user_agent("crossref");
         let client = build_resolver_http_client("crossref", user_agent, None)?;
 
@@ -243,7 +272,9 @@ impl Resolver for CrossrefResolver {
 ///
 /// Priority:
 /// 1. Links with `content-type: "application/pdf"`
-/// 2. Links with `intended-application: "similarity-checking"` or `"text-mining"`
+/// 2. Links with `intended-application: "similarity-checking"` (direct PDF URLs
+///    provided for plagiarism detection services — more likely to be actual PDFs)
+/// 3. Links with `intended-application: "text-mining"` (may be HTML, XML, or PDF)
 fn extract_pdf_url(links: &[CrossrefLink]) -> Option<String> {
     // First pass: look for explicit PDF content-type
     for link in links {
@@ -254,10 +285,19 @@ fn extract_pdf_url(links: &[CrossrefLink]) -> Option<String> {
         }
     }
 
-    // Second pass: look for text-mining or similarity-checking links
+    // Second pass: prefer similarity-checking (direct PDF for plagiarism detection)
     for link in links {
         if let Some(app) = &link.intended_application {
-            if is_fallback_application(app) {
+            if app.eq_ignore_ascii_case("similarity-checking") {
+                return Some(link.url.clone());
+            }
+        }
+    }
+
+    // Third pass: text-mining (may be HTML, XML, or PDF)
+    for link in links {
+        if let Some(app) = &link.intended_application {
+            if app.eq_ignore_ascii_case("text-mining") {
                 return Some(link.url.clone());
             }
         }
@@ -274,13 +314,8 @@ fn is_pdf_content_type(content_type: &str) -> bool {
         .is_some_and(|mime| mime.eq_ignore_ascii_case("application/pdf"))
 }
 
-fn is_fallback_application(intended_application: &str) -> bool {
-    intended_application.eq_ignore_ascii_case("text-mining")
-        || intended_application.eq_ignore_ascii_case("similarity-checking")
-}
-
 /// Extracts metadata from a Crossref message into a `HashMap`.
-fn extract_metadata(message: &CrossrefMessage, doi: &str) -> HashMap<String, String> {
+pub(crate) fn extract_metadata(message: &CrossrefMessage, doi: &str) -> HashMap<String, String> {
     let mut metadata = HashMap::new();
 
     metadata.insert("doi".to_string(), doi.to_string());
@@ -531,6 +566,43 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_extract_pdf_url_prefers_similarity_checking_over_text_mining() {
+        // text-mining link appears first, but similarity-checking should win
+        let links = vec![
+            CrossrefLink {
+                url: "https://publisher.com/article".to_string(),
+                content_type: Some("text/html".to_string()),
+                content_version: None,
+                intended_application: Some("text-mining".to_string()),
+            },
+            CrossrefLink {
+                url: "https://publisher.com/article.pdf".to_string(),
+                content_type: Some("text/html".to_string()),
+                content_version: None,
+                intended_application: Some("similarity-checking".to_string()),
+            },
+        ];
+        assert_eq!(
+            extract_pdf_url(&links),
+            Some("https://publisher.com/article.pdf".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_pdf_url_text_mining_still_works_alone() {
+        let links = vec![CrossrefLink {
+            url: "https://publisher.com/fulltext".to_string(),
+            content_type: Some("text/html".to_string()),
+            content_version: None,
+            intended_application: Some("text-mining".to_string()),
+        }];
+        assert_eq!(
+            extract_pdf_url(&links),
+            Some("https://publisher.com/fulltext".to_string())
+        );
+    }
+
     // ==================== Metadata Extraction Tests ====================
 
     #[test]
@@ -553,6 +625,11 @@ mod tests {
             }),
             published_print: None,
             published_online: None,
+            doi: None,
+            volume: None,
+            issue: None,
+            article_number: None,
+            container_title: None,
         };
 
         let meta = extract_metadata(&message, "10.1234/test");
@@ -571,6 +648,11 @@ mod tests {
             published: None,
             published_print: None,
             published_online: None,
+            doi: None,
+            volume: None,
+            issue: None,
+            article_number: None,
+            container_title: None,
         };
 
         let meta = extract_metadata(&message, "10.1234/test");
@@ -602,6 +684,11 @@ mod tests {
             published: None,
             published_print: None,
             published_online: None,
+            doi: None,
+            volume: None,
+            issue: None,
+            article_number: None,
+            container_title: None,
         };
 
         let meta = extract_metadata(&message, "10.1234/test");
@@ -622,6 +709,11 @@ mod tests {
                 date_parts: Some(vec![vec![Some(2023)]]),
             }),
             published_online: None,
+            doi: None,
+            volume: None,
+            issue: None,
+            article_number: None,
+            container_title: None,
         };
 
         let meta = extract_metadata(&message, "10.1234/test");
@@ -639,6 +731,11 @@ mod tests {
             published_online: Some(CrossrefDate {
                 date_parts: Some(vec![vec![Some(2022)]]),
             }),
+            doi: None,
+            volume: None,
+            issue: None,
+            article_number: None,
+            container_title: None,
         };
 
         let meta = extract_metadata(&message, "10.1234/test");
@@ -654,6 +751,11 @@ mod tests {
             published: None,
             published_print: None,
             published_online: None,
+            doi: None,
+            volume: None,
+            issue: None,
+            article_number: None,
+            container_title: None,
         };
 
         let meta = extract_metadata(&message, "10.1234/test");

@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use url::Url;
 
-use super::AuthRequirement;
+use super::{AuthRequirement, ResolveError};
 
 /// Compiles a regex at static init; panics on invalid pattern.
 pub fn compile_static_regex(pattern: &str) -> Regex {
@@ -130,6 +130,21 @@ pub fn auth_requirement(
         },
         message,
     )
+}
+
+/// Validates a Crossref `mailto` parameter for control characters that could cause header injection.
+///
+/// # Errors
+///
+/// Returns [`ResolveError`] if `mailto` contains `\n`, `\r`, or `\0`.
+pub fn validate_crossref_mailto(mailto: &str) -> Result<(), ResolveError> {
+    if mailto.chars().any(|c| c == '\n' || c == '\r' || c == '\0') {
+        return Err(ResolveError::resolution_failed(
+            mailto,
+            "mailto contains invalid control characters",
+        ));
+    }
+    Ok(())
 }
 
 /// Returns true if the HTTP status code indicates authentication is required.

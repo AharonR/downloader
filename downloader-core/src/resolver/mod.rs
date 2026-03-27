@@ -9,9 +9,11 @@
 //! - [`Resolver`] - Async trait that individual resolvers implement
 //! - [`ResolverRegistry`] - Priority-ordered collection of resolvers with resolution loop
 //! - [`ResolveStep`] - Result enum from individual resolve operations
+//! - [`AcmResolver`] - Site-specific resolver for ACM Digital Library URLs/DOIs via Semantic Scholar
 //! - [`ArxivResolver`] - Site-specific resolver for `arXiv` URLs/DOIs
 //! - [`PubMedResolver`] - Site-specific resolver for PubMed/PMC URL resolution
 //! - [`IeeeResolver`] - Site-specific resolver for IEEE Xplore and `10.1109/*` DOI inputs
+//! - [`MdpiResolver`] - Site-specific resolver for MDPI URLs and `10.3390/*` DOI inputs
 //! - [`OxfordAcademicResolver`] - Site-specific resolver for Oxford Academic URLs and `10.1093/*` DOI inputs
 //! - [`SpringerResolver`] - Site-specific resolver for Springer article/chapter URL inputs
 //! - [`ScienceDirectResolver`] - Site-specific resolver for `ScienceDirect` URLs/DOIs
@@ -36,12 +38,14 @@
 //! # }
 //! ```
 
+mod acm;
 mod arxiv;
 mod crossref;
 mod direct;
 mod error;
 mod http_client;
 mod ieee;
+mod mdpi;
 mod oxford;
 mod pubmed;
 mod registry;
@@ -50,12 +54,14 @@ mod springer;
 mod utils;
 mod youtube;
 
+pub use acm::AcmResolver;
 pub use arxiv::ArxivResolver;
 pub use crossref::CrossrefResolver;
 pub use direct::DirectResolver;
 pub use error::ResolveError;
 pub use http_client::configure_resolver_http_timeouts;
 pub use ieee::IeeeResolver;
+pub use mdpi::MdpiResolver;
 pub use oxford::OxfordAcademicResolver;
 pub use pubmed::PubMedResolver;
 pub use registry::ResolverRegistry;
@@ -125,6 +131,22 @@ pub fn build_default_resolver_registry(
         Err(error) => warn!(
             error = %error,
             "ScienceDirect resolver unavailable; continuing with generic resolvers"
+        ),
+    }
+
+    match AcmResolver::new() {
+        Ok(resolver) => registry.register(Box::new(resolver)),
+        Err(error) => warn!(
+            error = %error,
+            "ACM resolver unavailable; continuing with remaining resolvers"
+        ),
+    }
+
+    match MdpiResolver::new(crossref_mailto) {
+        Ok(resolver) => registry.register(Box::new(resolver)),
+        Err(error) => warn!(
+            error = %error,
+            "MDPI resolver unavailable; continuing with remaining resolvers"
         ),
     }
 

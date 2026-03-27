@@ -16,7 +16,7 @@ use downloader_core::{
     DEFAULT_CONCURRENCY, Database, DownloadAttemptQuery, DownloadEngine, HttpClient, InputType,
     Queue, QueueMetadata, QueueStatus, RateLimiter, ResolveContext, ResolveError, RetryPolicy,
     build_default_resolver_registry, build_preferred_filename, extract_reference_confidence,
-    parse_input, parse_ris_content,
+    load_runtime_cookie_jar, parse_input, parse_ris_content,
 };
 use serde::Serialize;
 use tauri::Emitter;
@@ -83,6 +83,25 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             interrupted: Mutex::new(None),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cookie jar loader
+// ---------------------------------------------------------------------------
+
+/// Builds an `HttpClient` with persisted cookies (if available), or a plain one.
+///
+/// Failures loading cookies are logged and silently ignored — downloads proceed
+/// without auth rather than failing hard on a keychain or decryption problem.
+fn build_http_client_with_cookies() -> HttpClient {
+    match load_runtime_cookie_jar(None, false) {
+        Ok(Some(jar)) => HttpClient::with_cookie_jar(jar),
+        Ok(None) => HttpClient::new(),
+        Err(e) => {
+            warn!(error = %e, "Could not load persisted cookies; continuing without auth");
+            HttpClient::new()
         }
     }
 }
@@ -287,7 +306,16 @@ async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, 
         .join("\n");
 
     let parse_result = parse_input(&joined);
-    let resolver_registry = build_default_resolver_registry(None, "downloader-app@downloader");
+
+    let cookie_jar = match load_runtime_cookie_jar(None, false) {
+        Ok(jar) => jar,
+        Err(e) => {
+            warn!(error = %e, "Could not load persisted cookies for resolver");
+            None
+        }
+    };
+    let resolver_registry =
+        build_default_resolver_registry(cookie_jar, "downloader-app@downloader");
     let resolve_context = ResolveContext::default();
 
     let mut enqueued = 0usize;
@@ -538,7 +566,7 @@ pub async fn start_download(
         .and_then(|mut v| v.pop())
         .map(|a| a.id);
 
-    let client = HttpClient::new();
+    let client = build_http_client_with_cookies();
     let rate_limiter = Arc::new(RateLimiter::new(Duration::from_millis(0)));
     let engine = DownloadEngine::new(defaults.concurrency, RetryPolicy::default(), rate_limiter)
         .map_err(|e| {
@@ -662,7 +690,7 @@ pub async fn start_download_with_progress(
     let flag = Arc::new(AtomicBool::new(false));
     *state.interrupted.lock().unwrap() = Some(Arc::clone(&flag));
 
-    let client = HttpClient::new();
+    let client = build_http_client_with_cookies();
     let rate_limiter = Arc::new(RateLimiter::new(Duration::from_millis(0)));
     let engine = DownloadEngine::new(defaults.concurrency, RetryPolicy::default(), rate_limiter)
         .map_err(|e| {
@@ -879,6 +907,168 @@ pub async fn pick_bibliography_files(app_handle: tauri::AppHandle) -> Result<Vec
 }
 
 // ---------------------------------------------------------------------------
+// Cookie / auth commands
+// ---------------------------------------------------------------------------
+
+/// Result of a cookie import operation, returned to the frontend.
+#[derive(Debug, Serialize, Clone)]
+pub struct CookieImportResult {
+    pub domain_count: usize,
+    pub cookie_count: usize,
+    pub warnings: Vec<String>,
+    pub storage_path: String,
+}
+
+/// Current cookie storage status, returned to the frontend.
+#[derive(Debug, Serialize, Clone)]
+pub struct CookieStatus {
+    pub has_cookies: bool,
+    pub domain_count: usize,
+    pub domains: Vec<String>,
+}
+
+/// Parse cookie text (Netscape or JSON format) and persist to encrypted storage.
+#[tracing::instrument(skip(input))]
+#[tauri::command]
+pub async fn import_cookies(input: String) -> Result<CookieImportResult, String> {
+    use downloader_core::auth::{
+        parse_captured_cookies, store_persisted_cookies, unique_domain_count,
+    };
+
+    let captured = parse_captured_cookies(&input).map_err(|e| {
+        format!(
+            "What: Could not parse cookie data.\n\
+             Why: {e}\n\
+             Fix: Export cookies using a browser extension like \"Get cookies.txt LOCALLY\" and paste the full output."
+        )
+    })?;
+
+    let warnings = captured.warnings.clone();
+    let cookie_count = captured.cookies.len();
+    let domain_count = unique_domain_count(&captured.cookies);
+
+    let path = store_persisted_cookies(&captured.cookies).map_err(|e| {
+        format!(
+            "What: Could not save cookies.\n\
+             Why: {e}\n\
+             Fix: Check that your system keychain is accessible, or set the DOWNLOADER_MASTER_KEY environment variable."
+        )
+    })?;
+
+    Ok(CookieImportResult {
+        domain_count,
+        cookie_count,
+        warnings,
+        storage_path: path.display().to_string(),
+    })
+}
+
+/// Open a file picker for cookie files, read and import them.
+#[tracing::instrument(skip(app_handle))]
+#[tauri::command]
+pub async fn import_cookies_from_file(
+    app_handle: tauri::AppHandle,
+) -> Result<CookieImportResult, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) =
+        tokio::sync::oneshot::channel::<Option<tauri_plugin_dialog::FilePath>>();
+    app_handle
+        .dialog()
+        .file()
+        .add_filter("Cookie files", &["txt", "json"])
+        .pick_file(move |file| {
+            let _ = tx.send(file);
+        });
+
+    let file_path = match rx.await.ok().flatten() {
+        Some(f) => f,
+        None => {
+            return Err(
+                "What: No file selected.\n\
+                 Why: The file picker was cancelled.\n\
+                 Fix: Try again and select a cookies.txt or cookies.json file."
+                    .to_string(),
+            );
+        }
+    };
+
+    let path = file_path.as_path().ok_or_else(|| {
+        "What: Invalid file path.\n\
+         Why: The selected file path could not be read.\n\
+         Fix: Select a different file."
+            .to_string()
+    })?;
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        format!(
+            "What: Could not read cookie file.\n\
+             Why: {e}\n\
+             Fix: Check that the file exists and is readable."
+        )
+    })?;
+
+    import_cookies(content).await
+}
+
+/// Check whether persisted cookies exist and return domain summary.
+#[tracing::instrument]
+#[tauri::command]
+pub async fn get_cookie_status() -> Result<CookieStatus, String> {
+    use downloader_core::auth::{load_persisted_cookies, unique_domain_count};
+    use std::collections::BTreeSet;
+
+    match load_persisted_cookies() {
+        Ok(Some(cookies)) if !cookies.is_empty() => {
+            let domain_count = unique_domain_count(&cookies);
+            let domains: Vec<String> = cookies
+                .iter()
+                .map(|c| {
+                    c.domain
+                        .strip_prefix('.')
+                        .unwrap_or(&c.domain)
+                        .to_string()
+                })
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            Ok(CookieStatus {
+                has_cookies: true,
+                domain_count,
+                domains,
+            })
+        }
+        Ok(_) => Ok(CookieStatus {
+            has_cookies: false,
+            domain_count: 0,
+            domains: vec![],
+        }),
+        Err(e) => {
+            warn!(error = %e, "Failed to load persisted cookies");
+            Ok(CookieStatus {
+                has_cookies: false,
+                domain_count: 0,
+                domains: vec![],
+            })
+        }
+    }
+}
+
+/// Clear all persisted cookies.
+#[tracing::instrument]
+#[tauri::command]
+pub async fn clear_cookies() -> Result<bool, String> {
+    use downloader_core::auth::clear_persisted_cookies;
+
+    clear_persisted_cookies().map_err(|e| {
+        format!(
+            "What: Could not clear cookies.\n\
+             Why: {e}\n\
+             Fix: Check file permissions on ~/.config/downloader/"
+        )
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1042,7 +1232,8 @@ mod tests {
         let db = Database::new(&db_path).await.expect("test DB");
         let queue = Queue::new(db);
 
-        let result = resolve_and_enqueue(&["not a url or doi at all".to_string()], &queue).await;
+        let result =
+            resolve_and_enqueue(&["not a url or doi at all".to_string()], &queue).await;
 
         assert!(result.is_err());
         assert!(
@@ -1351,5 +1542,113 @@ mod tests {
             err.contains("No valid URLs or DOIs"),
             "expected URL parse error, got: {err}"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Cookie / auth command tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_import_cookies_rejects_empty_input() {
+        let result = import_cookies(String::new()).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("What:"),
+            "error should follow What/Why/Fix format, got: {err}"
+        );
+        assert!(
+            err.contains("Could not parse cookie data"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_import_cookies_rejects_garbage_input() {
+        let result = import_cookies("not valid cookie data at all".to_string()).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("What:"),
+            "error should follow What/Why/Fix format, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_import_cookies_accepts_valid_netscape_format() {
+        // Valid Netscape cookie line with far-future expiry
+        let input =
+            "# Netscape HTTP Cookie File\n.example.com\tTRUE\t/\tFALSE\t4102444800\tsid\tabc123"
+                .to_string();
+        let result = import_cookies(input).await;
+
+        // This may fail on storage (no keychain in CI), which is fine —
+        // we're testing parsing, not storage. If it succeeds, validate the shape.
+        match result {
+            Ok(r) => {
+                assert_eq!(r.cookie_count, 1);
+                assert_eq!(r.domain_count, 1);
+                assert!(!r.storage_path.is_empty());
+            }
+            Err(e) => {
+                // Storage failures are acceptable in test environments without keychain
+                assert!(
+                    e.contains("Could not save cookies"),
+                    "unexpected error: {e}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_import_cookies_accepts_valid_json_format() {
+        let input = r#"[{"domain":".example.com","name":"sid","value":"abc","path":"/","secure":false,"expirationDate":4102444800}]"#.to_string();
+        let result = import_cookies(input).await;
+
+        match result {
+            Ok(r) => {
+                assert_eq!(r.cookie_count, 1);
+                assert_eq!(r.domain_count, 1);
+            }
+            Err(e) => {
+                assert!(
+                    e.contains("Could not save cookies"),
+                    "unexpected error: {e}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_import_cookies_rejects_concatenated_json_files() {
+        // Regression: the old multi-file import concatenated JSON files with '\n',
+        // producing invalid JSON. This verifies the parser rejects such input.
+        let file_a = r#"[{"domain":".a.com","name":"s","value":"1","path":"/","secure":false,"expirationDate":4102444800}]"#;
+        let file_b = r#"[{"domain":".b.com","name":"s","value":"2","path":"/","secure":false,"expirationDate":4102444800}]"#;
+        let concatenated = format!("{file_a}\n{file_b}");
+
+        let result = import_cookies(concatenated).await;
+        assert!(
+            result.is_err(),
+            "concatenated JSON should fail to parse, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_cookie_status_returns_result_without_panic() {
+        // Should never panic, even without keychain — returns a graceful fallback.
+        let result = get_cookie_status().await;
+        assert!(
+            result.is_ok(),
+            "get_cookie_status should not fail: {:?}",
+            result.unwrap_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_clear_cookies_does_not_panic() {
+        // clear_cookies should not panic regardless of whether cookies exist.
+        // It may fail with a storage error in CI, but it must not panic.
+        let _result = clear_cookies().await;
     }
 }

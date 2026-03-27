@@ -6,6 +6,7 @@
   import ProgressDisplay from './ProgressDisplay.svelte';
   import CompletionSummary from './CompletionSummary.svelte';
   import ProjectSelector from './ProjectSelector.svelte';
+  import AuthPanel from './AuthPanel.svelte';
   import type { ProgressPayload } from './ProgressDisplay.svelte';
   import type { DownloadSummary } from './CompletionSummary.svelte';
 
@@ -173,6 +174,8 @@
       {#if bibPickerError}
         <p class="bib-picker-error" role="alert">{bibPickerError}</p>
       {/if}
+
+      <AuthPanel />
 
       <div class="button-row">
         <button
