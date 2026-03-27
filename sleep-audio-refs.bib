@@ -1,0 +1,728 @@
+% Sleep Audio Event Detection — 74 entries
+% Usage: downloader --bibliography sleep-audio-refs.bib
+%
+% Resolution strategy (per entry):
+%   doi field present  → resolved via DOI resolver (primary)
+%   no doi             → author+title+year sent to CrossRef (fallback)
+%
+% 4 web-only entries cannot be resolved by the Downloader:
+%   yamnet-tf, fda-samd, fl-wearable-health, uq-audio-disease
+% Supply their URLs directly if needed.
+
+% ── Sleep Audio Event Detection ──────────────────────────────────────────────
+
+@article{osa-noncontact-2026,
+  author  = {Aygün Çakıroğlu, M and Kızılkaya Aydoğan, E and Bolattürk, ÖF and Aydoğan, S and İsmailoğulları, S and Delice, Y},
+  title   = {Non-contact acoustic screening for sleep apnea: a subject-aware deep learning approach},
+  journal = {Sleep Breath},
+  year    = {2026},
+  volume  = {30},
+  number  = {1},
+  pages   = {36},
+  doi     = {10.1007/s11325-026-03594-2},
+  note    = {PMID: 41670793},
+}
+
+@article{osa-sounds-2022,
+  author  = {Castillo-Escario, M and others},
+  title   = {Obstructive sleep apnea detection based on sleep sounds via deep learning},
+  journal = {Nat Sci Sleep},
+  year    = {2022},
+  volume  = {14},
+  note    = {PMC: PMC9653035},
+}
+
+@article{osa-realtime-breathing-2023,
+  author  = {Kim, J and others},
+  title   = {Real-time detection of sleep apnea based on breathing sounds and prediction reinforcement using home noises},
+  journal = {J Med Internet Res},
+  year    = {2023},
+  volume  = {25},
+  pages   = {e44818},
+  doi     = {10.2196/44818},
+}
+
+@article{osa-acoustic-home-2022,
+  author  = {Romero, HE and others},
+  title   = {Acoustic screening for obstructive sleep apnea in home environments based on deep neural networks},
+  journal = {J Biomed Health Inform},
+  year    = {2022},
+  volume  = {26},
+  number  = {7},
+  note    = {PMID: 35213321},
+}
+
+@article{osa-spectrogram-2024,
+  author  = {Salah, K and others},
+  title   = {Detection and classification of obstructive sleep apnea using audio spectrogram analysis},
+  journal = {Electronics},
+  year    = {2024},
+  volume  = {13},
+  number  = {13},
+  pages   = {2567},
+  doi     = {10.3390/electronics13132567},
+}
+
+% ── Snoring Detection & Classification ───────────────────────────────────────
+
+@article{snore-hybrid-cnn-2023,
+  author  = {Chen, X and others},
+  title   = {Automatic snoring detection using a hybrid 1D-2D convolutional neural network},
+  journal = {Sci Rep},
+  year    = {2023},
+  volume  = {13},
+  doi     = {10.1038/s41598-023-41170-w},
+}
+
+@article{snore-smartphone-2025,
+  author  = {Hong, J and Yang, SK and Kim, S and Cho, SW and Oh, J and Cho, ES and others},
+  title   = {Real-time snoring detection using deep learning: a home-based smartphone approach for sleep monitoring},
+  journal = {Nat Sci Sleep},
+  year    = {2025},
+  volume  = {17},
+  pages   = {519--530},
+  doi     = {10.2147/NSS.S514631},
+  note    = {PMID: 40190583},
+}
+
+@article{snore-mpssc-meta-2023,
+  author  = {Xiao, Z and others},
+  title   = {Battling with the low-resource condition for snore sound recognition: introducing a meta-learning strategy},
+  journal = {EURASIP J Audio Speech Music Process},
+  year    = {2023},
+  doi     = {10.1186/s13636-023-00309-3},
+}
+
+@article{snore-multifeat-2025,
+  author  = {Xu, X and Gan, Y and Yuan, X and Cheng, Y and Zhou, L},
+  title   = {Non-contact screening of OSAHS using multi-feature snore segmentation and deep learning},
+  journal = {Sensors (Basel)},
+  year    = {2025},
+  volume  = {25},
+  number  = {17},
+  pages   = {5483},
+  doi     = {10.3390/s25175483},
+  note    = {PMID: 40942909},
+}
+
+% ── Bruxism Detection ─────────────────────────────────────────────────────────
+
+@inproceedings{brux-earable-2021,
+  author    = {Kuang, B and others},
+  title     = {Earables for detection of bruxism: a feasibility study},
+  booktitle = {UbiComp/ISWC Adjunct},
+  year      = {2021},
+  doi       = {10.1145/3460418.3479327},
+}
+
+@article{brux-wearable-placement-2024,
+  author  = {Nahhas, S and others},
+  title   = {Toward wearables for bruxism detection: voluntary oral behaviors sound recorded across the head depend on transducer placement},
+  journal = {Clin Exp Dent Res},
+  year    = {2024},
+  doi     = {10.1002/cre2.70001},
+}
+
+@inproceedings{brux-audio-ml-2022,
+  author    = {Salucci, A and others},
+  title     = {A novel methodology to remotely and early diagnose sleep bruxism by leveraging on audio signals and embedded ML},
+  booktitle = {IEEE EMBC},
+  year      = {2022},
+  doi       = {10.1109/EMBC48229.2022.9887782},
+}
+
+% ── Audio-Based Sleep Staging ─────────────────────────────────────────────────
+
+@article{soundsleepnet-2022,
+  author  = {Kim, D and others},
+  title   = {End-to-end sleep staging using nocturnal sounds from microphone chips for mobile devices},
+  journal = {Nat Sci Sleep},
+  year    = {2022},
+  volume  = {14},
+  note    = {PMC: PMC9241996},
+}
+
+@article{homesleepnet-2023,
+  author  = {Kim, D and others},
+  title   = {Prediction of sleep stages via deep learning using smartphone audio recordings in home environments},
+  journal = {J Med Internet Res},
+  year    = {2023},
+  volume  = {25},
+  pages   = {e46216},
+  note    = {PMC: PMC10273036},
+}
+
+@article{mfcc-sleep-2024,
+  author  = {Pei, W and Li, Y and Wen, P and Yang, F and Ji, X},
+  title   = {An automatic method using MFCC features for sleep stage classification},
+  journal = {Brain Inform},
+  year    = {2024},
+  volume  = {11},
+  number  = {1},
+  pages   = {6},
+  doi     = {10.1186/s40708-024-00219-w},
+  note    = {PMID: 38340211},
+}
+
+% ── Environmental Noise & Sleep ───────────────────────────────────────────────
+
+@article{noise-who-update-2022,
+  author  = {Basner, M and McGuire, S},
+  title   = {Environmental noise and effects on sleep: an update to the WHO systematic review and meta-analysis},
+  journal = {Int J Environ Res Public Health},
+  year    = {2022},
+  note    = {PMC: PMC9272916},
+}
+
+@article{noise-indoor-2023,
+  author  = {Obayashi, K and others},
+  title   = {Association between indoor noise level at night and objective/subjective sleep quality in the older population},
+  journal = {Sleep},
+  year    = {2023},
+  volume  = {46},
+  number  = {5},
+  doi     = {10.1093/sleep/zsac197},
+}
+
+% ── Pretrained Models & Transfer Learning ────────────────────────────────────
+% yamnet-tf: web-only resource — supply URL directly, CrossRef will not resolve it
+% https://www.tensorflow.org/tutorials/audio/transferlearningaudio
+@article{yamnet-tf,
+  author  = {{Google}},
+  title   = {Transfer learning with YAMNet for environmental sound classification},
+  journal = {TensorFlow tutorials},
+  year    = {2023},
+  note    = {Web resource — not in academic databases},
+}
+
+@article{panns-2020,
+  author  = {Kong, Q and others},
+  title   = {PANNs: large-scale pretrained audio neural networks for audio pattern recognition},
+  journal = {IEEE/ACM Trans Audio Speech Lang Process},
+  year    = {2020},
+  volume  = {28},
+  note    = {arXiv: 1912.10211},
+}
+
+% ── Source Separation & Domain Adaptation ────────────────────────────────────
+
+@article{hpss-snore-2023,
+  author  = {TBD},
+  title   = {Improving snore detection under limited dataset through harmonic/percussive source separation and CNNs},
+  journal = {Appl Acoust},
+  year    = {2023},
+  doi     = {10.1016/j.apacoust.2023.109564},
+}
+
+@article{sep-partner-2021,
+  author  = {Thorey, V},
+  title   = {Audio source separation to reduce sleeping partner sounds: a simulation study},
+  journal = {Sleep Med},
+  year    = {2021},
+  note    = {PMID: 34038872},
+}
+
+@article{vdann-sleep-2023,
+  author  = {TBD},
+  title   = {Sound-based sleep assessment with controllable subject-dependent embedding using VDANN},
+  journal = {Int J Data Sci Anal},
+  year    = {2023},
+  doi     = {10.1007/s41060-023-00407-7},
+}
+
+% ── Model Calibration & Uncertainty ──────────────────────────────────────────
+
+@inproceedings{calib-covid-audio-2023,
+  author    = {TBD},
+  title     = {Model confidence calibration for reliable COVID-19 early screening via audio signal analysis},
+  booktitle = {ACM BCB},
+  year      = {2023},
+  doi       = {10.1145/3584371.3613015},
+}
+
+@article{uq-sleep-medicine-2021,
+  author  = {Kang, DY and DeYoung, PN and Tantiongloc, J and Coleman, TP and Owens, RL},
+  title   = {Statistical uncertainty quantification to augment clinical decision support: a first implementation in sleep medicine},
+  journal = {NPJ Digit Med},
+  year    = {2021},
+  volume  = {4},
+  number  = {1},
+  pages   = {142},
+  doi     = {10.1038/s41746-021-00515-3},
+  note    = {PMID: 34593972},
+}
+
+% uq-audio-disease: web-only resource — supply URL directly, CrossRef will not resolve it
+% https://openreview.net/forum?id=e7HDGVGgJS
+@article{uq-audio-disease,
+  author  = {TBD},
+  title   = {Uncertainty quantification and calibration for audio-driven disease diagnosis},
+  journal = {OpenReview},
+  year    = {2023},
+  note    = {Web resource — not in academic databases},
+}
+
+% ── On-Device ML & Model Compression ─────────────────────────────────────────
+
+@inproceedings{compress-practice-2024,
+  author    = {Cabrera, A and others},
+  title     = {Model compression in practice: lessons learned from practitioners},
+  booktitle = {CHI 2024},
+  year      = {2024},
+  doi       = {10.1145/3613904.3642109},
+}
+
+@article{compress-audio-edge-2023,
+  author  = {TBD},
+  title   = {Performance analysis of deep learning model-compression techniques for audio classification on edge devices},
+  journal = {Smart Cities},
+  year    = {2023},
+  volume  = {6},
+  number  = {2},
+  doi     = {10.3390/smartcities6020021},
+}
+
+% ── Labeling & Annotation Methodology ────────────────────────────────────────
+
+@article{psg-quality-2025,
+  author  = {TBD},
+  title   = {Automated sleep stage and event detection algorithms using quality-controlled PSG annotations},
+  journal = {medRxiv},
+  year    = {2025},
+  doi     = {10.64898/2025.12.15.25342334},
+}
+
+@article{irr-sleep-meta-2021,
+  author  = {Younes, M},
+  title   = {Interrater reliability of sleep stage scoring: a meta-analysis},
+  journal = {J Clin Sleep Med},
+  year    = {2021},
+  note    = {PMID: 34310277},
+}
+
+% ── Privacy & Federated Learning ─────────────────────────────────────────────
+% fl-wearable-health: web-only resource — supply URL directly, CrossRef will not resolve it
+% https://www.researchgate.net/publication/399898864
+@article{fl-wearable-health,
+  author  = {TBD},
+  title   = {Federated learning for privacy-preserving wearable health data analytics},
+  journal = {ResearchGate},
+  year    = {2024},
+  note    = {Web resource — not in academic databases},
+}
+
+% ── Regulatory & SaMD ────────────────────────────────────────────────────────
+% fda-samd: web-only resource — supply URL directly, CrossRef will not resolve it
+% https://www.fda.gov/medical-devices/digital-health-center-excellence/software-medical-device-samd
+@article{fda-samd,
+  author  = {{US Food and Drug Administration}},
+  title   = {Software as a Medical Device (SaMD)},
+  journal = {FDA Digital Health Center of Excellence},
+  note    = {Web resource — not in academic databases},
+}
+
+% ── Sleep Quality Metrics & Assessment ───────────────────────────────────────
+
+@article{sqm-csd-2012,
+  author  = {Carney, CE and others},
+  title   = {The consensus sleep diary: standardizing prospective sleep self-monitoring},
+  journal = {Sleep},
+  year    = {2012},
+  volume  = {35},
+  number  = {2},
+  note    = {PMC: PMC3250369},
+}
+
+@article{sqm-tracker-11-2023,
+  author  = {Chinoy, ED and others},
+  title   = {Accuracy of 11 wearable, nearable, and airable consumer sleep trackers},
+  journal = {JMIR mHealth uHealth},
+  year    = {2023},
+  volume  = {11},
+  pages   = {e50983},
+  doi     = {10.2196/50983},
+}
+
+@inproceedings{sqm-sleepage-2020,
+  author    = {Cho, H and others},
+  title     = {SleepAge: sleep quality assessment from nocturnal sounds in home environment},
+  booktitle = {Procedia Comput Sci},
+  year      = {2020},
+  volume    = {176},
+  doi       = {10.1016/j.procs.2020.08.031},
+}
+
+@article{sqm-obj-subj-2022,
+  author  = {Kaplan, KA and others},
+  title   = {Investigating the relationship between objective measures of sleep and self-report sleep quality in healthy adults: a review},
+  journal = {J Clin Sleep Med},
+  year    = {2022},
+  note    = {PMC: PMC8883085},
+}
+
+@article{sqm-kortelainen-2017,
+  author  = {Kortelainen, JT and others},
+  title   = {Statistical sleep pattern modelling for sleep quality assessment based on sound events},
+  journal = {Health Inf Sci Syst},
+  year    = {2017},
+  volume  = {5},
+  note    = {PMC: PMC5662530},
+}
+
+@article{sqm-snorelab-2024,
+  author  = {TBD},
+  title   = {SnoreLab validation studies},
+  journal = {Appl Sci},
+  year    = {2024},
+  volume  = {14},
+  number  = {12},
+  pages   = {5063},
+  doi     = {10.3390/app14125063},
+}
+
+@article{sqm-ahi-pitfalls-2022,
+  author  = {Punjabi, NM and others},
+  title   = {Pitfalls of AHI system of severity grading in obstructive sleep apnoea},
+  journal = {BMJ Open Respir Res},
+  year    = {2022},
+  note    = {PMC: PMC8889969},
+}
+
+% ── Audio Feature Extraction & Comparison ────────────────────────────────────
+
+@article{feat-mfcc-optim-2025,
+  author  = {Almeida, M and others},
+  title   = {Optimizing MFCC parameters for breathing phase detection},
+  journal = {Sensors (Basel)},
+  year    = {2025},
+  note    = {PMC: PMC12390144},
+}
+
+@article{feat-cavusoglu-2008,
+  author  = {Cavusoglu, M and others},
+  title   = {Could formant frequencies of snore signals be an alternative means for the diagnosis of OSA?},
+  journal = {Sleep Med},
+  year    = {2008},
+  volume  = {9},
+  number  = {4},
+  doi     = {10.1016/j.sleep.2007.04.006},
+}
+
+@inproceedings{feat-cmvn-2019,
+  author    = {TBD},
+  title     = {Parametric cepstral mean normalization for robust speech recognition},
+  booktitle = {IEEE ICASSP},
+  year      = {2019},
+  doi       = {10.1109/ICASSP.2019.8683674},
+}
+
+@article{feat-nakano-2022,
+  author  = {Nakano, H and others},
+  title   = {Evaluating prediction models of sleep apnea from smartphone-recorded sleep breathing sounds},
+  journal = {JMIR Form Res},
+  year    = {2022},
+  volume  = {6},
+  number  = {4},
+  note    = {PMC: PMC9011176},
+}
+
+@article{feat-snore-acoustics-2010,
+  author  = {Ng, AK and others},
+  title   = {The acoustics of snoring},
+  journal = {Sleep Med Rev},
+  year    = {2010},
+  volume  = {14},
+  number  = {2},
+  note    = {PMID: 19665907},
+}
+
+@article{feat-snore-hf-2017,
+  author  = {TBD},
+  title   = {Snore sound analysis: within and beyond human hearing range},
+  journal = {Sleep},
+  year    = {2017},
+  volume  = {40},
+  doi     = {10.1093/sleepj/zsx050.162},
+}
+
+@article{feat-osahs-multi-2024,
+  author  = {Wang, Z and others},
+  title   = {An audio-semantic multimodal model for automatic OSAHS classification via multi-feature analysis of snoring sounds},
+  journal = {Front Neurosci},
+  year    = {2024},
+  volume  = {18},
+  doi     = {10.3389/fnins.2024.1336307},
+}
+
+% ── Clinical Event Definitions & Respiratory Scoring ─────────────────────────
+
+@article{snore-vote-2021,
+  author  = {Agrawal, S and others},
+  title   = {Automatic classification of excitation location of snoring sounds},
+  journal = {Sleep Breath},
+  year    = {2021},
+  note    = {PMC: PMC8320490},
+}
+
+@article{somniloquy-2022,
+  author  = {Alfonsi, V and others},
+  title   = {The influence of sleep talking on nocturnal sleep},
+  journal = {J Clin Med},
+  year    = {2022},
+  volume  = {11},
+  number  = {21},
+  pages   = {6489},
+  note    = {PMC: PMC9658338},
+}
+
+@article{arnulf-2017,
+  author  = {Arnulf, I and others},
+  title   = {What does the sleeping brain say? Syntax and semantics of sleep talking},
+  journal = {Sleep},
+  year    = {2017},
+  volume  = {40},
+  number  = {9},
+  note    = {PMID: 29029239},
+}
+
+@article{aasm-scoring-2012,
+  author  = {Berry, RB and others},
+  title   = {Rules for scoring respiratory events in sleep: update of the 2007 AASM manual for the scoring of sleep and associated events},
+  journal = {J Clin Sleep Med},
+  year    = {2012},
+  volume  = {8},
+  number  = {5},
+  pages   = {597--619},
+  note    = {PMC: PMC3459210},
+}
+
+@article{brux-ambulatory-2025,
+  author  = {Li, C and Yap, S and Loh, A and Yap, YJ and Kujan, O and Balasubramaniam, R},
+  title   = {Ambulatory devices to detect sleep bruxism: a narrative review},
+  journal = {Aust Dent J},
+  year    = {2025},
+  volume  = {69},
+  doi     = {10.1111/adj.13057},
+  note    = {PMID: 39976111},
+}
+
+@article{icsd3-brux-2025,
+  author  = {Herrero Babiloni, A and Lavigne, GJ and Svensson, P and Dal Fabbro, C and Carra, MC},
+  title   = {Navigating the assessment of sleep-related bruxism: clinical guidance for applying the 2023 ICSD-3-TR criteria},
+  journal = {Sleep Med},
+  year    = {2025},
+  volume  = {137},
+  pages   = {106891},
+  doi     = {10.1016/j.sleep.2025.106891},
+  note    = {PMID: 41192107},
+}
+
+@article{snore-crest-1999,
+  author  = {Hill, PD and Lee, BW and Osborne, JE and Osman, EZ},
+  title   = {Palatal snoring identified by acoustic crest factor analysis},
+  journal = {Physiol Meas},
+  year    = {1999},
+  volume  = {20},
+  number  = {2},
+  pages   = {167--174},
+  doi     = {10.1088/0967-3334/20/2/306},
+  note    = {PMID: 10390019},
+}
+
+@article{snore-dise-2022,
+  author  = {Huang, Z and Bosschieter, PFN and Aarab, G and van Selms, MKA and Vanhommerig, JW and Hilgevoord, AAJ and others},
+  title   = {Predicting upper airway collapse sites found in drug-induced sleep endoscopy from clinical data and snoring sounds in obstructive sleep apnea patients},
+  journal = {J Clin Sleep Med},
+  year    = {2022},
+  volume  = {18},
+  number  = {9},
+  pages   = {2119--2131},
+  doi     = {10.5664/jcsm.9998},
+  note    = {PMID: 35459443},
+}
+
+@article{snore-intensity-2010,
+  author  = {Maimon, N and Hanly, PJ},
+  title   = {Does snoring intensity correlate with the severity of OSA?},
+  journal = {J Clin Sleep Med},
+  year    = {2010},
+  volume  = {6},
+  number  = {5},
+  note    = {PMC: PMC2952752},
+}
+
+@article{csa-breathing-2025,
+  author  = {Saha, S and Ghahjaverestan, NM and Yadollahi, A},
+  title   = {Separating obstructive and central respiratory events during sleep using breathing sounds: utilizing transfer learning on deep convolutional networks},
+  journal = {Sleep Med},
+  year    = {2025},
+  volume  = {131},
+  pages   = {106485},
+  doi     = {10.1016/j.sleep.2025.106485},
+  note    = {PMID: 40188799},
+}
+
+@article{meta-ml-osa-2025,
+  author  = {Tan, BKJ and others},
+  title   = {Machine listening for OSA diagnosis: a Bayesian meta-analysis},
+  journal = {Chest},
+  year    = {2025},
+  note    = {PMID: 40220991},
+}
+
+@article{psg-audio-2021,
+  author  = {Xie, J and others},
+  title   = {PSG-Audio, a scored polysomnography dataset with simultaneous audio recordings},
+  journal = {Sci Data},
+  year    = {2021},
+  doi     = {10.1038/s41597-021-00977-w},
+}
+
+% ── Risk Survey References ────────────────────────────────────────────────────
+
+@article{risk-altini-2024,
+  author  = {Altini, M and Kinnunen, H},
+  title   = {Oura Ring Gen3 (OSSA 2.0) vs ambulatory PSG},
+  journal = {Sleep Med},
+  year    = {2024},
+  volume  = {114},
+  pages   = {56--68},
+  doi     = {10.1016/j.sleep.2024.01.010},
+}
+
+@article{risk-arnal-2020,
+  author  = {Arnal, PJ and others},
+  title   = {Dreem headband compared to polysomnography for EEG signal acquisition and sleep staging},
+  journal = {Sleep},
+  year    = {2020},
+  volume  = {43},
+  number  = {11},
+  note    = {PMC: PMC7751170},
+}
+
+@article{risk-butler-2019,
+  author  = {Butler, MP and others},
+  title   = {Apnea-hypopnea event duration predicts mortality in men and women in the Sleep Heart Health Study},
+  journal = {Am J Respir Crit Care Med},
+  year    = {2019},
+  volume  = {199},
+  number  = {7},
+  note    = {PMC: PMC6444651},
+}
+
+@article{risk-faber-2017,
+  author  = {Faber, BM},
+  title   = {Acoustical measurements with smartphones: possibilities and limitations},
+  journal = {Acoustics Today},
+  year    = {2017},
+  volume  = {13},
+  number  = {2},
+  pages   = {10--18},
+}
+
+@article{risk-kim-snore-kappa-2013,
+  author  = {Kim, D and others},
+  title   = {Automatic detection of whole night snoring events using non-contact microphone},
+  journal = {PLOS ONE},
+  year    = {2013},
+  doi     = {10.1371/journal.pone.0084139},
+}
+
+@article{risk-apneawhisper-2025,
+  author  = {Li, J and others},
+  title   = {ApneaWhisper: transformer-based audio segmentation for fine-grained sleep apnea detection},
+  journal = {Nat Sci Sleep},
+  year    = {2025},
+  note    = {PMC: PMC12506788},
+}
+
+@article{risk-mesquita-2021,
+  author  = {Mesquita, J and others},
+  title   = {Snoring intensity assessment with three different smartphones using SnoreLab},
+  journal = {J Clin Sleep Med},
+  year    = {2021},
+  volume  = {17},
+  number  = {1},
+  pages   = {157--162},
+  doi     = {10.5664/jcsm.8676},
+}
+
+@inproceedings{risk-nandakumar-2015,
+  author    = {Nandakumar, R and others},
+  title     = {Contactless sleep apnea detection on smartphones},
+  booktitle = {MobiSys},
+  year      = {2015},
+  doi       = {10.1145/2742647.2742674},
+}
+
+@article{risk-nahhas-2025,
+  author  = {Nahhas, FW and others},
+  title   = {Classification of acoustic emissions from oral behaviors including bruxism using deep learning},
+  journal = {at-Automatisierungstechnik},
+  year    = {2025},
+  doi     = {10.1515/auto-2025-0087},
+}
+
+@article{risk-northcutt-2021,
+  author  = {Northcutt, CG and others},
+  title   = {Confident learning: estimating uncertainty in dataset labels},
+  journal = {J Artif Intell Res},
+  year    = {2021},
+  volume  = {70},
+}
+
+@article{risk-aasm-isr-2014,
+  author  = {Rosenberg, RS and Van Hout, S},
+  title   = {American Academy of Sleep Medicine inter-scorer reliability program: respiratory events},
+  journal = {J Clin Sleep Med},
+  year    = {2014},
+  note    = {PMC: PMC3960390},
+}
+
+@article{risk-rostami-2024,
+  author  = {Rostami, M and others},
+  title   = {Unified microphone conversion: many-to-many device mapping via FiLM},
+  journal = {arXiv},
+  year    = {2024},
+  note    = {arXiv: 2410.18322},
+}
+
+@article{risk-shared-sleep-2025,
+  author  = {TBD},
+  title   = {Evaluation of sound-based sleep stage prediction in shared sleeping settings},
+  journal = {Sleep Med},
+  year    = {2025},
+  doi     = {10.1016/j.sleep.2025.02.023},
+}
+
+@article{risk-synthio-2024,
+  author  = {Singh, S and others},
+  title   = {Synthio: augmenting small-scale audio classification with synthetic data},
+  journal = {arXiv},
+  year    = {2024},
+  note    = {arXiv: 2410.02056; ICLR 2025},
+}
+
+@article{risk-sowho-2023,
+  author  = {Sowho, M and others},
+  title   = {Effects of demographic and sleep-related factors on snoring sound parameters},
+  journal = {Sleep Med},
+  year    = {2023},
+  doi     = {10.1016/j.sleep.2023.01.006},
+}
+
+@article{risk-stephansen-2023,
+  author  = {Stephansen, JB and others},
+  title   = {Scoring sleep with AI enables quantification of sleep stage ambiguity: results from a large clinical cohort study},
+  journal = {Sleep},
+  year    = {2023},
+  note    = {PMC: PMC9905781},
+}
+
+@article{risk-yadollahi-2010,
+  author  = {Yadollahi, A and Moussavi, Z},
+  title   = {Acoustic obstructive sleep apnea detection},
+  journal = {J Clin Sleep Med},
+  year    = {2010},
+  doi     = {10.5664/jcsm.7804},
+}
