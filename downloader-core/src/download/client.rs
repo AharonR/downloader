@@ -11,7 +11,10 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use reqwest::Client;
 use reqwest::cookie::Jar;
-use reqwest::header::{ACCEPT_RANGES, CONTENT_DISPOSITION, CONTENT_LENGTH, RANGE, RETRY_AFTER};
+use reqwest::header::{
+    ACCEPT, ACCEPT_LANGUAGE, ACCEPT_RANGES, CONTENT_DISPOSITION, CONTENT_LENGTH, RANGE, REFERER,
+    RETRY_AFTER,
+};
 use reqwest::{ClientBuilder, Proxy};
 use tokio::fs::File;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
@@ -34,6 +37,15 @@ use crate::user_agent;
 pub const BROWSER_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+/// Browser-like `Accept` header value sent with authenticated or browser-UA requests.
+///
+/// Mirrors Chrome's navigation Accept for top-level document requests.
+const BROWSER_ACCEPT: &str = "text/html,application/xhtml+xml,application/xml;q=0.9,\
+    image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7";
+
+/// Browser-like `Accept-Language` header for authenticated requests.
+const BROWSER_ACCEPT_LANGUAGE: &str = "en-US,en;q=0.9";
+
 /// HTTP client for downloading files with streaming support.
 ///
 /// This client is designed to be created once and reused for multiple downloads,
@@ -55,6 +67,12 @@ pub const BROWSER_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_
 #[derive(Debug, Clone)]
 pub struct HttpClient {
     client: Client,
+    /// Whether this client was built with an auth cookie jar.
+    ///
+    /// When `true`, requests include browser-like headers (`Accept`, `Accept-Language`,
+    /// `Referer`, `Sec-Fetch-*`) to mimic a real browser navigation.  Publishers like
+    /// Wiley and ACM check these headers in addition to session cookies.
+    has_auth_cookies: bool,
 }
 
 /// Download metadata for progress reporting and resumable state persistence.
@@ -107,7 +125,10 @@ impl HttpClient {
     pub fn new_with_timeouts(connect_timeout_secs: u64, read_timeout_secs: u64) -> Self {
         let client = build_client(None, connect_timeout_secs, read_timeout_secs)
             .expect("failed to build HTTP client with static configuration");
-        Self { client }
+        Self {
+            client,
+            has_auth_cookies: false,
+        }
     }
 
     /// Creates a new HTTP client with a cookie jar for authenticated downloads.
@@ -142,7 +163,17 @@ impl HttpClient {
     ) -> Self {
         let client = build_client(Some(cookie_jar), connect_timeout_secs, read_timeout_secs)
             .expect("failed to build HTTP client with static configuration");
-        Self { client }
+        Self {
+            client,
+            has_auth_cookies: true,
+        }
+    }
+
+    /// Returns `true` if this client was built with an auth cookie jar.
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn has_auth_cookies(&self) -> bool {
+        self.has_auth_cookies
     }
 
     /// Downloads a file from URL to the specified output directory.
@@ -430,6 +461,32 @@ impl HttpClient {
         }
         if let Some(range) = range_header {
             request = request.header(RANGE, range);
+        }
+
+        // When auth cookies are present, or on a browser-UA retry, add browser-like
+        // navigation headers for GET requests.  Publishers (Wiley, ACM, etc.) check
+        // these in addition to session cookies; omitting them causes 403s even with
+        // valid credentials.  HEAD requests (used for resume-state probing only) are
+        // excluded: browsers never send Sec-Fetch navigation headers on HEAD, and
+        // sending them could trigger WAF anomaly detection.
+        if method != "HEAD" && (self.has_auth_cookies || user_agent.is_some()) {
+            let referer = derive_referer(url);
+            let sec_fetch_site = if referer.is_some() {
+                "same-origin"
+            } else {
+                "none"
+            };
+            request = request
+                .header(ACCEPT, BROWSER_ACCEPT)
+                .header(ACCEPT_LANGUAGE, BROWSER_ACCEPT_LANGUAGE)
+                .header("Sec-Fetch-Dest", "document")
+                .header("Sec-Fetch-Mode", "navigate")
+                .header("Sec-Fetch-Site", sec_fetch_site)
+                .header("Sec-Fetch-User", "?1")
+                .header("Upgrade-Insecure-Requests", "1");
+            if let Some(ref_url) = referer {
+                request = request.header(REFERER, ref_url);
+            }
         }
 
         let response = request.send().await.map_err(|e| {
@@ -790,6 +847,30 @@ const LOGIN_PATTERNS: &[&str] = &[
     "/openid",
     "/idp/",
 ];
+
+/// Derives a browser-navigation `Referer` URL from a publisher PDF download URL.
+///
+/// Many publishers (Wiley, ACM, Springer, etc.) serve their PDF downloads
+/// under a `/doi/pdf/{doi}` path.  When a user clicks "Download PDF" in a browser
+/// the request carries `Referer: https://publisher.com/doi/{doi}` (the article
+/// landing page).  Without this header, even a valid session cookie may be rejected
+/// as a bot/programmatic request.
+///
+/// This function strips the `/pdf` segment so the tool can send the same `Referer`
+/// that a browser would.
+///
+/// Returns `None` for URLs that do not match the `/doi/pdf/` pattern.
+fn derive_referer(url: &str) -> Option<String> {
+    let mut parsed = Url::parse(url).ok()?;
+    let path = parsed.path().to_owned();
+    // /doi/pdf/{doi} → /doi/{doi}
+    if let Some(doi_suffix) = path.strip_prefix("/doi/pdf/") {
+        parsed.set_path(&format!("/doi/{doi_suffix}"));
+        parsed.set_query(None);
+        return Some(parsed.to_string());
+    }
+    None
+}
 
 /// Returns true if the URL path ends in a known binary extension.
 fn is_expected_binary(url: &str) -> bool {
@@ -1552,5 +1633,318 @@ mod tests {
             Err(DownloadError::AuthRequired { status: 401, .. }) => {}
             other => panic!("Expected AuthRequired 401, got: {other:?}"),
         }
+    }
+
+    // ==================== derive_referer tests ====================
+
+    #[test]
+    fn test_derive_referer_wiley_doi_pdf() {
+        let url = "https://onlinelibrary.wiley.com/doi/pdf/10.1002/cre2.70001";
+        let referer = derive_referer(url).unwrap();
+        assert_eq!(
+            referer,
+            "https://onlinelibrary.wiley.com/doi/10.1002/cre2.70001"
+        );
+    }
+
+    #[test]
+    fn test_derive_referer_acm_doi_pdf() {
+        let url = "https://dl.acm.org/doi/pdf/10.1145/3584371.3613015";
+        let referer = derive_referer(url).unwrap();
+        assert_eq!(referer, "https://dl.acm.org/doi/10.1145/3584371.3613015");
+    }
+
+    #[test]
+    fn test_derive_referer_wiley_second_prefix() {
+        let url = "https://onlinelibrary.wiley.com/doi/pdf/10.1111/adj.13057";
+        let referer = derive_referer(url).unwrap();
+        assert_eq!(
+            referer,
+            "https://onlinelibrary.wiley.com/doi/10.1111/adj.13057"
+        );
+    }
+
+    #[test]
+    fn test_derive_referer_no_match_plain_pdf() {
+        // A direct PDF link (no /doi/pdf/ path) should return None.
+        let url = "https://example.com/files/paper.pdf";
+        assert!(derive_referer(url).is_none());
+    }
+
+    #[test]
+    fn test_derive_referer_no_match_doi_without_pdf() {
+        // A /doi/ URL without the /pdf/ segment should not be modified.
+        let url = "https://onlinelibrary.wiley.com/doi/10.1002/foo";
+        assert!(derive_referer(url).is_none());
+    }
+
+    #[test]
+    fn test_derive_referer_strips_query_params() {
+        let url = "https://dl.acm.org/doi/pdf/10.1145/123.456?download=true";
+        let referer = derive_referer(url).unwrap();
+        // Query params must be stripped from the derived Referer.
+        assert!(!referer.contains('?'));
+        assert_eq!(referer, "https://dl.acm.org/doi/10.1145/123.456");
+    }
+
+    #[test]
+    fn test_derive_referer_preserves_scheme_and_host() {
+        let url = "https://link.springer.com/doi/pdf/10.1007/s00023-023-01234-5";
+        let referer = derive_referer(url).unwrap();
+        assert!(referer.starts_with("https://link.springer.com/doi/"));
+        assert!(!referer.contains("/pdf/"));
+    }
+
+    // ==================== BROWSER_ACCEPT constant integrity ====================
+
+    /// Validates that the line-continuation in BROWSER_ACCEPT doesn't introduce
+    /// unexpected whitespace at the splice point (e.g., `, image/` instead of `,image/`).
+    /// The mock-server tests use header_exists("Accept") because wiremock treats `*`
+    /// as a glob; this unit test checks the actual constant value directly.
+    #[test]
+    fn test_browser_accept_constant_no_whitespace_artifacts() {
+        assert!(
+            !BROWSER_ACCEPT.contains(", "),
+            "BROWSER_ACCEPT must not have spaces after commas: {BROWSER_ACCEPT}"
+        );
+        assert!(
+            BROWSER_ACCEPT.contains("q=0.9,image/"),
+            "line continuation must join q=0.9, directly to image/ without whitespace"
+        );
+        assert!(
+            BROWSER_ACCEPT.starts_with("text/html"),
+            "BROWSER_ACCEPT must start with text/html"
+        );
+    }
+
+    // ==================== has_auth_cookies flag tests ====================
+
+    #[test]
+    fn test_new_client_has_no_auth_cookies() {
+        let client = HttpClient::new();
+        assert!(!client.has_auth_cookies());
+    }
+
+    #[test]
+    fn test_cookie_jar_client_has_auth_cookies() {
+        use reqwest::cookie::Jar;
+        let jar = std::sync::Arc::new(Jar::default());
+        let client = HttpClient::with_cookie_jar(jar);
+        assert!(client.has_auth_cookies());
+    }
+
+    // ==================== browser header integration tests ====================
+
+    #[tokio::test]
+    async fn test_cookie_jar_client_sends_browser_headers() {
+        use reqwest::cookie::Jar;
+        use wiremock::matchers::header_exists;
+
+        let Some(mock_server) = start_mock_server_or_skip().await else {
+            return;
+        };
+        let temp_dir = TempDir::new().unwrap();
+
+        // Require presence of all browser-like headers.
+        // Accept is checked by value in test_browser_accept_constant_no_whitespace_artifacts.
+        Mock::given(method("GET"))
+            .and(path("/doi/pdf/10.1002/test.001"))
+            .and(header_exists("Accept"))
+            .and(header_exists("Accept-Language"))
+            .and(header_exists("Sec-Fetch-Dest"))
+            .and(header_exists("Sec-Fetch-Mode"))
+            .and(header_exists("Sec-Fetch-Site"))
+            .and(header_exists("Sec-Fetch-User"))
+            .and(header_exists("Referer"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PDF"))
+            .mount(&mock_server)
+            .await;
+
+        let jar = std::sync::Arc::new(Jar::default());
+        let client = HttpClient::with_cookie_jar(jar);
+        // Construct a URL that matches /doi/pdf/ to trigger Referer derivation.
+        // The mock server is localhost so the host differs from the referer — that
+        // is fine; we only check that the header is *present*.
+        let url = format!("{}/doi/pdf/10.1002/test.001", mock_server.uri());
+
+        let result = client.download_to_file(&url, temp_dir.path()).await;
+        assert!(
+            result.is_ok(),
+            "mock should accept request with browser headers: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cookie_jar_client_does_not_send_nav_headers_on_head() {
+        use reqwest::cookie::Jar;
+        use wiremock::matchers::header_exists;
+
+        let Some(mock_server) = start_mock_server_or_skip().await else {
+            return;
+        };
+        let temp_dir = TempDir::new().unwrap();
+
+        // A partial file on disk triggers a HEAD probe for Accept-Ranges.
+        // The HEAD should NOT carry Sec-Fetch navigation headers.
+        let partial = temp_dir.path().join("doi_pdf_10.1002_test.002");
+        tokio::fs::write(&partial, b"partial").await.unwrap();
+
+        // HEAD mock: must NOT have Sec-Fetch-Mode.
+        let nav_guard = Mock::given(method("HEAD"))
+            .and(path("/doi/pdf/10.1002/test.002"))
+            .and(header_exists("Sec-Fetch-Mode"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .named("head-no-nav-headers-guard");
+        let head_guard = nav_guard.mount_as_scoped(&mock_server).await;
+
+        // Allow the HEAD to succeed without the restricted header.
+        Mock::given(method("HEAD"))
+            .and(path("/doi/pdf/10.1002/test.002"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("Accept-Ranges", "bytes")
+                    .insert_header("Content-Length", "100"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // GET mock to complete the download.
+        Mock::given(method("GET"))
+            .and(path("/doi/pdf/10.1002/test.002"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PDF content"))
+            .mount(&mock_server)
+            .await;
+
+        let jar = std::sync::Arc::new(Jar::default());
+        let client = HttpClient::with_cookie_jar(jar);
+        let url = format!("{}/doi/pdf/10.1002/test.002", mock_server.uri());
+
+        let _ = client.download_to_file(&url, temp_dir.path()).await;
+        drop(head_guard); // asserts expect(0) — Sec-Fetch-Mode must not have appeared
+    }
+
+    #[tokio::test]
+    async fn test_plain_client_does_not_send_browser_headers() {
+        use wiremock::matchers::header_exists;
+
+        let Some(mock_server) = start_mock_server_or_skip().await else {
+            return;
+        };
+        let temp_dir = TempDir::new().unwrap();
+
+        // This mock only matches when Sec-Fetch-Dest is ABSENT.
+        // We verify this by making the mock WITHOUT the header_exists matcher and
+        // checking the request recorded by wiremock.
+        Mock::given(method("GET"))
+            .and(path("/paper.pdf"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PDF"))
+            .mount(&mock_server)
+            .await;
+
+        // A mock that would only match if the header IS present — we mount it
+        // with a lower priority and assert it was never matched.
+        let guarded = Mock::given(method("GET"))
+            .and(path("/paper.pdf"))
+            .and(header_exists("Sec-Fetch-Dest"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PDF"))
+            .expect(0) // must never be called
+            .named("no-browser-headers-guard");
+        let guard = guarded.mount_as_scoped(&mock_server).await;
+
+        let client = HttpClient::new();
+        let url = format!("{}/paper.pdf", mock_server.uri());
+        let _ = client.download_to_file(&url, temp_dir.path()).await;
+        drop(guard); // asserts expect(0) was satisfied
+    }
+
+    #[tokio::test]
+    async fn test_referer_header_value_for_doi_pdf_url() {
+        use reqwest::cookie::Jar;
+        use wiremock::matchers::header;
+
+        let Some(mock_server) = start_mock_server_or_skip().await else {
+            return;
+        };
+        let temp_dir = TempDir::new().unwrap();
+
+        // The Referer should strip /pdf from the path.
+        // mock_server.uri() returns http://127.0.0.1:{port}.
+        let base = mock_server.uri();
+        let expected_referer = format!("{base}/doi/10.1145/123.456");
+
+        Mock::given(method("GET"))
+            .and(path("/doi/pdf/10.1145/123.456"))
+            .and(header("Referer", expected_referer.as_str()))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PDF"))
+            .mount(&mock_server)
+            .await;
+
+        let jar = std::sync::Arc::new(Jar::default());
+        let client = HttpClient::with_cookie_jar(jar);
+        let url = format!("{base}/doi/pdf/10.1145/123.456");
+
+        let result = client.download_to_file(&url, temp_dir.path()).await;
+        assert!(
+            result.is_ok(),
+            "Referer header value should match article page: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sec_fetch_site_same_origin_when_referer_present() {
+        use reqwest::cookie::Jar;
+        use wiremock::matchers::header;
+
+        let Some(mock_server) = start_mock_server_or_skip().await else {
+            return;
+        };
+        let temp_dir = TempDir::new().unwrap();
+
+        Mock::given(method("GET"))
+            .and(path("/doi/pdf/10.1002/foo"))
+            .and(header("Sec-Fetch-Site", "same-origin"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PDF"))
+            .mount(&mock_server)
+            .await;
+
+        let jar = std::sync::Arc::new(Jar::default());
+        let client = HttpClient::with_cookie_jar(jar);
+        let url = format!("{}/doi/pdf/10.1002/foo", mock_server.uri());
+
+        let result = client.download_to_file(&url, temp_dir.path()).await;
+        assert!(
+            result.is_ok(),
+            "Sec-Fetch-Site should be 'same-origin' for /doi/pdf/ URLs: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sec_fetch_site_none_when_no_referer() {
+        use reqwest::cookie::Jar;
+        use wiremock::matchers::header;
+
+        let Some(mock_server) = start_mock_server_or_skip().await else {
+            return;
+        };
+        let temp_dir = TempDir::new().unwrap();
+
+        // A non-/doi/pdf/ URL: no Referer derived, so Sec-Fetch-Site should be "none".
+        Mock::given(method("GET"))
+            .and(path("/papers/article.pdf"))
+            .and(header("Sec-Fetch-Site", "none"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PDF"))
+            .mount(&mock_server)
+            .await;
+
+        let jar = std::sync::Arc::new(Jar::default());
+        let client = HttpClient::with_cookie_jar(jar);
+        let url = format!("{}/papers/article.pdf", mock_server.uri());
+
+        let result = client.download_to_file(&url, temp_dir.path()).await;
+        assert!(
+            result.is_ok(),
+            "Sec-Fetch-Site should be 'none' when no Referer is derived: {result:?}"
+        );
     }
 }
