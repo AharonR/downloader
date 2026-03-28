@@ -72,10 +72,11 @@ pub use queue::{
     QueueMetadata, QueueStatus,
 };
 pub use resolver::{
-    AcmResolver, ArxivResolver, CrossrefResolver, DirectResolver, IeeeResolver, MdpiResolver, PubMedResolver, ResolveContext,
-    ResolveError, ResolveStep, ResolvedUrl, Resolver, ResolverPriority, ResolverRegistry,
-    STANDARD_METADATA_KEYS, ScienceDirectResolver, SpringerResolver, YouTubeResolver,
-    build_default_resolver_registry, configure_resolver_http_timeouts,
+    AcmResolver, ArxivResolver, CrossrefResolver, DirectResolver, IeeeResolver, MdpiResolver,
+    PubMedResolver, ResolveContext, ResolveError, ResolveStep, ResolvedUrl, Resolver,
+    ResolverPriority, ResolverRegistry, STANDARD_METADATA_KEYS, ScienceDirectResolver,
+    SpringerResolver, YouTubeResolver, build_default_resolver_registry,
+    configure_resolver_http_timeouts,
 };
 pub use sidecar::{SidecarConfig, SidecarError, generate_sidecar};
 pub use topics::{
