@@ -14,54 +14,20 @@
 //! 3. Otherwise, return the ACM PDF URL (`dl.acm.org/doi/pdf/{doi}`), which may
 //!    require authentication (run `downloader auth capture` to capture browser cookies).
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use reqwest::Client;
-use serde::Deserialize;
-use tracing::{debug, warn};
 use url::Url;
 
 use crate::parser::InputType;
 
 use super::http_client::{build_resolver_http_client, standard_user_agent};
+use super::semantic_scholar::{self, S2ResolveConfig, DEFAULT_S2_BASE_URL};
 use super::utils::looks_like_doi;
-use super::{ResolveContext, ResolveError, ResolveStep, ResolvedUrl, Resolver, ResolverPriority};
+use super::{ResolveContext, ResolveError, ResolveStep, Resolver, ResolverPriority};
 
 // ==================== Constants ====================
 
-const DEFAULT_S2_BASE_URL: &str = "https://api.semanticscholar.org";
 const ACM_DOI_PREFIX: &str = "10.1145/";
-const S2_FIELDS: &str = "externalIds,openAccessPdf,title,authors,year";
-
-// ==================== Semantic Scholar Response Types ====================
-
-#[derive(Debug, Deserialize)]
-struct S2PaperResponse {
-    title: Option<String>,
-    authors: Option<Vec<S2Author>>,
-    year: Option<i32>,
-    #[serde(rename = "externalIds")]
-    external_ids: Option<S2ExternalIds>,
-    #[serde(rename = "openAccessPdf")]
-    open_access_pdf: Option<S2OpenAccessPdf>,
-}
-
-#[derive(Debug, Deserialize)]
-struct S2Author {
-    name: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct S2ExternalIds {
-    #[serde(rename = "ArXiv")]
-    arxiv: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct S2OpenAccessPdf {
-    url: Option<String>,
-}
 
 // ==================== AcmResolver ====================
 
@@ -152,147 +118,15 @@ impl Resolver for AcmResolver {
             }
         };
 
-        self.resolve_via_s2(&doi, input).await
-    }
-}
-
-// ==================== Resolution logic ====================
-
-impl AcmResolver {
-    async fn resolve_via_s2(
-        &self,
-        doi: &str,
-        original_input: &str,
-    ) -> Result<ResolveStep, ResolveError> {
-        // Semantic Scholar accepts raw (unencoded) DOI in the path.
-        let url = format!(
-            "{}/graph/v1/paper/DOI:{}?fields={}",
-            self.s2_base_url, doi, S2_FIELDS
-        );
-
-        debug!(s2_url = %url, "Querying Semantic Scholar for ACM DOI");
-
-        let response = match self.client.get(&url).send().await {
-            Ok(resp) => resp,
-            Err(e) => {
-                warn!(error = %e, doi, "Semantic Scholar request failed");
-                return Ok(ResolveStep::Failed(ResolveError::resolution_failed(
-                    original_input,
-                    "Cannot reach Semantic Scholar API. \
-                     Why: network error or API unavailable. \
-                     Fix: check your internet connection and retry.",
-                )));
-            }
+        let fallback_url = format!("https://dl.acm.org/doi/pdf/{doi}");
+        let config = S2ResolveConfig {
+            fallback_pdf_url: &fallback_url,
+            publisher_domains: &["dl.acm.org"],
+            resolver_name: self.name(),
         };
-
-        let status = response.status();
-        if !status.is_success() {
-            let reason = s2_error_reason(status.as_u16());
-            debug!(status = status.as_u16(), %reason, "Semantic Scholar API error");
-            return Ok(ResolveStep::Failed(ResolveError::resolution_failed(
-                original_input,
-                &reason,
-            )));
-        }
-
-        let paper: S2PaperResponse = match response.json().await {
-            Ok(parsed) => parsed,
-            Err(e) => {
-                warn!(error = %e, doi, "Failed to parse Semantic Scholar response");
-                return Ok(ResolveStep::body_parse_failed(
-                    original_input,
-                    "Semantic Scholar",
-                ));
-            }
-        };
-
-        let pdf_url = select_best_pdf_url(&paper, doi);
-        let metadata = build_metadata(&paper, doi);
-
-        debug!(pdf_url = %pdf_url, "Resolved ACM paper to PDF URL");
-        Ok(ResolveStep::Url(ResolvedUrl::with_metadata(
-            pdf_url, metadata,
-        )))
+        semantic_scholar::resolve_via_s2(&self.client, &self.s2_base_url, &doi, input, &config)
+            .await
     }
-}
-
-// ==================== URL selection ====================
-
-/// Selects the best available PDF URL from a Semantic Scholar response.
-///
-/// Priority:
-/// 1. `openAccessPdf.url` if it is `https://` scheme and NOT on `dl.acm.org`
-/// 2. arXiv PDF constructed from `externalIds.ArXiv`
-/// 3. ACM PDF URL fallback (`dl.acm.org/doi/pdf/{doi}`)
-fn select_best_pdf_url(paper: &S2PaperResponse, doi: &str) -> String {
-    // Priority 1: openAccessPdf on a non-ACM https:// domain
-    if let Some(oa) = &paper.open_access_pdf {
-        if let Some(oa_url) = &oa.url {
-            if is_usable_oa_url(oa_url) {
-                debug!(oa_url = %oa_url, "Using open-access PDF from Semantic Scholar");
-                return oa_url.clone();
-            }
-            debug!("Semantic Scholar OA PDF skipped (ACM domain or non-HTTPS)");
-        }
-    }
-
-    // Priority 2: arXiv external ID
-    if let Some(ids) = &paper.external_ids {
-        if let Some(arxiv_id) = &ids.arxiv {
-            let arxiv_url = format!("https://arxiv.org/pdf/{arxiv_id}");
-            debug!(arxiv_id = %arxiv_id, "Constructing arXiv PDF URL from external ID");
-            return arxiv_url;
-        }
-    }
-
-    // Fallback: ACM PDF URL (may require auth via `downloader auth capture`)
-    let acm_url = format!("https://dl.acm.org/doi/pdf/{doi}");
-    debug!("No open-access alternative found; falling back to ACM PDF URL");
-    acm_url
-}
-
-/// Returns true if `url` is a usable open-access PDF: `https://` scheme and not on `dl.acm.org`.
-fn is_usable_oa_url(url: &str) -> bool {
-    if !url.starts_with("https://") {
-        return false;
-    }
-    Url::parse(url)
-        .ok()
-        .and_then(|parsed| parsed.host_str().map(str::to_ascii_lowercase))
-        .is_some_and(|host| host != "dl.acm.org" && !host.ends_with(".dl.acm.org"))
-}
-
-// ==================== Metadata ====================
-
-fn build_metadata(paper: &S2PaperResponse, doi: &str) -> HashMap<String, String> {
-    let mut metadata = HashMap::new();
-
-    metadata.insert("doi".to_string(), doi.to_string());
-    metadata.insert("source_url".to_string(), format!("https://doi.org/{doi}"));
-
-    if let Some(title) = &paper.title {
-        if !title.is_empty() {
-            metadata.insert("title".to_string(), title.clone());
-        }
-    }
-
-    if let Some(authors) = &paper.authors {
-        let names: Vec<String> = authors
-            .iter()
-            .filter_map(|a| a.name.as_deref())
-            .filter(|n| !n.is_empty())
-            .map(str::to_string)
-            .collect();
-        if !names.is_empty() {
-            metadata.insert("authors".to_string(), names.join("; "));
-        }
-    }
-
-    if let Some(year) = paper.year {
-        metadata.insert("year".to_string(), year.to_string());
-    }
-
-    metadata
 }
 
 // ==================== DOI extraction from ACM URLs ====================
@@ -341,35 +175,13 @@ fn extract_doi_from_acm_url(input: &str) -> Option<String> {
     }
 }
 
-// ==================== Error helpers ====================
-
-fn s2_error_reason(status: u16) -> String {
-    match status {
-        404 => "Paper not found in Semantic Scholar. \
-                Why: this DOI may not be indexed yet. \
-                Fix: the resolver will fall through to Crossref."
-            .to_string(),
-        429 => "Semantic Scholar rate limit exceeded. \
-                Why: too many requests in a short period. \
-                Fix: wait and retry, or reduce batch size."
-            .to_string(),
-        s if s >= 500 => "Semantic Scholar API unavailable. \
-                          Why: server error. \
-                          Fix: wait and retry."
-            .to_string(),
-        s => format!(
-            "Semantic Scholar API returned HTTP {s}. \
-             Fix: check the DOI and retry."
-        ),
-    }
-}
-
 // ==================== Tests ====================
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::resolver::semantic_scholar::S2_FIELDS;
     use crate::test_support::socket_guard::start_mock_server_or_skip;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, ResponseTemplate};
@@ -466,32 +278,6 @@ mod tests {
             extract_doi_from_acm_url("https://dl.acm.org/conference/chi"),
             None
         );
-    }
-
-    // ==================== is_usable_oa_url ====================
-
-    #[test]
-    fn test_is_usable_oa_url_accepts_arxiv_https() {
-        assert!(is_usable_oa_url("https://arxiv.org/pdf/2108.04144"));
-    }
-
-    #[test]
-    fn test_is_usable_oa_url_rejects_dl_acm_org() {
-        assert!(!is_usable_oa_url(
-            "https://dl.acm.org/doi/pdf/10.1145/3460418.3479327"
-        ));
-    }
-
-    #[test]
-    fn test_is_usable_oa_url_rejects_dl_acm_org_subdomain() {
-        assert!(!is_usable_oa_url(
-            "https://mirror.dl.acm.org/doi/pdf/10.1145/3460418.3479327"
-        ));
-    }
-
-    #[test]
-    fn test_is_usable_oa_url_rejects_http_scheme() {
-        assert!(!is_usable_oa_url("http://arxiv.org/pdf/2108.04144"));
     }
 
     // ==================== Wiremock integration tests ====================

@@ -80,6 +80,15 @@ pub fn looks_like_doi(value: &str, prefix: &str) -> bool {
     value_norm.starts_with(prefix_norm.as_str())
 }
 
+/// Returns true if `value` matches any of the given DOI prefixes.
+///
+/// Equivalent to calling [`looks_like_doi`] for each prefix and OR-ing the results.
+/// Used by resolvers that handle multiple DOI prefixes (e.g. `WileyResolver`).
+#[must_use]
+pub fn looks_like_doi_any(value: &str, prefixes: &[&str]) -> bool {
+    prefixes.iter().any(|prefix| looks_like_doi(value, prefix))
+}
+
 /// Resolves a possibly relative URL string against a base URL.
 ///
 /// Returns the value as-is if it already starts with `http://` or `https://`;
@@ -196,6 +205,26 @@ mod tests {
     #[test]
     fn test_hosts_match_different_hosts_false() {
         assert!(!hosts_match("ieeexplore.ieee.org", "link.springer.com"));
+    }
+
+    #[test]
+    fn test_looks_like_doi_any_matches_first_prefix() {
+        assert!(looks_like_doi_any("10.1002/adma.202104055", &["10.1002/", "10.1111/"]));
+    }
+
+    #[test]
+    fn test_looks_like_doi_any_matches_second_prefix() {
+        assert!(looks_like_doi_any("10.1111/jcmm.16278", &["10.1002/", "10.1111/"]));
+    }
+
+    #[test]
+    fn test_looks_like_doi_any_no_match() {
+        assert!(!looks_like_doi_any("10.1145/3460418.3479327", &["10.1002/", "10.1111/"]));
+    }
+
+    #[test]
+    fn test_looks_like_doi_any_empty_prefixes_returns_false() {
+        assert!(!looks_like_doi_any("10.1002/anything", &[]));
     }
 
     #[test]

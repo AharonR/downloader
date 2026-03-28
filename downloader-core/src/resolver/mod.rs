@@ -10,6 +10,7 @@
 //! - [`ResolverRegistry`] - Priority-ordered collection of resolvers with resolution loop
 //! - [`ResolveStep`] - Result enum from individual resolve operations
 //! - [`AcmResolver`] - Site-specific resolver for ACM Digital Library URLs/DOIs via Semantic Scholar
+//! - [`WileyResolver`] - Site-specific resolver for Wiley Online Library URLs/DOIs via Semantic Scholar
 //! - [`ArxivResolver`] - Site-specific resolver for `arXiv` URLs/DOIs
 //! - [`PubMedResolver`] - Site-specific resolver for PubMed/PMC URL resolution
 //! - [`IeeeResolver`] - Site-specific resolver for IEEE Xplore and `10.1109/*` DOI inputs
@@ -50,8 +51,10 @@ mod oxford;
 mod pubmed;
 mod registry;
 mod sciencedirect;
+mod semantic_scholar;
 mod springer;
 mod utils;
+mod wiley;
 mod youtube;
 
 pub use acm::AcmResolver;
@@ -67,6 +70,7 @@ pub use pubmed::PubMedResolver;
 pub use registry::ResolverRegistry;
 pub use sciencedirect::ScienceDirectResolver;
 pub use springer::SpringerResolver;
+pub use wiley::WileyResolver;
 pub use youtube::YouTubeResolver;
 
 use std::collections::HashMap;
@@ -139,6 +143,14 @@ pub fn build_default_resolver_registry(
         Err(error) => warn!(
             error = %error,
             "ACM resolver unavailable; continuing with remaining resolvers"
+        ),
+    }
+
+    match WileyResolver::new() {
+        Ok(resolver) => registry.register(Box::new(resolver)),
+        Err(error) => warn!(
+            error = %error,
+            "Wiley resolver unavailable; continuing with remaining resolvers"
         ),
     }
 
