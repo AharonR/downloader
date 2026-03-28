@@ -36,7 +36,7 @@ use url::Url;
 use crate::parser::InputType;
 
 use super::http_client::{build_resolver_http_client, standard_user_agent};
-use super::semantic_scholar::{self, S2ResolveConfig, DEFAULT_S2_BASE_URL};
+use super::semantic_scholar::{self, DEFAULT_S2_BASE_URL, S2ResolveConfig};
 use super::utils::looks_like_doi_any;
 use super::{ResolveContext, ResolveError, ResolveStep, Resolver, ResolverPriority};
 
@@ -83,7 +83,10 @@ impl WileyResolver {
     fn build(s2_base_url: String) -> Result<Self, ResolveError> {
         let user_agent = standard_user_agent("wiley");
         let client = build_resolver_http_client("wiley", user_agent, None)?;
-        Ok(Self { client, s2_base_url })
+        Ok(Self {
+            client,
+            s2_base_url,
+        })
     }
 }
 
@@ -339,33 +342,23 @@ mod tests {
     fn test_extract_doi_from_wiley_url_variants() {
         let doi = "10.1002/adma.202104055";
         assert_eq!(
-            extract_doi_from_wiley_url(&format!(
-                "https://onlinelibrary.wiley.com/doi/{doi}"
-            )),
+            extract_doi_from_wiley_url(&format!("https://onlinelibrary.wiley.com/doi/{doi}")),
             Some(doi.to_string())
         );
         assert_eq!(
-            extract_doi_from_wiley_url(&format!(
-                "https://onlinelibrary.wiley.com/doi/pdf/{doi}"
-            )),
+            extract_doi_from_wiley_url(&format!("https://onlinelibrary.wiley.com/doi/pdf/{doi}")),
             Some(doi.to_string())
         );
         assert_eq!(
-            extract_doi_from_wiley_url(&format!(
-                "https://onlinelibrary.wiley.com/doi/abs/{doi}"
-            )),
+            extract_doi_from_wiley_url(&format!("https://onlinelibrary.wiley.com/doi/abs/{doi}")),
             Some(doi.to_string())
         );
         assert_eq!(
-            extract_doi_from_wiley_url(&format!(
-                "https://onlinelibrary.wiley.com/doi/full/{doi}"
-            )),
+            extract_doi_from_wiley_url(&format!("https://onlinelibrary.wiley.com/doi/full/{doi}")),
             Some(doi.to_string())
         );
         assert_eq!(
-            extract_doi_from_wiley_url(&format!(
-                "https://onlinelibrary.wiley.com/doi/epdf/{doi}"
-            )),
+            extract_doi_from_wiley_url(&format!("https://onlinelibrary.wiley.com/doi/epdf/{doi}")),
             Some(doi.to_string())
         );
     }
@@ -374,9 +367,7 @@ mod tests {
     fn test_extract_doi_from_wiley_url_10_1111() {
         let doi = "10.1111/adj.13057";
         assert_eq!(
-            extract_doi_from_wiley_url(&format!(
-                "https://onlinelibrary.wiley.com/doi/pdf/{doi}"
-            )),
+            extract_doi_from_wiley_url(&format!("https://onlinelibrary.wiley.com/doi/pdf/{doi}")),
             Some(doi.to_string())
         );
     }
@@ -727,10 +718,7 @@ mod tests {
 
         let resolver = WileyResolver::with_base_url(mock_server.uri()).unwrap();
         let ctx = ResolveContext::default();
-        let result = resolver
-            .resolve("10.1111/adj.13057", &ctx)
-            .await
-            .unwrap();
+        let result = resolver.resolve("10.1111/adj.13057", &ctx).await.unwrap();
 
         match result {
             ResolveStep::Url(resolved) => {
@@ -815,7 +803,9 @@ mod tests {
                 // http:// OA URL rejected; ArXiv external ID used instead
                 assert_eq!(resolved.url, "https://arxiv.org/pdf/2108.04144");
             }
-            other => panic!("Expected Url from ArXiv fallback after http:// rejection, got: {other:?}"),
+            other => {
+                panic!("Expected Url from ArXiv fallback after http:// rejection, got: {other:?}")
+            }
         }
     }
 }

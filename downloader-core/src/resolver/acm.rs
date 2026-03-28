@@ -21,7 +21,7 @@ use url::Url;
 use crate::parser::InputType;
 
 use super::http_client::{build_resolver_http_client, standard_user_agent};
-use super::semantic_scholar::{self, S2ResolveConfig, DEFAULT_S2_BASE_URL};
+use super::semantic_scholar::{self, DEFAULT_S2_BASE_URL, S2ResolveConfig};
 use super::utils::looks_like_doi;
 use super::{ResolveContext, ResolveError, ResolveStep, Resolver, ResolverPriority};
 

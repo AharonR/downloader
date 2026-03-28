@@ -209,17 +209,26 @@ mod tests {
 
     #[test]
     fn test_looks_like_doi_any_matches_first_prefix() {
-        assert!(looks_like_doi_any("10.1002/adma.202104055", &["10.1002/", "10.1111/"]));
+        assert!(looks_like_doi_any(
+            "10.1002/adma.202104055",
+            &["10.1002/", "10.1111/"]
+        ));
     }
 
     #[test]
     fn test_looks_like_doi_any_matches_second_prefix() {
-        assert!(looks_like_doi_any("10.1111/jcmm.16278", &["10.1002/", "10.1111/"]));
+        assert!(looks_like_doi_any(
+            "10.1111/jcmm.16278",
+            &["10.1002/", "10.1111/"]
+        ));
     }
 
     #[test]
     fn test_looks_like_doi_any_no_match() {
-        assert!(!looks_like_doi_any("10.1145/3460418.3479327", &["10.1002/", "10.1111/"]));
+        assert!(!looks_like_doi_any(
+            "10.1145/3460418.3479327",
+            &["10.1002/", "10.1111/"]
+        ));
     }
 
     #[test]

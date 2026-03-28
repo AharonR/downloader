@@ -118,7 +118,10 @@ pub(crate) async fn resolve_via_s2(
                 resolver = config.resolver_name,
                 "Failed to parse Semantic Scholar response"
             );
-            return Ok(ResolveStep::body_parse_failed(original_input, "Semantic Scholar"));
+            return Ok(ResolveStep::body_parse_failed(
+                original_input,
+                "Semantic Scholar",
+            ));
         }
     };
 
@@ -126,16 +129,15 @@ pub(crate) async fn resolve_via_s2(
     let metadata = build_metadata(&paper, doi);
 
     debug!(pdf_url = %pdf_url, resolver = config.resolver_name, "Resolved paper to PDF URL");
-    Ok(ResolveStep::Url(ResolvedUrl::with_metadata(pdf_url, metadata)))
+    Ok(ResolveStep::Url(ResolvedUrl::with_metadata(
+        pdf_url, metadata,
+    )))
 }
 
 // ==================== URL selection ====================
 
 /// Selects the best available PDF URL from a Semantic Scholar response.
-pub(crate) fn select_best_pdf_url(
-    paper: &S2PaperResponse,
-    config: &S2ResolveConfig<'_>,
-) -> String {
+pub(crate) fn select_best_pdf_url(paper: &S2PaperResponse, config: &S2ResolveConfig<'_>) -> String {
     // Priority 1: openAccessPdf on a non-publisher https:// domain
     if let Some(oa) = &paper.open_access_pdf {
         if let Some(oa_url) = &oa.url {
@@ -432,10 +434,7 @@ mod tests {
             Some("https://doi.org/10.1002/foo")
         );
         assert_eq!(m.get("title").map(String::as_str), Some("My Title"));
-        assert_eq!(
-            m.get("authors").map(String::as_str),
-            Some("Alice; Bob")
-        );
+        assert_eq!(m.get("authors").map(String::as_str), Some("Alice; Bob"));
         assert_eq!(m.get("year").map(String::as_str), Some("2023"));
     }
 
