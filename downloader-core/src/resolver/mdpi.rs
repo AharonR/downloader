@@ -16,7 +16,8 @@ use url::Url;
 use crate::parser::InputType;
 
 use super::crossref::{
-    CrossrefMessage, CrossrefResponse, CrossrefSearchResponse, extract_metadata as crossref_extract_metadata,
+    CrossrefMessage, CrossrefResponse, CrossrefSearchResponse,
+    extract_metadata as crossref_extract_metadata,
 };
 use super::http_client::{build_resolver_http_client, standard_user_agent};
 use super::utils::{canonical_host, looks_like_doi, validate_crossref_mailto};
@@ -31,9 +32,7 @@ const CDN_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Journals where `lowercase(container-title with spaces stripped)` does not match the CDN slug.
 /// Maps lowercased container-title → CDN slug.
-static MULTI_WORD_CDN_OVERRIDES: &[(&str, &str)] = &[
-    ("applied sciences", "applsci"),
-];
+static MULTI_WORD_CDN_OVERRIDES: &[(&str, &str)] = &[("applied sciences", "applsci")];
 
 /// Specialized resolver for MDPI articles.
 ///
@@ -52,7 +51,10 @@ impl MdpiResolver {
     ///
     /// Returns [`ResolveError`] if HTTP client construction fails or `mailto` is invalid.
     pub fn new(crossref_mailto: impl Into<String>) -> Result<Self, ResolveError> {
-        Self::build(crossref_mailto.into(), DEFAULT_CROSSREF_BASE_URL.to_string())
+        Self::build(
+            crossref_mailto.into(),
+            DEFAULT_CROSSREF_BASE_URL.to_string(),
+        )
     }
 
     /// Creates an `MdpiResolver` with a custom Crossref base URL (for testing with wiremock).
@@ -219,7 +221,9 @@ impl MdpiResolver {
             )));
         };
 
-        let cdn_slug = self.resolve_cdn_slug(msg.container_title_str(), &doi_slug).await;
+        let cdn_slug = self
+            .resolve_cdn_slug(msg.container_title_str(), &doi_slug)
+            .await;
 
         let cdn_url = build_cdn_url(&cdn_slug, volume, &article_number);
         let metadata = extract_metadata(msg, doi, doi);
@@ -319,7 +323,9 @@ impl MdpiResolver {
             )));
         };
 
-        let cdn_slug = self.resolve_cdn_slug(item.container_title_str(), &doi_slug).await;
+        let cdn_slug = self
+            .resolve_cdn_slug(item.container_title_str(), &doi_slug)
+            .await;
 
         let cdn_url = build_cdn_url(&cdn_slug, &parts.volume, &parts.article);
         let metadata = extract_metadata(item, item_doi, input);
@@ -357,7 +363,13 @@ impl MdpiResolver {
 
         for candidate in &candidates {
             let probe_url = format!("{MDPI_CDN_BASE}/{candidate}/");
-            match self.client.head(&probe_url).timeout(CDN_PROBE_TIMEOUT).send().await {
+            match self
+                .client
+                .head(&probe_url)
+                .timeout(CDN_PROBE_TIMEOUT)
+                .send()
+                .await
+            {
                 Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 403 => {
                     // 200 or 403 both indicate the path exists on the CDN.
                     debug!(cdn_slug = %candidate, "MDPI CDN slug confirmed via HEAD probe");
@@ -450,13 +462,12 @@ fn extract_slug_from_doi(doi: &str) -> Option<String> {
         .strip_prefix("10.3390/")
         .map(str::to_string)?;
 
-    let slug: String = suffix.chars().take_while(char::is_ascii_alphabetic).collect();
+    let slug: String = suffix
+        .chars()
+        .take_while(char::is_ascii_alphabetic)
+        .collect();
 
-    if slug.is_empty() {
-        None
-    } else {
-        Some(slug)
-    }
+    if slug.is_empty() { None } else { Some(slug) }
 }
 
 /// Extracts the article number from an MDPI DOI suffix by stripping slug, volume, and issue.
@@ -524,7 +535,10 @@ fn cdn_slug_candidates(container_title: Option<&str>, doi_slug: &str) -> Vec<Str
     // Multi-word: build candidates in priority order.
     let mut candidates: Vec<String> = Vec::new();
 
-    let stripped: String = title_lower.chars().filter(char::is_ascii_alphabetic).collect();
+    let stripped: String = title_lower
+        .chars()
+        .filter(char::is_ascii_alphabetic)
+        .collect();
     candidates.push(stripped);
 
     let doi = doi_slug.to_string();
@@ -606,14 +620,8 @@ mod tests {
     #[test]
     fn test_can_handle_mdpi_url() {
         let resolver = MdpiResolver::new("test@example.com").unwrap();
-        assert!(resolver.can_handle(
-            "https://www.mdpi.com/2079-9292/13/13/2567",
-            InputType::Url
-        ));
-        assert!(resolver.can_handle(
-            "https://mdpi.com/2079-9292/13/13/2567",
-            InputType::Url
-        ));
+        assert!(resolver.can_handle("https://www.mdpi.com/2079-9292/13/13/2567", InputType::Url));
+        assert!(resolver.can_handle("https://mdpi.com/2079-9292/13/13/2567", InputType::Url));
     }
 
     #[test]
@@ -628,18 +636,9 @@ mod tests {
     #[test]
     fn test_cannot_handle_non_article_mdpi_url() {
         let resolver = MdpiResolver::new("test@example.com").unwrap();
-        assert!(!resolver.can_handle(
-            "https://www.mdpi.com/journal/electronics",
-            InputType::Url
-        ));
-        assert!(!resolver.can_handle(
-            "https://www.mdpi.com/about",
-            InputType::Url
-        ));
-        assert!(!resolver.can_handle(
-            "https://www.mdpi.com/search?q=test",
-            InputType::Url
-        ));
+        assert!(!resolver.can_handle("https://www.mdpi.com/journal/electronics", InputType::Url));
+        assert!(!resolver.can_handle("https://www.mdpi.com/about", InputType::Url));
+        assert!(!resolver.can_handle("https://www.mdpi.com/search?q=test", InputType::Url));
     }
 
     #[test]
@@ -656,12 +655,15 @@ mod tests {
     #[test]
     fn test_parse_mdpi_url_standard() {
         let parts = parse_mdpi_url("https://www.mdpi.com/2079-9292/13/13/2567").unwrap();
-        assert_eq!(parts, MdpiUrlParts {
-            issn: "2079-9292".to_string(),
-            volume: "13".to_string(),
-            issue: "13".to_string(),
-            article: "2567".to_string(),
-        });
+        assert_eq!(
+            parts,
+            MdpiUrlParts {
+                issn: "2079-9292".to_string(),
+                volume: "13".to_string(),
+                issue: "13".to_string(),
+                article: "2567".to_string(),
+            }
+        );
     }
 
     #[test]
@@ -711,7 +713,12 @@ mod tests {
     #[test]
     fn test_extract_article_from_doi_suffix_standard() {
         assert_eq!(
-            extract_article_from_doi_suffix("10.3390/electronics13132567", "electronics", "13", "13"),
+            extract_article_from_doi_suffix(
+                "10.3390/electronics13132567",
+                "electronics",
+                "13",
+                "13"
+            ),
             Some("2567".to_string())
         );
     }
@@ -736,7 +743,12 @@ mod tests {
     fn test_extract_article_from_doi_suffix_mismatch() {
         // Wrong volume — should fail
         assert_eq!(
-            extract_article_from_doi_suffix("10.3390/electronics13132567", "electronics", "14", "13"),
+            extract_article_from_doi_suffix(
+                "10.3390/electronics13132567",
+                "electronics",
+                "14",
+                "13"
+            ),
             None
         );
     }
@@ -843,9 +855,7 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path_regex(r"/works/10\..+"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(crossref_mdpi_works_response()),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(crossref_mdpi_works_response()))
             .mount(&mock_server)
             .await;
 
@@ -863,10 +873,19 @@ mod tests {
                     resolved.url,
                     "https://mdpi-res.com/d_attachment/electronics/electronics-13-02567/article_deploy/electronics-13-02567.pdf"
                 );
-                assert_eq!(resolved.metadata.get("title").unwrap(), "Smart Home IoT Sensors");
-                assert_eq!(resolved.metadata.get("authors").unwrap(), "Smith, Alice; Jones, Bob");
+                assert_eq!(
+                    resolved.metadata.get("title").unwrap(),
+                    "Smart Home IoT Sensors"
+                );
+                assert_eq!(
+                    resolved.metadata.get("authors").unwrap(),
+                    "Smith, Alice; Jones, Bob"
+                );
                 assert_eq!(resolved.metadata.get("year").unwrap(), "2024");
-                assert_eq!(resolved.metadata.get("doi").unwrap(), "10.3390/electronics13132567");
+                assert_eq!(
+                    resolved.metadata.get("doi").unwrap(),
+                    "10.3390/electronics13132567"
+                );
             }
             other => panic!("Expected ResolveStep::Url, got: {other:?}"),
         }
@@ -881,9 +900,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/works"))
             .and(query_param("filter", "issn:2079-9292"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(crossref_mdpi_search_response()),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(crossref_mdpi_search_response()))
             .mount(&mock_server)
             .await;
 
@@ -901,7 +918,10 @@ mod tests {
                     resolved.url,
                     "https://mdpi-res.com/d_attachment/electronics/electronics-13-02567/article_deploy/electronics-13-02567.pdf"
                 );
-                assert_eq!(resolved.metadata.get("title").unwrap(), "Smart Home IoT Sensors");
+                assert_eq!(
+                    resolved.metadata.get("title").unwrap(),
+                    "Smart Home IoT Sensors"
+                );
             }
             other => panic!("Expected ResolveStep::Url, got: {other:?}"),
         }
@@ -1017,9 +1037,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path_regex(r"/works/10\..+"))
             .and(query_param("mailto", "test@example.com"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(crossref_mdpi_works_response()),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(crossref_mdpi_works_response()))
             .mount(&mock_server)
             .await;
 
@@ -1043,23 +1061,38 @@ mod tests {
     fn test_cdn_slug_candidates_single_word_uses_title() {
         // Single-word title → lowercase title, ignores doi_slug.
         assert_eq!(cdn_slug_candidates(Some("Sensors"), "s"), vec!["sensors"]);
-        assert_eq!(cdn_slug_candidates(Some("Electronics"), "electronics"), vec!["electronics"]);
+        assert_eq!(
+            cdn_slug_candidates(Some("Electronics"), "electronics"),
+            vec!["electronics"]
+        );
         assert_eq!(cdn_slug_candidates(Some("Entropy"), "e"), vec!["entropy"]);
-        assert_eq!(cdn_slug_candidates(Some("Materials"), "ma"), vec!["materials"]);
+        assert_eq!(
+            cdn_slug_candidates(Some("Materials"), "ma"),
+            vec!["materials"]
+        );
     }
 
     #[test]
     fn test_cdn_slug_candidates_no_container_title_uses_doi_slug() {
         assert_eq!(cdn_slug_candidates(None, "s"), vec!["s"]);
-        assert_eq!(cdn_slug_candidates(None, "electronics"), vec!["electronics"]);
+        assert_eq!(
+            cdn_slug_candidates(None, "electronics"),
+            vec!["electronics"]
+        );
     }
 
     #[test]
     fn test_cdn_slug_candidates_multi_word_includes_concatenated_and_doi_slug() {
         // "Marine Drugs" → concatenated "marinedrugs" + DOI slug "md" (no override).
         let candidates = cdn_slug_candidates(Some("Marine Drugs"), "md");
-        assert_eq!(candidates[0], "marinedrugs", "first candidate must be concatenated");
-        assert!(candidates.contains(&"md".to_string()), "doi slug must be a candidate");
+        assert_eq!(
+            candidates[0], "marinedrugs",
+            "first candidate must be concatenated"
+        );
+        assert!(
+            candidates.contains(&"md".to_string()),
+            "doi slug must be a candidate"
+        );
     }
 
     #[test]

@@ -971,8 +971,7 @@ pub async fn import_cookies_from_file(
 ) -> Result<CookieImportResult, String> {
     use tauri_plugin_dialog::DialogExt;
 
-    let (tx, rx) =
-        tokio::sync::oneshot::channel::<Option<tauri_plugin_dialog::FilePath>>();
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<tauri_plugin_dialog::FilePath>>();
     app_handle
         .dialog()
         .file()
@@ -984,12 +983,10 @@ pub async fn import_cookies_from_file(
     let file_path = match rx.await.ok().flatten() {
         Some(f) => f,
         None => {
-            return Err(
-                "What: No file selected.\n\
+            return Err("What: No file selected.\n\
                  Why: The file picker was cancelled.\n\
                  Fix: Try again and select a cookies.txt or cookies.json file."
-                    .to_string(),
-            );
+                .to_string());
         }
     };
 
@@ -1022,12 +1019,7 @@ pub async fn get_cookie_status() -> Result<CookieStatus, String> {
             let domain_count = unique_domain_count(&cookies);
             let domains: Vec<String> = cookies
                 .iter()
-                .map(|c| {
-                    c.domain
-                        .strip_prefix('.')
-                        .unwrap_or(&c.domain)
-                        .to_string()
-                })
+                .map(|c| c.domain.strip_prefix('.').unwrap_or(&c.domain).to_string())
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect();
@@ -1232,8 +1224,7 @@ mod tests {
         let db = Database::new(&db_path).await.expect("test DB");
         let queue = Queue::new(db);
 
-        let result =
-            resolve_and_enqueue(&["not a url or doi at all".to_string()], &queue).await;
+        let result = resolve_and_enqueue(&["not a url or doi at all".to_string()], &queue).await;
 
         assert!(result.is_err());
         assert!(
@@ -1557,10 +1548,7 @@ mod tests {
             err.contains("What:"),
             "error should follow What/Why/Fix format, got: {err}"
         );
-        assert!(
-            err.contains("Could not parse cookie data"),
-            "got: {err}"
-        );
+        assert!(err.contains("Could not parse cookie data"), "got: {err}");
     }
 
     #[tokio::test]

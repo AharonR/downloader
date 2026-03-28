@@ -95,7 +95,10 @@ impl AcmResolver {
     fn build(s2_base_url: String) -> Result<Self, ResolveError> {
         let user_agent = standard_user_agent("acm");
         let client = build_resolver_http_client("acm", user_agent, None)?;
-        Ok(Self { client, s2_base_url })
+        Ok(Self {
+            client,
+            s2_base_url,
+        })
     }
 }
 
@@ -196,7 +199,10 @@ impl AcmResolver {
             Ok(parsed) => parsed,
             Err(e) => {
                 warn!(error = %e, doi, "Failed to parse Semantic Scholar response");
-                return Ok(ResolveStep::body_parse_failed(original_input, "Semantic Scholar"));
+                return Ok(ResolveStep::body_parse_failed(
+                    original_input,
+                    "Semantic Scholar",
+                ));
             }
         };
 
@@ -204,7 +210,9 @@ impl AcmResolver {
         let metadata = build_metadata(&paper, doi);
 
         debug!(pdf_url = %pdf_url, "Resolved ACM paper to PDF URL");
-        Ok(ResolveStep::Url(ResolvedUrl::with_metadata(pdf_url, metadata)))
+        Ok(ResolveStep::Url(ResolvedUrl::with_metadata(
+            pdf_url, metadata,
+        )))
     }
 }
 
@@ -416,10 +424,7 @@ mod tests {
     #[test]
     fn test_cannot_handle_non_doi_acm_url() {
         let resolver = AcmResolver::new().unwrap();
-        assert!(!resolver.can_handle(
-            "https://dl.acm.org/conference/chi",
-            InputType::Url
-        ));
+        assert!(!resolver.can_handle("https://dl.acm.org/conference/chi", InputType::Url));
         assert!(!resolver.can_handle("https://dl.acm.org/", InputType::Url));
     }
 
@@ -756,10 +761,7 @@ mod tests {
         let resolver = AcmResolver::with_base_url(mock_server.uri()).unwrap();
         let ctx = ResolveContext::default();
         let result = resolver
-            .resolve(
-                "https://dl.acm.org/doi/10.1145/3460418.3479327",
-                &ctx,
-            )
+            .resolve("https://dl.acm.org/doi/10.1145/3460418.3479327", &ctx)
             .await
             .unwrap();
 
@@ -800,10 +802,19 @@ mod tests {
         match result {
             ResolveStep::Url(resolved) => {
                 let m = &resolved.metadata;
-                assert_eq!(m.get("title").map(String::as_str), Some("Smart Multimodal Interaction"));
-                assert_eq!(m.get("authors").map(String::as_str), Some("Alice Smith; Bob Jones"));
+                assert_eq!(
+                    m.get("title").map(String::as_str),
+                    Some("Smart Multimodal Interaction")
+                );
+                assert_eq!(
+                    m.get("authors").map(String::as_str),
+                    Some("Alice Smith; Bob Jones")
+                );
                 assert_eq!(m.get("year").map(String::as_str), Some("2021"));
-                assert_eq!(m.get("doi").map(String::as_str), Some("10.1145/3460418.3479327"));
+                assert_eq!(
+                    m.get("doi").map(String::as_str),
+                    Some("10.1145/3460418.3479327")
+                );
                 assert_eq!(
                     m.get("source_url").map(String::as_str),
                     Some("https://doi.org/10.1145/3460418.3479327")
