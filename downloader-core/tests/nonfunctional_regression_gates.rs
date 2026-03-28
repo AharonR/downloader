@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use downloader_core::{
     Database, DatabaseOptions, DownloadEngine, EngineError, HttpClient, Queue, QueueStatus,
-    RateLimiter, RetryPolicy,
+    RateLimiter, RetryPolicy, SourceType,
 };
 use tempfile::TempDir;
 use tokio::task::JoinSet;
@@ -117,7 +117,7 @@ async fn gate_queue_throughput_regression_is_within_5_percent()
     let item_count = 600usize;
     for i in 0..item_count {
         queue
-            .enqueue(&format!("https://example.com/{i}.pdf"), "direct_url", None)
+            .enqueue(&format!("https://example.com/{i}.pdf"), SourceType::DirectUrl, None)
             .await?;
     }
 
@@ -161,7 +161,7 @@ async fn gate_retry_path_p95_regression_is_within_7_percent()
         queue
             .enqueue(
                 &format!("https://example.com/retry-heavy-{i}.pdf"),
-                "direct_url",
+                SourceType::DirectUrl,
                 None,
             )
             .await?;
@@ -223,7 +223,7 @@ async fn gate_db_busy_lock_incidence_stays_below_half_percent()
             queue
                 .enqueue(
                     &format!("https://example.com/lock-{i}.pdf"),
-                    "direct_url",
+                    SourceType::DirectUrl,
                     None,
                 )
                 .await?,
@@ -296,7 +296,7 @@ async fn gate_download_latency_p95_regression_is_within_10_percent()
         let (queue, _db_dir, output_dir) =
             setup_download_bench(&format!("latency_bench_{i}.db")).await?;
 
-        queue.enqueue(&url, "direct_url", None).await?;
+        queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
         let start = Instant::now();
         let stats = engine
@@ -349,7 +349,7 @@ async fn gate_download_throughput_regression_is_within_10_percent()
     let base_url = mock_server.uri();
     for i in 0..DOWNLOAD_BENCH_THROUGHPUT_FILES {
         queue
-            .enqueue(&format!("{base_url}/bench-{i}.bin"), "direct_url", None)
+            .enqueue(&format!("{base_url}/bench-{i}.bin"), SourceType::DirectUrl, None)
             .await?;
     }
 

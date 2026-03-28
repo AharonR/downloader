@@ -3,6 +3,8 @@ use std::time::{Duration, Instant};
 
 use tracing::{debug, info, warn};
 
+use crate::queue::SourceType;
+
 use crate::generate_sidecar;
 use crate::queue::{DownloadAttemptStatus, NewDownloadAttempt, QueueItem, QueueRepository};
 
@@ -92,11 +94,11 @@ pub(super) async fn persist_download_success(
         original_input: Some(original_input),
         http_status: None,
         duration_ms: Some(elapsed_ms_i64(attempt_started.elapsed())),
-        title: item.meta_title.as_deref(),
-        authors: item.meta_authors.as_deref(),
+        title: item.title.as_deref(),
+        authors: item.authors.as_deref(),
         doi: doi.as_deref(),
         topics: item.topics.as_deref(),
-        parse_confidence: item.parse_confidence.as_deref(),
+        parse_confidence: item.parse_confidence_raw.as_deref(),
         parse_confidence_factors: item.parse_confidence_factors.as_deref(),
     };
     if let Err(error) = queue.log_download_attempt(&attempt).await {
@@ -157,11 +159,11 @@ pub(super) async fn persist_download_failure(
         original_input: Some(original_input),
         http_status: extract_http_status(error),
         duration_ms: Some(elapsed_ms_i64(attempt_started.elapsed())),
-        title: item.meta_title.as_deref(),
-        authors: item.meta_authors.as_deref(),
+        title: item.title.as_deref(),
+        authors: item.authors.as_deref(),
         doi: doi.as_deref(),
         topics: item.topics.as_deref(),
-        parse_confidence: item.parse_confidence.as_deref(),
+        parse_confidence: item.parse_confidence_raw.as_deref(),
         parse_confidence_factors: item.parse_confidence_factors.as_deref(),
     };
     if let Err(history_error) = queue.log_download_attempt(&attempt).await {
@@ -187,7 +189,7 @@ fn elapsed_ms_i64(duration: Duration) -> i64 {
 
 fn extract_attempt_doi(item: &QueueItem) -> Option<String> {
     if let Some(doi) = item
-        .meta_doi
+        .doi
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -195,7 +197,7 @@ fn extract_attempt_doi(item: &QueueItem) -> Option<String> {
         return Some(doi.to_string());
     }
 
-    if item.source_type != "doi" {
+    if item.source_type() != SourceType::Doi {
         return None;
     }
 

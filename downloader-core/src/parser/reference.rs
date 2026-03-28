@@ -65,6 +65,19 @@ impl fmt::Display for Confidence {
     }
 }
 
+impl std::str::FromStr for Confidence {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "high" => Ok(Self::High),
+            "medium" => Ok(Self::Medium),
+            "low" => Ok(Self::Low),
+            _ => Err(format!("invalid confidence level: {s}")),
+        }
+    }
+}
+
 /// Deterministic factors used to compute reference confidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ConfidenceFactors {

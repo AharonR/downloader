@@ -11,24 +11,31 @@ use super::persistence::{persist_download_failure, persist_download_success};
 use super::{DownloadStats, HttpClient, RateLimiter, RetryPolicy, download_with_retry};
 use crate::{RobotsCache, RobotsDecision, origin_for_robots};
 
-#[allow(clippy::too_many_arguments)]
+/// Per-task configuration extracted from [`super::QueueProcessingOptions`] and engine settings.
+///
+/// Groups the configuration arguments for [`process_download_item`] into a single struct,
+/// keeping the function signature manageable as options grow.
+pub(super) struct DownloadTaskConfig {
+    pub retry_policy: RetryPolicy,
+    pub rate_limiter: Arc<RateLimiter>,
+    pub project_key: String,
+    pub generate_sidecars: bool,
+    pub check_robots: bool,
+    pub robots_cache: Option<Arc<RobotsCache>>,
+}
+
 pub(super) async fn process_download_item(
     queue: Queue,
     client: HttpClient,
     item: QueueItem,
     output_dir: PathBuf,
-    retry_policy: RetryPolicy,
     stats: Arc<DownloadStats>,
-    rate_limiter: Arc<RateLimiter>,
-    project_key: String,
-    generate_sidecars: bool,
-    check_robots: bool,
-    robots_cache: Option<Arc<RobotsCache>>,
+    config: DownloadTaskConfig,
 ) {
     let attempt_started = Instant::now();
 
-    if check_robots {
-        if let Some(ref cache) = robots_cache {
+    if config.check_robots {
+        if let Some(ref cache) = config.robots_cache {
             if let Some(origin) = origin_for_robots(&item.url) {
                 match cache.check_allowed(&item.url, &origin, &client).await {
                     Ok(RobotsDecision::Disallowed) => {
@@ -56,9 +63,9 @@ pub(super) async fn process_download_item(
         &client,
         &item,
         &output_dir,
-        &retry_policy,
+        &config.retry_policy,
         &stats,
-        &rate_limiter,
+        &config.rate_limiter,
     )
     .await;
 
@@ -68,9 +75,9 @@ pub(super) async fn process_download_item(
                 &queue,
                 &item,
                 &download,
-                &project_key,
+                &config.project_key,
                 attempt_started,
-                generate_sidecars,
+                config.generate_sidecars,
                 stats.as_ref(),
             )
             .await;
@@ -81,7 +88,7 @@ pub(super) async fn process_download_item(
                 &item,
                 &error,
                 attempts,
-                &project_key,
+                &config.project_key,
                 attempt_started,
                 stats.as_ref(),
             )

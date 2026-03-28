@@ -28,6 +28,9 @@ impl ResolverRegistry {
     }
 
     /// Registers a resolver with the registry.
+    ///
+    /// Resolvers are inserted in priority order so that `find_handlers` can
+    /// filter without re-sorting on every call.
     #[tracing::instrument(skip(self, resolver), fields(resolver_name))]
     pub fn register(&mut self, resolver: Box<dyn Resolver>) {
         tracing::Span::current().record("resolver_name", resolver.name());
@@ -36,7 +39,39 @@ impl ResolverRegistry {
             priority = ?resolver.priority(),
             "Registering resolver"
         );
-        self.resolvers.push(resolver);
+        let priority = resolver.priority();
+        let pos = self
+            .resolvers
+            .partition_point(|r| r.priority() <= priority);
+        self.resolvers.insert(pos, resolver);
+    }
+
+    /// Registers a resolver from a fallible constructor, logging a warning on failure.
+    ///
+    /// This is a convenience wrapper for the common pattern of constructing a resolver
+    /// that may fail (e.g., due to missing configuration or HTTP client setup) and
+    /// continuing with the remaining resolvers if one is unavailable.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// registry.try_register("ArxivResolver", ArxivResolver::new());
+    /// ```
+    pub fn try_register<E: std::fmt::Display>(
+        &mut self,
+        name: &str,
+        result: Result<Box<dyn Resolver>, E>,
+    ) {
+        match result {
+            Ok(resolver) => self.register(resolver),
+            Err(error) => {
+                tracing::warn!(
+                    resolver = name,
+                    error = %error,
+                    "resolver unavailable; continuing with remaining resolvers"
+                );
+            }
+        }
     }
 
     /// Returns the number of registered resolvers.
@@ -51,21 +86,19 @@ impl ResolverRegistry {
         self.resolvers.is_empty()
     }
 
-    /// Returns all resolvers that can handle the given input, sorted by priority.
+    /// Returns all resolvers that can handle the given input, in priority order.
     ///
     /// Resolvers are returned in priority order: Specialized first, then General,
     /// then Fallback. Within the same priority level, registration order is preserved.
+    /// Priority order is maintained by `register()`, so no sort is needed here.
     #[must_use]
     #[tracing::instrument(skip(self), fields(input_type = ?input_type))]
     pub fn find_handlers(&self, input: &str, input_type: InputType) -> Vec<&dyn Resolver> {
-        let mut handlers: Vec<&dyn Resolver> = self
-            .resolvers
+        self.resolvers
             .iter()
             .filter(|r| r.can_handle(input, input_type))
             .map(AsRef::as_ref)
-            .collect();
-        handlers.sort_by_key(|r| r.priority());
-        handlers
+            .collect()
     }
 
     /// Resolves input to a final downloadable URL through the resolution loop.

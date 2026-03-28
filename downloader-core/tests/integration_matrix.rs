@@ -6,7 +6,8 @@
 use std::sync::Arc;
 
 use downloader_core::{
-    Database, DownloadEngine, HttpClient, Queue, QueueStatus, RateLimiter, RetryPolicy, parse_input,
+    Database, DownloadEngine, HttpClient, Queue, QueueStatus, RateLimiter, RetryPolicy, SourceType,
+    parse_input,
 };
 use tempfile::TempDir;
 use wiremock::matchers::{method, path};
@@ -38,7 +39,7 @@ async fn test_integration_engine_queue_concurrent_status_updates() {
     for i in 0..15 {
         let url = format!("{}/f{}", mock_server.uri(), i);
         queue
-            .enqueue(&url, "direct_url", None)
+            .enqueue(&url, SourceType::DirectUrl, None)
             .await
             .expect("enqueue");
     }
@@ -74,7 +75,7 @@ async fn test_integration_db_queue_wal_concurrent() {
         queue
             .enqueue(
                 &format!("https://example.com/db-{}.pdf", i),
-                "direct_url",
+                SourceType::DirectUrl,
                 None,
             )
             .await
@@ -134,7 +135,7 @@ async fn test_integration_failure_recovery_retry_then_success() {
     let (queue, _temp) = setup_db_queue().await;
     let url = format!("{}/recover", mock_server.uri());
     queue
-        .enqueue(&url, "direct_url", None)
+        .enqueue(&url, SourceType::DirectUrl, None)
         .await
         .expect("enqueue");
 

@@ -1,7 +1,7 @@
 //! Phase 1 (P0): DB migration failures, backup/restore.
 //! Re-open DB after normal close; verify queue state persists.
 
-use downloader_core::{Database, Queue, QueueStatus};
+use downloader_core::{Database, Queue, QueueStatus, SourceType};
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -13,7 +13,7 @@ async fn p0_queue_persists_after_reopen() {
         let db = Database::new(&db_path).await.expect("create db");
         let queue = Queue::new(db);
         let id = queue
-            .enqueue("https://example.com/persist.pdf", "direct_url", None)
+            .enqueue("https://example.com/persist.pdf", SourceType::DirectUrl, None)
             .await
             .expect("enqueue");
         drop(queue);

@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use crate::queue::SourceType;
+
 /// Type of input detected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputType {
@@ -18,17 +20,17 @@ pub enum InputType {
 }
 
 impl InputType {
-    /// Returns the queue source type label used by queue persistence.
+    /// Returns the typed [`SourceType`] used by queue persistence.
     ///
-    /// `BibTex` uses an explicit `bibtex` source label so downstream routing
+    /// `BibTex` uses an explicit `BibTex` source type so downstream routing
     /// and logging can preserve original parser classification.
     #[must_use]
-    pub fn queue_source_type(self) -> &'static str {
+    pub fn queue_source_type(self) -> SourceType {
         match self {
-            Self::Url => "direct_url",
-            Self::Doi => "doi",
-            Self::Reference | Self::Unknown => "reference",
-            Self::BibTex => "bibtex",
+            Self::Url => SourceType::DirectUrl,
+            Self::Doi => SourceType::Doi,
+            Self::Reference | Self::Unknown => SourceType::Reference,
+            Self::BibTex => SourceType::BibTex,
         }
     }
 }
@@ -246,11 +248,11 @@ mod tests {
 
     #[test]
     fn test_input_type_queue_source_type_mapping() {
-        assert_eq!(InputType::Url.queue_source_type(), "direct_url");
-        assert_eq!(InputType::Doi.queue_source_type(), "doi");
-        assert_eq!(InputType::Reference.queue_source_type(), "reference");
-        assert_eq!(InputType::BibTex.queue_source_type(), "bibtex");
-        assert_eq!(InputType::Unknown.queue_source_type(), "reference");
+        assert_eq!(InputType::Url.queue_source_type(), SourceType::DirectUrl);
+        assert_eq!(InputType::Doi.queue_source_type(), SourceType::Doi);
+        assert_eq!(InputType::Reference.queue_source_type(), SourceType::Reference);
+        assert_eq!(InputType::BibTex.queue_source_type(), SourceType::BibTex);
+        assert_eq!(InputType::Unknown.queue_source_type(), SourceType::Reference);
     }
 
     #[test]

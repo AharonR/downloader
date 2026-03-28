@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use downloader_core::{
-    Database, DownloadEngine, HttpClient, Queue, QueueStatus, RateLimiter, RetryPolicy,
+    Database, DownloadEngine, HttpClient, Queue, QueueStatus, RateLimiter, RetryPolicy, SourceType,
 };
 use tempfile::TempDir;
 use wiremock::matchers::{method, path};
@@ -38,7 +38,7 @@ async fn p1_many_download_cycles_complete_without_panic() {
     let cycles = 30_usize;
     for i in 0..cycles {
         let id = queue
-            .enqueue(&url, "direct_url", None)
+            .enqueue(&url, SourceType::DirectUrl, None)
             .await
             .expect("enqueue");
         let output_dir = TempDir::new().expect("temp dir");

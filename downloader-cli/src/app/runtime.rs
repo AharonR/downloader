@@ -212,7 +212,7 @@ pub(crate) async fn run_downloader() -> Result<ProcessExit> {
     let total_queued = pending_items.len();
     let uncertain_references_in_run = pending_items
         .iter()
-        .filter(|item| item.parse_confidence.as_deref() == Some("low"))
+        .filter(|item| item.parse_confidence() == Some(downloader_core::Confidence::Low))
         .count();
 
     if total_queued == 0 {

@@ -1,7 +1,7 @@
 //! Phase 1 (P0): DB transaction rollback edge cases.
 //! Assert queue/DB state remains consistent when operations fail or are rolled back.
 
-use downloader_core::{Database, Queue, QueueError, QueueStatus};
+use downloader_core::{Database, Queue, QueueError, QueueStatus, SourceType};
 use tempfile::TempDir;
 
 async fn setup_queue() -> (Queue, TempDir) {
@@ -42,11 +42,11 @@ async fn p0_dequeue_after_mark_completed_other_items_unchanged() {
     let (queue, _temp) = setup_queue().await;
 
     let id1 = queue
-        .enqueue("https://example.com/a.pdf", "direct_url", None)
+        .enqueue("https://example.com/a.pdf", SourceType::DirectUrl, None)
         .await
         .expect("enqueue");
     let id2 = queue
-        .enqueue("https://example.com/b.pdf", "direct_url", None)
+        .enqueue("https://example.com/b.pdf", SourceType::DirectUrl, None)
         .await
         .expect("enqueue");
 

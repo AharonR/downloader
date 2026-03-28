@@ -153,7 +153,7 @@ fn derive_sidecar_path(downloaded_path: &Path) -> PathBuf {
 
 /// Builds a `ScholarlyArticle` from `QueueItem` metadata.
 fn build_scholarly_article(item: &QueueItem) -> ScholarlyArticle {
-    let author = item.meta_authors.as_deref().and_then(|s| {
+    let author = item.authors.as_deref().and_then(|s| {
         let authors = parse_authors(s);
         if authors.is_empty() {
             None
@@ -163,7 +163,7 @@ fn build_scholarly_article(item: &QueueItem) -> ScholarlyArticle {
     });
 
     let identifier = item
-        .meta_doi
+        .doi
         .as_deref()
         .filter(|doi| !doi.is_empty())
         .map(|doi| DoiIdentifier {
@@ -175,9 +175,9 @@ fn build_scholarly_article(item: &QueueItem) -> ScholarlyArticle {
     ScholarlyArticle {
         context: "https://schema.org",
         type_: "ScholarlyArticle",
-        name: item.meta_title.clone().filter(|s| !s.is_empty()),
+        name: item.title.clone().filter(|s| !s.is_empty()),
         author,
-        date_published: item.meta_year.clone().filter(|s| !s.is_empty()),
+        date_published: item.year.clone().filter(|s| !s.is_empty()),
         identifier,
         url: Some(item.url.clone()),
     }
@@ -305,19 +305,19 @@ mod tests {
         QueueItem {
             id: 1,
             url: url.to_string(),
-            source_type: "direct_url".to_string(),
+            source_type_str: "direct_url".to_string(),
             original_input: None,
             status_str: "completed".to_string(),
             priority: 0,
             retry_count: 0,
             last_error: None,
             suggested_filename: None,
-            meta_title: title.map(String::from),
-            meta_authors: authors.map(String::from),
-            meta_year: year.map(String::from),
-            meta_doi: doi.map(String::from),
+            title: title.map(String::from),
+            authors: authors.map(String::from),
+            year: year.map(String::from),
+            doi: doi.map(String::from),
             topics: None,
-            parse_confidence: None,
+            parse_confidence_raw: None,
             parse_confidence_factors: None,
             saved_path: saved_path.map(String::from),
             bytes_downloaded: 0,

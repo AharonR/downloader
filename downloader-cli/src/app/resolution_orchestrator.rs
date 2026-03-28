@@ -205,7 +205,7 @@ pub(crate) async fn run_resolution(
             year: resolved.metadata.get("year").cloned(),
             doi: resolved.metadata.get("doi").cloned(),
             topics,
-            parse_confidence: reference_confidence.map(|details| details.level.to_string()),
+            parse_confidence: reference_confidence.map(|details| details.level),
             parse_confidence_factors: reference_confidence
                 .and_then(|details| serde_json::to_string(&details.factors).ok()),
         };
@@ -220,7 +220,7 @@ pub(crate) async fn run_resolution(
             .await?;
         debug!(
             input_type = %item.input_type,
-            source_type = item.input_type.queue_source_type(),
+            source_type = %item.input_type.queue_source_type(),
             "Enqueued parsed item"
         );
     }

@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use downloader_core::{
     Database, DownloadEngine, HttpClient, Queue, QueueProcessingOptions, RateLimiter, RetryPolicy,
+    SourceType,
 };
 use tempfile::TempDir;
 use wiremock::matchers::{method, path};
@@ -40,7 +41,7 @@ async fn p1_interruptible_process_respects_cancel() {
 
     let url = format!("{}/slow", mock_server.uri());
     let _id = queue
-        .enqueue(&url, "direct_url", None)
+        .enqueue(&url, SourceType::DirectUrl, None)
         .await
         .expect("enqueue");
 

@@ -1,7 +1,7 @@
 //! Phase 5 (P1): SIGKILL during downloads, partial files.
 //! Restart and assert queue state and resumable work.
 
-use downloader_core::{Database, Queue, QueueStatus};
+use downloader_core::{Database, Queue, QueueStatus, SourceType};
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -14,7 +14,7 @@ async fn p1_reopen_after_drop_queue_resumable() {
         let db = Database::new(&db_path).await.expect("db");
         let queue = Queue::new(db);
         let _ = queue
-            .enqueue("https://example.com/resume.pdf", "direct_url", None)
+            .enqueue("https://example.com/resume.pdf", SourceType::DirectUrl, None)
             .await
             .expect("enqueue");
         let item = queue.dequeue().await.expect("dequeue").expect("one item");

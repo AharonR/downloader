@@ -124,7 +124,7 @@ impl QueueRepository for Queue {
 mod tests {
     use super::*;
     use crate::Database;
-    use crate::queue::{DownloadAttemptStatus, NewDownloadAttempt, QueueStatus};
+    use crate::queue::{DownloadAttemptStatus, NewDownloadAttempt, QueueStatus, SourceType};
 
     async fn pending_count(repo: &impl QueueRepository) -> Result<i64> {
         repo.count_by_status(QueueStatus::Pending).await
@@ -136,7 +136,7 @@ mod tests {
         let queue = Queue::new(db);
 
         queue
-            .enqueue("https://example.com/repo-seam.pdf", "direct_url", None)
+            .enqueue("https://example.com/repo-seam.pdf", SourceType::DirectUrl, None)
             .await
             .unwrap();
 

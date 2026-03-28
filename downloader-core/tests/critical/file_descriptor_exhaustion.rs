@@ -5,7 +5,7 @@
 #[tokio::test]
 #[ignore] // lowers RLIMIT_NOFILE; run with --ignored in nightly
 async fn p1_low_fd_limit_graceful_or_skip() {
-    use downloader_core::{Database, Queue};
+    use downloader_core::{Database, Queue, SourceType};
     use tempfile::TempDir;
 
     let guard = crate::support::critical_utils::exhausted_file_descriptors(10);
@@ -26,7 +26,7 @@ async fn p1_low_fd_limit_graceful_or_skip() {
         if queue
             .enqueue(
                 &format!("https://example.com/fd-{}.pdf", i),
-                "direct_url",
+                SourceType::DirectUrl,
                 None,
             )
             .await

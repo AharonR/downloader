@@ -5,6 +5,55 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use crate::parser::Confidence;
+
+/// How a queue item entered the download queue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceType {
+    /// Plain HTTP/HTTPS URL provided directly by the user.
+    DirectUrl,
+    /// Digital Object Identifier (DOI) that was resolved to a URL.
+    Doi,
+    /// Bibliographic reference string that was resolved to a URL.
+    Reference,
+    /// BibTeX entry whose DOI or URL was resolved.
+    BibTex,
+}
+
+impl SourceType {
+    /// Returns the database string representation.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::DirectUrl => "direct_url",
+            Self::Doi => "doi",
+            Self::Reference => "reference",
+            Self::BibTex => "bibtex",
+        }
+    }
+}
+
+impl fmt::Display for SourceType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl std::str::FromStr for SourceType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "direct_url" => Ok(Self::DirectUrl),
+            "doi" => Ok(Self::Doi),
+            "reference" => Ok(Self::Reference),
+            "bibtex" => Ok(Self::BibTex),
+            _ => Err(format!("invalid source type: {s}")),
+        }
+    }
+}
+
 /// Status of a queue item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -69,11 +118,10 @@ pub struct QueueMetadata {
     pub topics: Option<Vec<String>>,
     /// Parser confidence classification for reference-derived inputs.
     ///
-    /// Valid values: `"high"`, `"medium"`, `"low"`, or `None` when the item
-    /// was not derived from a reference string (e.g. plain URL inputs).
-    /// Populated by [`crate::extract_reference_confidence`] during input parsing
-    /// and stored verbatim in the queue database for history queries.
-    pub parse_confidence: Option<String>,
+    /// `None` when the item was not derived from a reference string (e.g. plain
+    /// URL inputs). Populated by [`crate::extract_reference_confidence`] during
+    /// input parsing and serialized via [`Confidence::to_string`] before storage.
+    pub parse_confidence: Option<Confidence>,
     /// JSON payload of parser confidence factors for reference-derived inputs.
     ///
     /// Stores a JSON object whose keys are factor names (e.g. `"has_doi"`,
@@ -91,13 +139,16 @@ pub struct QueueItem {
     pub id: i64,
     /// The resolved URL to download.
     pub url: String,
-    /// How this item entered the queue (`direct_url`, doi, reference, bibtex).
-    pub source_type: String,
+    /// How this item entered the queue. Use `source_type()` for the typed accessor.
+    #[sqlx(rename = "source_type")]
+    pub(crate) source_type_str: String,
     /// Original user input before resolution (e.g., DOI string).
     pub original_input: Option<String>,
     /// Current processing status (stored as text, parsed via `status()`).
+    /// Use `status()` to obtain the typed [`QueueStatus`]; direct access to this
+    /// field is intentionally restricted to crate-internal code.
     #[sqlx(rename = "status")]
-    pub status_str: String,
+    pub(crate) status_str: String,
     /// Higher priority items processed first (default 0).
     pub priority: i64,
     /// Number of retry attempts made.
@@ -107,22 +158,23 @@ pub struct QueueItem {
     /// Pre-computed preferred filename for this item.
     pub suggested_filename: Option<String>,
     /// Metadata title captured at enqueue time.
-    pub meta_title: Option<String>,
+    #[sqlx(rename = "meta_title")]
+    pub title: Option<String>,
     /// Metadata authors captured at enqueue time.
-    pub meta_authors: Option<String>,
+    #[sqlx(rename = "meta_authors")]
+    pub authors: Option<String>,
     /// Metadata year captured at enqueue time.
-    pub meta_year: Option<String>,
+    #[sqlx(rename = "meta_year")]
+    pub year: Option<String>,
     /// Metadata DOI captured at enqueue time.
-    pub meta_doi: Option<String>,
+    #[sqlx(rename = "meta_doi")]
+    pub doi: Option<String>,
     /// Extracted topics as JSON array (Story 8.1)
     pub topics: Option<String>,
-    /// Parser confidence classification for reference-derived queue items.
-    ///
-    /// Valid values: `"high"`, `"medium"`, `"low"`, or `None` when the item
-    /// was not derived from a reference string (e.g. plain URL inputs).
-    /// Stored verbatim in the queue database; used for history queries and
-    /// UI display — not used in any download control logic.
-    pub parse_confidence: Option<String>,
+    /// Raw parser confidence string as stored in the database.
+    /// Use [`Self::parse_confidence`] for the typed accessor.
+    #[sqlx(rename = "parse_confidence")]
+    pub(crate) parse_confidence_raw: Option<String>,
     /// JSON payload of parser confidence factors for reference-derived items.
     ///
     /// Stores a JSON object whose keys are factor names (e.g. `"has_doi"`,
@@ -142,12 +194,46 @@ pub struct QueueItem {
 }
 
 impl QueueItem {
+    /// Returns the typed source type for this queue item.
+    ///
+    /// Falls back to [`SourceType::DirectUrl`] if the stored string is unrecognized.
+    #[must_use]
+    pub fn source_type(&self) -> SourceType {
+        self.source_type_str.parse().unwrap_or_else(|_| {
+            tracing::warn!(
+                item_id = self.id,
+                raw_source_type = %self.source_type_str,
+                "unrecognized source type; falling back to DirectUrl"
+            );
+            SourceType::DirectUrl
+        })
+    }
+
+    /// Returns the typed parser confidence level, if present.
+    ///
+    /// Returns `None` when this item was not derived from a reference string
+    /// (e.g. plain URL inputs) or when the stored value cannot be parsed.
+    #[must_use]
+    pub fn parse_confidence(&self) -> Option<Confidence> {
+        self.parse_confidence_raw
+            .as_deref()
+            .and_then(|s| s.parse().ok())
+    }
+
     /// Returns the parsed status enum.
     ///
-    /// Falls back to `Pending` if the status string is invalid.
+    /// Falls back to `Pending` if the status string is unrecognized, and logs a
+    /// warning so that unexpected values from the database do not go unnoticed.
     #[must_use]
     pub fn status(&self) -> QueueStatus {
-        self.status_str.parse().unwrap_or(QueueStatus::Pending)
+        self.status_str.parse().unwrap_or_else(|_| {
+            tracing::warn!(
+                item_id = self.id,
+                raw_status = %self.status_str,
+                "unrecognized queue status; falling back to Pending"
+            );
+            QueueStatus::Pending
+        })
     }
 
     /// Parses topics from JSON array string.
@@ -273,19 +359,19 @@ mod tests {
         let item = QueueItem {
             id: 1,
             url: "https://example.com".to_string(),
-            source_type: "direct_url".to_string(),
+            source_type_str: "direct_url".to_string(),
             original_input: None,
             status_str: "in_progress".to_string(),
             priority: 0,
             retry_count: 0,
             last_error: None,
             suggested_filename: None,
-            meta_title: None,
-            meta_authors: None,
-            meta_year: None,
-            meta_doi: None,
+            title: None,
+            authors: None,
+            year: None,
+            doi: None,
             topics: None,
-            parse_confidence: None,
+            parse_confidence_raw: None,
             parse_confidence_factors: None,
             saved_path: None,
             bytes_downloaded: 0,
@@ -302,19 +388,19 @@ mod tests {
         let item = QueueItem {
             id: 1,
             url: "https://example.com".to_string(),
-            source_type: "direct_url".to_string(),
+            source_type_str: "direct_url".to_string(),
             original_input: None,
             status_str: "garbage".to_string(),
             priority: 0,
             retry_count: 0,
             last_error: None,
             suggested_filename: None,
-            meta_title: None,
-            meta_authors: None,
-            meta_year: None,
-            meta_doi: None,
+            title: None,
+            authors: None,
+            year: None,
+            doi: None,
             topics: None,
-            parse_confidence: None,
+            parse_confidence_raw: None,
             parse_confidence_factors: None,
             saved_path: None,
             bytes_downloaded: 0,
@@ -331,19 +417,19 @@ mod tests {
         let item = QueueItem {
             id: 42,
             url: "https://example.com/file.pdf".to_string(),
-            source_type: "direct_url".to_string(),
+            source_type_str: "direct_url".to_string(),
             original_input: None,
             status_str: "pending".to_string(),
             priority: 0,
             retry_count: 0,
             last_error: None,
             suggested_filename: None,
-            meta_title: None,
-            meta_authors: None,
-            meta_year: None,
-            meta_doi: None,
+            title: None,
+            authors: None,
+            year: None,
+            doi: None,
             topics: None,
-            parse_confidence: None,
+            parse_confidence_raw: None,
             parse_confidence_factors: None,
             saved_path: None,
             bytes_downloaded: 0,
@@ -378,19 +464,19 @@ mod tests {
         let item = QueueItem {
             id: 1,
             url: "https://example.com".to_string(),
-            source_type: "direct_url".to_string(),
+            source_type_str: "direct_url".to_string(),
             original_input: None,
             status_str: "pending".to_string(),
             priority: 0,
             retry_count: 0,
             last_error: None,
             suggested_filename: None,
-            meta_title: None,
-            meta_authors: None,
-            meta_year: None,
-            meta_doi: None,
+            title: None,
+            authors: None,
+            year: None,
+            doi: None,
             topics: None,
-            parse_confidence: None,
+            parse_confidence_raw: None,
             parse_confidence_factors: None,
             saved_path: None,
             bytes_downloaded: 0,
@@ -408,19 +494,19 @@ mod tests {
         let item = QueueItem {
             id: 1,
             url: "https://example.com".to_string(),
-            source_type: "direct_url".to_string(),
+            source_type_str: "direct_url".to_string(),
             original_input: None,
             status_str: "pending".to_string(),
             priority: 0,
             retry_count: 0,
             last_error: None,
             suggested_filename: None,
-            meta_title: None,
-            meta_authors: None,
-            meta_year: None,
-            meta_doi: None,
+            title: None,
+            authors: None,
+            year: None,
+            doi: None,
             topics: Some(json),
-            parse_confidence: None,
+            parse_confidence_raw: None,
             parse_confidence_factors: None,
             saved_path: None,
             bytes_downloaded: 0,
@@ -436,19 +522,19 @@ mod tests {
         let item = QueueItem {
             id: 1,
             url: "https://example.com".to_string(),
-            source_type: "direct_url".to_string(),
+            source_type_str: "direct_url".to_string(),
             original_input: None,
             status_str: "pending".to_string(),
             priority: 0,
             retry_count: 0,
             last_error: None,
             suggested_filename: None,
-            meta_title: None,
-            meta_authors: None,
-            meta_year: None,
-            meta_doi: None,
+            title: None,
+            authors: None,
+            year: None,
+            doi: None,
             topics: Some("not json".to_string()),
-            parse_confidence: None,
+            parse_confidence_raw: None,
             parse_confidence_factors: None,
             saved_path: None,
             bytes_downloaded: 0,

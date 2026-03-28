@@ -3,7 +3,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use downloader_core::{Database, Queue, QueueStatus};
+use downloader_core::{Database, Queue, QueueStatus, SourceType};
 use tempfile::TempDir;
 
 async fn setup_queue() -> (Queue, TempDir) {
@@ -32,7 +32,7 @@ async fn p0_concurrent_enqueue_dequeue_no_panic() {
         handles.push(tokio::spawn(async move {
             for i in 0..ops_per_task {
                 let url = format!("https://example.com/r-{}-{}.pdf", t, i);
-                if q.enqueue(&url, "direct_url", None).await.is_ok() {
+                if q.enqueue(&url, SourceType::DirectUrl, None).await.is_ok() {
                     enc.fetch_add(1, Ordering::SeqCst);
                 }
             }
@@ -67,7 +67,7 @@ async fn p0_concurrent_status_updates_consistent() {
             let id = queue
                 .enqueue(
                     &format!("https://example.com/s-{}.pdf", i),
-                    "direct_url",
+                    SourceType::DirectUrl,
                     None,
                 )
                 .await
@@ -113,7 +113,7 @@ async fn p0_concurrent_dequeue_then_mark_completed_no_panic() {
         queue
             .enqueue(
                 &format!("https://example.com/dq-{}.pdf", i),
-                "direct_url",
+                SourceType::DirectUrl,
                 None,
             )
             .await

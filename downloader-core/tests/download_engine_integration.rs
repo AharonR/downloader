@@ -8,9 +8,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use downloader_core::{
-    Database, DownloadAttemptQuery, DownloadAttemptStatus, DownloadEngine, DownloadErrorType,
-    HttpClient, Queue, QueueMetadata, QueueProcessingOptions, QueueStatus, RateLimiter,
-    RetryPolicy,
+    Confidence, Database, DownloadAttemptQuery, DownloadAttemptStatus, DownloadEngine,
+    DownloadErrorType, HttpClient, Queue, QueueMetadata, QueueProcessingOptions, QueueStatus,
+    RateLimiter, RetryPolicy, SourceType,
 };
 use tempfile::TempDir;
 use wiremock::matchers::{method, path};
@@ -117,7 +117,7 @@ async fn test_process_queue_single_item_success() -> Result<(), Box<dyn std::err
 
     // Enqueue item
     let url = format!("{}/file.txt", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     // Process
     let client = HttpClient::new();
@@ -155,7 +155,7 @@ async fn test_process_queue_interruptible_with_options_generates_sidecar_when_en
         .await;
 
     let url = format!("{}/paper.pdf", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine_no_retry(1)?;
@@ -209,7 +209,7 @@ async fn test_process_queue_interruptible_with_options_skips_sidecar_when_disabl
         .await;
 
     let url = format!("{}/paper-disabled.pdf", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine_no_retry(1)?;
@@ -264,14 +264,14 @@ async fn test_process_queue_success_writes_download_log_row()
         year: Some("2026".to_string()),
         doi: Some("10.1234/logged".to_string()),
         topics: None,
-        parse_confidence: Some("low".to_string()),
+        parse_confidence: Some(Confidence::Low),
         parse_confidence_factors: Some(
             r#"{"has_authors":false,"has_year":true,"has_title":false,"author_count":0}"#
                 .to_string(),
         ),
     };
     queue
-        .enqueue_with_metadata(&url, "doi", Some("10.1234/logged"), Some(&metadata))
+        .enqueue_with_metadata(&url, SourceType::Doi, Some("10.1234/logged"), Some(&metadata))
         .await?;
 
     let client = HttpClient::new();
@@ -324,7 +324,7 @@ async fn test_process_queue_single_item_failure() -> Result<(), Box<dyn std::err
 
     // Enqueue item
     let url = format!("{}/not-found.txt", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     // Process
     let client = HttpClient::new();
@@ -362,7 +362,7 @@ async fn test_process_queue_failure_writes_download_log_row()
         .await;
 
     let url = format!("{}/logged-failure.pdf", mock_server.uri());
-    queue.enqueue(&url, "direct_url", None).await?;
+    queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine_no_retry(1)?;
@@ -435,14 +435,14 @@ async fn test_process_queue_failure_propagates_parse_confidence_to_download_log(
         year: Some("2026".to_string()),
         doi: None,
         topics: None,
-        parse_confidence: Some("low".to_string()),
+        parse_confidence: Some(Confidence::Low),
         parse_confidence_factors: Some(
             r#"{"has_authors":false,"has_year":true,"has_title":false,"author_count":0}"#
                 .to_string(),
         ),
     };
     queue
-        .enqueue_with_metadata(&url, "reference", Some("Weak reference"), Some(&metadata))
+        .enqueue_with_metadata(&url, SourceType::Reference, Some("Weak reference"), Some(&metadata))
         .await?;
 
     let client = HttpClient::new();
@@ -480,7 +480,7 @@ async fn test_process_queue_failure_auth_classification() -> Result<(), Box<dyn 
         .await;
 
     let url = format!("{}/auth-required.pdf", mock_server.uri());
-    queue.enqueue(&url, "direct_url", None).await?;
+    queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine_no_retry(1)?;
@@ -513,7 +513,7 @@ async fn test_process_queue_failure_network_classification()
     let queue = Queue::new(db);
 
     let url = "http://127.0.0.1:1/network-failure.pdf";
-    queue.enqueue(url, "direct_url", None).await?;
+    queue.enqueue(url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine_no_retry(1)?;
@@ -547,7 +547,7 @@ async fn test_process_queue_failure_persists_retry_count_and_last_retry_at()
         .await;
 
     let url = format!("{}/retry-fail.pdf", mock_server.uri());
-    queue.enqueue(&url, "direct_url", None).await?;
+    queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let retry_policy = RetryPolicy::new(2, Duration::from_millis(1), Duration::from_millis(1), 1.0);
@@ -588,7 +588,7 @@ async fn test_process_queue_failure_preserves_original_input_for_doi()
 
     let url = format!("{}/doi-failure.pdf", mock_server.uri());
     queue
-        .enqueue(&url, "doi", Some("10.4242/original-doi"))
+        .enqueue(&url, SourceType::Doi, Some("10.4242/original-doi"))
         .await?;
 
     let client = HttpClient::new();
@@ -647,13 +647,13 @@ async fn test_process_queue_mixed_success_and_failure() -> Result<(), Box<dyn st
 
     for i in 1..=3 {
         let url = format!("{}/success{}.txt", mock_server.uri(), i);
-        let id = queue.enqueue(&url, "direct_url", None).await?;
+        let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
         success_ids.push(id);
     }
 
     for i in 1..=2 {
         let url = format!("{}/fail{}.txt", mock_server.uri(), i);
-        let id = queue.enqueue(&url, "direct_url", None).await?;
+        let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
         fail_ids.push(id);
     }
 
@@ -765,7 +765,7 @@ async fn test_semaphore_limits_concurrent_downloads() -> Result<(), Box<dyn std:
     // Enqueue 10 items to ensure we'd hit the limit with enough headroom
     for i in 0..10 {
         let url = format!("{}/file{}.txt", mock_server.uri(), i);
-        queue.enqueue(&url, "direct_url", None).await?;
+        queue.enqueue(&url, SourceType::DirectUrl, None).await?;
     }
 
     // Create engine with concurrency limit of 3 (no retry to keep test fast)
@@ -831,9 +831,9 @@ async fn test_one_download_failure_does_not_affect_others() -> Result<(), Box<dy
     let success1_url = format!("{}/success1.txt", mock_server.uri());
     let success2_url = format!("{}/success2.txt", mock_server.uri());
 
-    let fail_id = queue.enqueue(&fail_url, "direct_url", None).await?;
-    let success1_id = queue.enqueue(&success1_url, "direct_url", None).await?;
-    let success2_id = queue.enqueue(&success2_url, "direct_url", None).await?;
+    let fail_id = queue.enqueue(&fail_url, SourceType::DirectUrl, None).await?;
+    let success1_id = queue.enqueue(&success1_url, SourceType::DirectUrl, None).await?;
+    let success2_id = queue.enqueue(&success2_url, SourceType::DirectUrl, None).await?;
 
     // Process - use 404 for fail so it doesn't retry
     let client = HttpClient::new();
@@ -888,19 +888,19 @@ async fn test_all_items_reach_terminal_state() -> Result<(), Box<dyn std::error:
 
     // Enqueue items
     let id1 = queue
-        .enqueue(&format!("{}/ok.txt", mock_server.uri()), "direct_url", None)
+        .enqueue(&format!("{}/ok.txt", mock_server.uri()), SourceType::DirectUrl, None)
         .await?;
     let id2 = queue
         .enqueue(
             &format!("{}/not-found.txt", mock_server.uri()),
-            "direct_url",
+            SourceType::DirectUrl,
             None,
         )
         .await?;
     let id3 = queue
         .enqueue(
             &format!("{}/forbidden.txt", mock_server.uri()),
-            "direct_url",
+            SourceType::DirectUrl,
             None,
         )
         .await?;
@@ -958,7 +958,7 @@ async fn test_status_updates_dont_interfere_with_each_other()
     let mut ids = Vec::new();
     for i in 0..5 {
         let url = format!("{}/item{}.txt", mock_server.uri(), i);
-        let id = queue.enqueue(&url, "direct_url", None).await?;
+        let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
         ids.push(id);
     }
 
@@ -1013,7 +1013,7 @@ async fn test_retry_succeeds_after_transient_failure() -> Result<(), Box<dyn std
 
     // Enqueue item
     let url = format!("{}/paper.pdf", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     // Process with retry enabled
     let client = HttpClient::new();
@@ -1051,7 +1051,7 @@ async fn test_permanent_error_does_not_retry() -> Result<(), Box<dyn std::error:
         .await;
 
     let url = format!("{}/not-found.pdf", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine(10)?;
@@ -1086,7 +1086,7 @@ async fn test_401_does_not_retry() -> Result<(), Box<dyn std::error::Error>> {
         .await;
 
     let url = format!("{}/protected.pdf", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine(10)?;
@@ -1127,7 +1127,7 @@ async fn test_403_does_not_retry() -> Result<(), Box<dyn std::error::Error>> {
         .await;
 
     let url = format!("{}/forbidden.pdf", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine(10)?;
@@ -1174,7 +1174,7 @@ async fn test_429_triggers_retry_with_backoff() -> Result<(), Box<dyn std::error
         .await;
 
     let url = format!("{}/rate-limited.pdf", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine(10)?;
@@ -1219,7 +1219,7 @@ async fn test_429_respects_retry_after_header() -> Result<(), Box<dyn std::error
         .await;
 
     let url = format!("{}/retry-after.pdf", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine(10)?;
@@ -1264,7 +1264,7 @@ async fn test_max_retries_exhausted_marks_item_failed() -> Result<(), Box<dyn st
         .await;
 
     let url = format!("{}/always-503.pdf", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     // Use policy with 2 max attempts (1 initial + 1 retry)
@@ -1302,7 +1302,7 @@ async fn test_retry_count_persisted_in_database() -> Result<(), Box<dyn std::err
         .await;
 
     let url = format!("{}/fail.pdf", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     // 3 max attempts means 2 retries
@@ -1345,7 +1345,7 @@ async fn test_rate_limiter_delays_same_domain_requests() -> Result<(), Box<dyn s
     // Enqueue 3 items to same domain
     for i in 1..=3 {
         let url = format!("{}/file{}.txt", mock_server.uri(), i);
-        queue.enqueue(&url, "direct_url", None).await?;
+        queue.enqueue(&url, SourceType::DirectUrl, None).await?;
     }
 
     let client = HttpClient::new();
@@ -1399,7 +1399,7 @@ async fn test_rate_limiter_disabled_allows_fast_parallel() -> Result<(), Box<dyn
     // Enqueue 3 items (same domain but rate limiting disabled)
     for i in 1..=3 {
         let url = format!("{}/fast{}.txt", mock_server.uri(), i);
-        queue.enqueue(&url, "direct_url", None).await?;
+        queue.enqueue(&url, SourceType::DirectUrl, None).await?;
     }
 
     let client = HttpClient::new();
@@ -1451,7 +1451,7 @@ async fn test_interrupt_stops_claiming_new_work() -> Result<(), Box<dyn std::err
     // Enqueue 10 items
     for i in 0..10 {
         let url = format!("{}/file{}.txt", mock_server.uri(), i);
-        queue.enqueue(&url, "direct_url", None).await?;
+        queue.enqueue(&url, SourceType::DirectUrl, None).await?;
     }
 
     let client = HttpClient::new();
@@ -1507,7 +1507,7 @@ async fn test_interrupt_flag_before_processing_returns_immediately()
 
     for i in 0..5 {
         let url = format!("{}/file{}.txt", mock_server.uri(), i);
-        queue.enqueue(&url, "direct_url", None).await?;
+        queue.enqueue(&url, SourceType::DirectUrl, None).await?;
     }
 
     let client = HttpClient::new();
@@ -1558,7 +1558,7 @@ async fn test_interrupt_requeues_item_waiting_for_permit() -> Result<(), Box<dyn
     // and the second will block on semaphore acquire.
     for i in 0..3 {
         let url = format!("{}/file{}.txt", mock_server.uri(), i);
-        queue.enqueue(&url, "direct_url", None).await?;
+        queue.enqueue(&url, SourceType::DirectUrl, None).await?;
     }
 
     let client = HttpClient::new();
@@ -1613,7 +1613,7 @@ async fn test_has_active_url_detects_pending_duplicate() -> Result<(), Box<dyn s
     let queue = Queue::new(db);
 
     queue
-        .enqueue("https://example.com/paper.pdf", "direct_url", None)
+        .enqueue("https://example.com/paper.pdf", SourceType::DirectUrl, None)
         .await?;
 
     assert!(
@@ -1638,7 +1638,7 @@ async fn test_has_active_url_detects_in_progress_item() -> Result<(), Box<dyn st
     let queue = Queue::new(db);
 
     queue
-        .enqueue("https://example.com/downloading.pdf", "direct_url", None)
+        .enqueue("https://example.com/downloading.pdf", SourceType::DirectUrl, None)
         .await?;
     // Dequeue transitions the item to in_progress
     queue.dequeue().await?;
@@ -1659,7 +1659,7 @@ async fn test_has_active_url_ignores_completed_items() -> Result<(), Box<dyn std
     let queue = Queue::new(db);
 
     let id = queue
-        .enqueue("https://example.com/done.pdf", "direct_url", None)
+        .enqueue("https://example.com/done.pdf", SourceType::DirectUrl, None)
         .await?;
     queue.dequeue().await?;
     queue.mark_completed(id).await?;
@@ -1723,7 +1723,7 @@ async fn test_resume_partial_file_sends_range_request() -> Result<(), Box<dyn st
         .await;
 
     let url = format!("{}/resume.bin", mock_server.uri());
-    queue.enqueue(&url, "direct_url", None).await?;
+    queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine_no_retry(1)?;
@@ -1773,7 +1773,7 @@ async fn test_resume_server_no_range_support_restarts() -> Result<(), Box<dyn st
         .await;
 
     let url = format!("{}/norange.bin", mock_server.uri());
-    queue.enqueue(&url, "direct_url", None).await?;
+    queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine_no_retry(1)?;
@@ -1815,7 +1815,7 @@ async fn test_progress_metadata_persisted_after_download() -> Result<(), Box<dyn
         .await;
 
     let url = format!("{}/tracked.pdf", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine_no_retry(1)?;
@@ -1879,7 +1879,7 @@ async fn test_resume_with_mismatched_content_length_fails() -> Result<(), Box<dy
         .await;
 
     let url = format!("{}/integrity.bin", mock_server.uri());
-    queue.enqueue(&url, "direct_url", None).await?;
+    queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine_no_retry(1)?;
@@ -1925,7 +1925,7 @@ async fn test_login_redirect_detected_as_auth_failure() -> Result<(), Box<dyn st
         .await;
 
     let url = format!("{}/paper.pdf", mock_server.uri());
-    let id = queue.enqueue(&url, "direct_url", None).await?;
+    let id = queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine_no_retry(1)?;
@@ -1969,7 +1969,7 @@ async fn test_content_type_extension_detection_html() -> Result<(), Box<dyn std:
         .await;
 
     let url = mock_server.uri();
-    queue.enqueue(&url, "direct_url", None).await?;
+    queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine(1)?;
@@ -2016,7 +2016,7 @@ async fn test_content_type_extension_detection_json() -> Result<(), Box<dyn std:
         .await;
 
     let url = mock_server.uri();
-    queue.enqueue(&url, "direct_url", None).await?;
+    queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine(1)?;
@@ -2062,7 +2062,7 @@ async fn test_content_type_fallback_to_bin() -> Result<(), Box<dyn std::error::E
         .await;
 
     let url = mock_server.uri();
-    queue.enqueue(&url, "direct_url", None).await?;
+    queue.enqueue(&url, SourceType::DirectUrl, None).await?;
 
     let client = HttpClient::new();
     let engine = create_engine(1)?;
@@ -2116,7 +2116,7 @@ async fn test_metadata_suggested_filename_is_used_for_download_path()
         parse_confidence_factors: None,
     };
     queue
-        .enqueue_with_metadata(&url, "doi", Some("10.1000/test"), Some(&metadata))
+        .enqueue_with_metadata(&url, SourceType::Doi, Some("10.1000/test"), Some(&metadata))
         .await?;
 
     let client = HttpClient::new();
@@ -2168,7 +2168,7 @@ async fn test_metadata_duplicate_suffix_starts_at_two() -> Result<(), Box<dyn st
         parse_confidence_factors: None,
     };
     queue
-        .enqueue_with_metadata(&url, "doi", Some("10.1000/test"), Some(&metadata))
+        .enqueue_with_metadata(&url, SourceType::Doi, Some("10.1000/test"), Some(&metadata))
         .await?;
 
     let client = HttpClient::new();

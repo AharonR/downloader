@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use downloader_core::{
-    Database, DownloadEngine, HttpClient, Queue, QueueStatus, RateLimiter, RetryPolicy,
+    Database, DownloadEngine, HttpClient, Queue, QueueStatus, RateLimiter, RetryPolicy, SourceType,
 };
 use tempfile::TempDir;
 use wiremock::matchers::{method, path};
@@ -37,7 +37,7 @@ async fn p0_short_read_timeout_fails_gracefully() {
 
     let url = format!("{}/slow", mock_server.uri());
     let id = queue
-        .enqueue(&url, "direct_url", None)
+        .enqueue(&url, SourceType::DirectUrl, None)
         .await
         .expect("enqueue");
 

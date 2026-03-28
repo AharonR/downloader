@@ -15,8 +15,8 @@ use downloader_core::project::{
 use downloader_core::{
     DEFAULT_CONCURRENCY, Database, DownloadAttemptQuery, DownloadEngine, HttpClient, InputType,
     Queue, QueueMetadata, QueueStatus, RateLimiter, ResolveContext, ResolveError, RetryPolicy,
-    build_default_resolver_registry, build_preferred_filename, extract_reference_confidence,
-    load_runtime_cookie_jar, parse_input, parse_ris_content,
+    SourceType, build_default_resolver_registry, build_preferred_filename,
+    extract_reference_confidence, load_runtime_cookie_jar, parse_input, parse_ris_content,
 };
 use serde::Serialize;
 use tauri::Emitter;
@@ -355,7 +355,7 @@ async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, 
             year: resolved.metadata.get("year").cloned(),
             doi: resolved.metadata.get("doi").cloned(),
             topics: None,
-            parse_confidence: reference_confidence.map(|d| d.level.to_string()),
+            parse_confidence: reference_confidence.map(|d| d.level),
             parse_confidence_factors: reference_confidence
                 .and_then(|d| serde_json::to_string(&d.factors).ok()),
         };
@@ -1243,7 +1243,7 @@ mod tests {
         let queue = Queue::new(db);
 
         queue
-            .enqueue("https://example.com/already-queued.pdf", "direct_url", None)
+            .enqueue("https://example.com/already-queued.pdf", SourceType::DirectUrl, None)
             .await
             .expect("seed duplicate");
 
@@ -1274,7 +1274,7 @@ mod tests {
         let queue = Queue::new(db);
 
         queue
-            .enqueue("https://example.com/already-queued.pdf", "direct_url", None)
+            .enqueue("https://example.com/already-queued.pdf", SourceType::DirectUrl, None)
             .await
             .expect("seed duplicate");
 
@@ -1416,11 +1416,11 @@ mod tests {
         let queue = Queue::new(db);
 
         queue
-            .enqueue("https://a.example.com/1", "direct_url", None)
+            .enqueue("https://a.example.com/1", SourceType::DirectUrl, None)
             .await
             .unwrap();
         queue
-            .enqueue("https://b.example.com/2", "direct_url", None)
+            .enqueue("https://b.example.com/2", SourceType::DirectUrl, None)
             .await
             .unwrap();
         let enqueued = 2usize;

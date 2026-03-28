@@ -22,7 +22,7 @@
 //! let queue = Queue::new(db);
 //!
 //! // Add items to queue
-//! let id = queue.enqueue("https://example.com/paper.pdf", "direct_url", None).await?;
+//! let id = queue.enqueue("https://example.com/paper.pdf", SourceType::DirectUrl, None).await?;
 //!
 //! // Process items
 //! if let Some(item) = queue.dequeue().await? {
@@ -41,7 +41,7 @@ pub use history::{
     DownloadAttempt, DownloadAttemptQuery, DownloadAttemptStatus, DownloadErrorType,
     DownloadSearchCandidate, DownloadSearchQuery, NewDownloadAttempt,
 };
-pub use item::{QueueItem, QueueMetadata, QueueStatus};
+pub use item::{QueueItem, QueueMetadata, QueueStatus, SourceType};
 pub use repository::QueueRepository;
 
 use crate::db::Database;
@@ -87,7 +87,7 @@ impl Queue {
     /// # Arguments
     ///
     /// * `url` - The resolved URL to download
-    /// * `source_type` - How the item entered the queue (`direct_url`, doi, reference, bibtex)
+    /// * `source_type` - How the item entered the queue
     /// * `original_input` - The original user input before resolution (e.g., DOI string)
     ///
     /// # Returns
@@ -101,7 +101,7 @@ impl Queue {
     pub async fn enqueue(
         &self,
         url: &str,
-        source_type: &str,
+        source_type: SourceType,
         original_input: Option<&str>,
     ) -> Result<i64> {
         self.enqueue_with_metadata(url, source_type, original_input, None)
@@ -117,7 +117,7 @@ impl Queue {
     pub async fn enqueue_with_metadata(
         &self,
         url: &str,
-        source_type: &str,
+        source_type: SourceType,
         original_input: Option<&str>,
         metadata: Option<&QueueMetadata>,
     ) -> Result<i64> {
@@ -129,7 +129,10 @@ impl Queue {
         let topics_json = metadata
             .and_then(|m| m.topics.as_ref())
             .and_then(|t| QueueItem::serialize_topics(t));
-        let parse_confidence = metadata.and_then(|m| m.parse_confidence.as_deref());
+        let parse_confidence_str = metadata
+            .and_then(|m| m.parse_confidence)
+            .map(|c| c.to_string());
+        let parse_confidence = parse_confidence_str.as_deref();
         let parse_confidence_factors = metadata.and_then(|m| m.parse_confidence_factors.as_deref());
 
         let result = sqlx::query(
@@ -153,7 +156,7 @@ impl Queue {
               RETURNING id",
         )
         .bind(url)
-        .bind(source_type)
+        .bind(source_type.as_str())
         .bind(original_input)
         .bind(QueueStatus::Pending.as_str())
         .bind(DEFAULT_PRIORITY)
@@ -521,7 +524,7 @@ mod tests {
         let queue = Queue::new(db);
 
         let id = queue
-            .enqueue("https://example.com/doc.pdf", "direct_url", None)
+            .enqueue("https://example.com/doc.pdf", SourceType::DirectUrl, None)
             .await
             .unwrap();
         assert_eq!(id, 1);

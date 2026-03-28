@@ -550,8 +550,8 @@ pub fn render_project_index_section(session_label: &str, items: &[QueueItem]) ->
             .as_deref()
             .and_then(|path| Path::new(path).file_name().and_then(|name| name.to_str()))
             .unwrap_or("unknown");
-        let title = item.meta_title.as_deref().unwrap_or("n/a");
-        let authors = item.meta_authors.as_deref().unwrap_or("n/a");
+        let title = item.title.as_deref().unwrap_or("n/a");
+        let authors = item.authors.as_deref().unwrap_or("n/a");
 
         let _ = writeln!(
             out,
@@ -713,19 +713,19 @@ mod tests {
         QueueItem {
             id,
             url: "https://example.com/paper.pdf".to_string(),
-            source_type: "direct_url".to_string(),
+            source_type_str: "direct_url".to_string(),
             original_input: None,
             status_str: "completed".to_string(),
             priority: 0,
             retry_count: 0,
             last_error: None,
             suggested_filename: None,
-            meta_title: Some("Test Paper".to_string()),
-            meta_authors: Some("Smith, J.".to_string()),
-            meta_year: None,
-            meta_doi: None,
+            title: Some("Test Paper".to_string()),
+            authors: Some("Smith, J.".to_string()),
+            year: None,
+            doi: None,
             topics: topics.map(ToString::to_string),
-            parse_confidence: None,
+            parse_confidence_raw: None,
             parse_confidence_factors: None,
             saved_path: Some("/tmp/Climate-Research/paper.pdf".to_string()),
             bytes_downloaded: 0,

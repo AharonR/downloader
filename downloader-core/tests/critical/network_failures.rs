@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use downloader_core::{
-    Database, DownloadEngine, HttpClient, Queue, QueueStatus, RateLimiter, RetryPolicy,
+    Database, DownloadEngine, HttpClient, Queue, QueueStatus, RateLimiter, RetryPolicy, SourceType,
 };
 use tempfile::TempDir;
 use wiremock::matchers::{method, path};
@@ -34,7 +34,7 @@ async fn p0_server_error_500_retries_then_final_status() {
 
     let url = format!("{}/fail", mock_server.uri());
     let id = queue
-        .enqueue(&url, "direct_url", None)
+        .enqueue(&url, SourceType::DirectUrl, None)
         .await
         .expect("enqueue");
 
@@ -71,7 +71,7 @@ async fn p0_503_retries_then_fails_or_succeeds() {
 
     let url = format!("{}/503", mock_server.uri());
     let id = queue
-        .enqueue(&url, "direct_url", None)
+        .enqueue(&url, SourceType::DirectUrl, None)
         .await
         .expect("enqueue");
 

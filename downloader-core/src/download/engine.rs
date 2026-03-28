@@ -105,13 +105,13 @@ impl DownloadStats {
     /// Returns the number of successfully completed downloads.
     #[must_use]
     pub fn completed(&self) -> usize {
-        self.completed.load(Ordering::SeqCst)
+        self.completed.load(Ordering::Relaxed)
     }
 
     /// Returns the number of failed downloads.
     #[must_use]
     pub fn failed(&self) -> usize {
-        self.failed.load(Ordering::SeqCst)
+        self.failed.load(Ordering::Relaxed)
     }
 
     /// Returns the total number of items processed (completed + failed).
@@ -123,33 +123,39 @@ impl DownloadStats {
     /// Returns the number of retry attempts made.
     #[must_use]
     pub fn retried(&self) -> usize {
-        self.retried.load(Ordering::SeqCst)
+        self.retried.load(Ordering::Relaxed)
     }
 
     /// Returns true if queue processing was interrupted by user signal.
+    ///
+    /// Uses `Acquire` ordering so that all writes published before the
+    /// `Release` store in `set_interrupted` are visible to the reader.
     #[must_use]
     pub fn was_interrupted(&self) -> bool {
-        self.interrupted.load(Ordering::SeqCst)
+        self.interrupted.load(Ordering::Acquire)
     }
 
     /// Increments the completed counter.
     fn increment_completed(&self) {
-        self.completed.fetch_add(1, Ordering::SeqCst);
+        self.completed.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Increments the failed counter.
     fn increment_failed(&self) {
-        self.failed.fetch_add(1, Ordering::SeqCst);
+        self.failed.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Increments the retried counter.
     fn increment_retried(&self) {
-        self.retried.fetch_add(1, Ordering::SeqCst);
+        self.retried.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Marks processing as interrupted.
+    ///
+    /// Uses `Release` ordering so that readers using `Acquire` in
+    /// `was_interrupted` see a consistent view.
     fn set_interrupted(&self) {
-        self.interrupted.store(true, Ordering::SeqCst);
+        self.interrupted.store(true, Ordering::Release);
     }
 }
 
@@ -369,7 +375,7 @@ impl DownloadEngine {
 
         // Keep dequeuing until no more pending items
         loop {
-            if interrupted.load(Ordering::SeqCst) {
+            if interrupted.load(Ordering::Acquire) {
                 stats.set_interrupted();
                 break;
             }
@@ -386,7 +392,7 @@ impl DownloadEngine {
             let permit = tokio::select! {
                 biased;
                 () = async {
-                    while !interrupted.load(Ordering::SeqCst) {
+                    while !interrupted.load(Ordering::Relaxed) {
                         tokio::time::sleep(Duration::from_millis(50)).await;
                     }
                 } => {
@@ -410,12 +416,14 @@ impl DownloadEngine {
             let client = client.clone();
             let stats = Arc::clone(&stats);
             let output_dir = output_dir.to_path_buf();
-            let retry_policy = self.retry_policy.clone();
-            let rate_limiter = Arc::clone(&self.rate_limiter);
-            let project_key = project_key.clone();
-            let generate_sidecars = options.generate_sidecars;
-            let check_robots = options.check_robots;
-            let robots_cache = options.robots_cache.clone();
+            let task_config = task::DownloadTaskConfig {
+                retry_policy: self.retry_policy.clone(),
+                rate_limiter: Arc::clone(&self.rate_limiter),
+                project_key: project_key.clone(),
+                generate_sidecars: options.generate_sidecars,
+                check_robots: options.check_robots,
+                robots_cache: options.robots_cache.clone(),
+            };
 
             // Spawn download task with retry logic
             let item_id = item.id;
@@ -429,13 +437,8 @@ impl DownloadEngine {
                         client,
                         item,
                         output_dir,
-                        retry_policy,
                         stats,
-                        rate_limiter,
-                        project_key,
-                        generate_sidecars,
-                        check_robots,
-                        robots_cache,
+                        task_config,
                     )
                     .await;
                 }),
@@ -449,7 +452,7 @@ impl DownloadEngine {
         );
 
         // Wait for all tasks to complete
-        if interrupted.load(Ordering::SeqCst) {
+        if interrupted.load(Ordering::Acquire) {
             stats.set_interrupted();
             let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
             for (id, mut handle) in handles {
@@ -501,11 +504,11 @@ impl DownloadEngine {
                 let new_stats = DownloadStats::new();
                 new_stats
                     .completed
-                    .store(arc_stats.completed(), Ordering::SeqCst);
-                new_stats.failed.store(arc_stats.failed(), Ordering::SeqCst);
+                    .store(arc_stats.completed(), Ordering::Relaxed);
+                new_stats.failed.store(arc_stats.failed(), Ordering::Relaxed);
                 new_stats
                     .retried
-                    .store(arc_stats.retried(), Ordering::SeqCst);
+                    .store(arc_stats.retried(), Ordering::Relaxed);
                 if arc_stats.was_interrupted() {
                     new_stats.set_interrupted();
                 }
@@ -717,6 +720,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::queue::SourceType;
     use crate::test_support::socket_guard::start_mock_server_or_skip;
 
     /// Helper to create a default rate limiter for tests.
@@ -942,7 +946,7 @@ mod tests {
         let db = crate::Database::new_in_memory().await.unwrap();
         let queue = Queue::new(db);
         let url = format!("{}/protected.pdf", mock_server.uri());
-        queue.enqueue(&url, "direct_url", None).await.unwrap();
+        queue.enqueue(&url, SourceType::DirectUrl, None).await.unwrap();
         let dequeued = queue.dequeue().await.unwrap().unwrap();
 
         let client = HttpClient::new();
@@ -1007,7 +1011,7 @@ mod tests {
         let db = crate::Database::new_in_memory().await.unwrap();
         let queue = Queue::new(db);
         let url = format!("{}/secure.pdf", mock_server.uri());
-        queue.enqueue(&url, "direct_url", None).await.unwrap();
+        queue.enqueue(&url, SourceType::DirectUrl, None).await.unwrap();
         let dequeued = queue.dequeue().await.unwrap().unwrap();
 
         let client = HttpClient::new();

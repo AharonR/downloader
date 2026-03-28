@@ -69,7 +69,7 @@ pub use project::{
 pub use queue::{
     DownloadAttempt, DownloadAttemptQuery, DownloadAttemptStatus, DownloadErrorType,
     DownloadSearchCandidate, DownloadSearchQuery, NewDownloadAttempt, Queue, QueueError, QueueItem,
-    QueueMetadata, QueueStatus,
+    QueueMetadata, QueueStatus, SourceType,
 };
 pub use resolver::{
     AcmResolver, ArxivResolver, CrossrefResolver, DirectResolver, IeeeResolver, MdpiResolver,

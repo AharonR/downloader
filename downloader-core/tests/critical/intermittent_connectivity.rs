@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use downloader_core::{
-    Database, DownloadEngine, HttpClient, Queue, QueueStatus, RateLimiter, RetryPolicy,
+    Database, DownloadEngine, HttpClient, Queue, QueueStatus, RateLimiter, RetryPolicy, SourceType,
 };
 use tempfile::TempDir;
 
@@ -23,7 +23,7 @@ async fn p0_flaky_mock_fail_twice_then_succeed() {
 
     let url = format!("{}/file", base_uri);
     let id = queue
-        .enqueue(&url, "direct_url", None)
+        .enqueue(&url, SourceType::DirectUrl, None)
         .await
         .expect("enqueue");
 

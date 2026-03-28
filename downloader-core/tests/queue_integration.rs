@@ -3,8 +3,9 @@
 //! These tests verify Queue operations against a real SQLite database.
 
 use downloader_core::{
-    Database, DownloadAttemptQuery, DownloadAttemptStatus, DownloadErrorType, DownloadSearchQuery,
-    NewDownloadAttempt, Queue, QueueError, QueueMetadata, QueueStatus, parse_input,
+    Confidence, Database, DownloadAttemptQuery, DownloadAttemptStatus, DownloadErrorType,
+    DownloadSearchQuery, NewDownloadAttempt, Queue, QueueError, QueueMetadata, QueueStatus,
+    SourceType, parse_input,
 };
 use sqlx::Row;
 use tempfile::TempDir;
@@ -29,7 +30,7 @@ async fn test_enqueue_creates_pending_item() {
     let queue = Queue::new(db);
 
     let id = queue
-        .enqueue("https://example.com/paper.pdf", "direct_url", None)
+        .enqueue("https://example.com/paper.pdf", SourceType::DirectUrl, None)
         .await
         .expect("Failed to enqueue");
 
@@ -37,7 +38,7 @@ async fn test_enqueue_creates_pending_item() {
 
     let item = queue.get(id).await.expect("Failed to get").unwrap();
     assert_eq!(item.url, "https://example.com/paper.pdf");
-    assert_eq!(item.source_type, "direct_url");
+    assert_eq!(item.source_type(), SourceType::DirectUrl);
     assert_eq!(item.status(), QueueStatus::Pending);
     assert_eq!(item.retry_count, 0);
 }
@@ -50,7 +51,7 @@ async fn test_enqueue_with_original_input() {
     let id = queue
         .enqueue(
             "https://doi.org/10.1234/example",
-            "doi",
+            SourceType::Doi,
             Some("10.1234/example"),
         )
         .await
@@ -58,7 +59,7 @@ async fn test_enqueue_with_original_input() {
 
     let item = queue.get(id).await.expect("Failed to get").unwrap();
     assert_eq!(item.original_input, Some("10.1234/example".to_string()));
-    assert_eq!(item.source_type, "doi");
+    assert_eq!(item.source_type(), SourceType::Doi);
 }
 
 #[tokio::test]
@@ -73,7 +74,7 @@ async fn test_enqueue_with_metadata_persists_parse_confidence_fields() {
         year: Some("2024".to_string()),
         doi: None,
         topics: None,
-        parse_confidence: Some("low".to_string()),
+        parse_confidence: Some(Confidence::Low),
         parse_confidence_factors: Some(
             r#"{"has_authors":false,"has_year":true,"has_title":false,"author_count":0}"#
                 .to_string(),
@@ -83,7 +84,7 @@ async fn test_enqueue_with_metadata_persists_parse_confidence_fields() {
     let id = queue
         .enqueue_with_metadata(
             "https://example.com/reference.pdf",
-            "reference",
+            SourceType::Reference,
             Some("Weak reference text"),
             Some(&metadata),
         )
@@ -95,7 +96,7 @@ async fn test_enqueue_with_metadata_persists_parse_confidence_fields() {
         .await
         .expect("queue get should succeed")
         .expect("queue item should exist");
-    assert_eq!(item.parse_confidence.as_deref(), Some("low"));
+    assert_eq!(item.parse_confidence(), Some(Confidence::Low));
     assert_eq!(
         item.parse_confidence_factors.as_deref(),
         Some(r#"{"has_authors":false,"has_year":true,"has_title":false,"author_count":0}"#)
@@ -108,7 +109,7 @@ async fn test_dequeue_returns_pending_item_and_marks_in_progress() {
     let queue = Queue::new(db);
 
     queue
-        .enqueue("https://example.com/1.pdf", "direct_url", None)
+        .enqueue("https://example.com/1.pdf", SourceType::DirectUrl, None)
         .await
         .expect("Failed to enqueue");
 
@@ -138,11 +139,11 @@ async fn test_dequeue_respects_priority_order() {
 
     // Enqueue items (priority is 0 by default, so FIFO by created_at)
     queue
-        .enqueue("https://example.com/first.pdf", "direct_url", None)
+        .enqueue("https://example.com/first.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue
-        .enqueue("https://example.com/second.pdf", "direct_url", None)
+        .enqueue("https://example.com/second.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
 
@@ -163,7 +164,7 @@ async fn test_mark_completed() {
     let queue = Queue::new(db);
 
     let id = queue
-        .enqueue("https://example.com/paper.pdf", "direct_url", None)
+        .enqueue("https://example.com/paper.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue.dequeue().await.unwrap(); // Mark as in_progress
@@ -183,7 +184,7 @@ async fn test_mark_failed_sets_retry_count() {
     let queue = Queue::new(db);
 
     let id = queue
-        .enqueue("https://example.com/paper.pdf", "direct_url", None)
+        .enqueue("https://example.com/paper.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue.dequeue().await.unwrap();
@@ -214,7 +215,7 @@ async fn test_requeue_returns_to_pending() {
     let queue = Queue::new(db);
 
     let id = queue
-        .enqueue("https://example.com/paper.pdf", "direct_url", None)
+        .enqueue("https://example.com/paper.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue.dequeue().await.unwrap(); // Mark as in_progress
@@ -281,15 +282,15 @@ async fn test_count_by_status() {
 
     // Add 3 items
     queue
-        .enqueue("https://example.com/1.pdf", "direct_url", None)
+        .enqueue("https://example.com/1.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue
-        .enqueue("https://example.com/2.pdf", "direct_url", None)
+        .enqueue("https://example.com/2.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue
-        .enqueue("https://example.com/3.pdf", "direct_url", None)
+        .enqueue("https://example.com/3.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
 
@@ -327,15 +328,15 @@ async fn test_list_by_status() {
     let queue = Queue::new(db);
 
     queue
-        .enqueue("https://example.com/1.pdf", "direct_url", None)
+        .enqueue("https://example.com/1.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     let id2 = queue
-        .enqueue("https://example.com/2.pdf", "direct_url", None)
+        .enqueue("https://example.com/2.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue
-        .enqueue("https://example.com/3.pdf", "direct_url", None)
+        .enqueue("https://example.com/3.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
 
@@ -364,11 +365,11 @@ async fn test_list_all() {
     let queue = Queue::new(db);
 
     queue
-        .enqueue("https://example.com/1.pdf", "direct_url", None)
+        .enqueue("https://example.com/1.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue
-        .enqueue("https://example.com/2.pdf", "direct_url", None)
+        .enqueue("https://example.com/2.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
 
@@ -384,15 +385,15 @@ async fn test_get_in_progress() {
     let queue = Queue::new(db);
 
     queue
-        .enqueue("https://example.com/1.pdf", "direct_url", None)
+        .enqueue("https://example.com/1.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue
-        .enqueue("https://example.com/2.pdf", "direct_url", None)
+        .enqueue("https://example.com/2.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue
-        .enqueue("https://example.com/3.pdf", "direct_url", None)
+        .enqueue("https://example.com/3.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
 
@@ -410,11 +411,11 @@ async fn test_reset_in_progress() {
     let queue = Queue::new(db);
 
     queue
-        .enqueue("https://example.com/1.pdf", "direct_url", None)
+        .enqueue("https://example.com/1.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue
-        .enqueue("https://example.com/2.pdf", "direct_url", None)
+        .enqueue("https://example.com/2.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
 
@@ -459,7 +460,7 @@ async fn test_remove() {
     let queue = Queue::new(db);
 
     let id = queue
-        .enqueue("https://example.com/paper.pdf", "direct_url", None)
+        .enqueue("https://example.com/paper.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
 
@@ -476,15 +477,15 @@ async fn test_clear_by_status() {
 
     // Add items with different statuses
     let id1 = queue
-        .enqueue("https://example.com/1.pdf", "direct_url", None)
+        .enqueue("https://example.com/1.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue
-        .enqueue("https://example.com/2.pdf", "direct_url", None)
+        .enqueue("https://example.com/2.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue
-        .enqueue("https://example.com/3.pdf", "direct_url", None)
+        .enqueue("https://example.com/3.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
 
@@ -515,7 +516,7 @@ async fn test_update_progress_persists_bytes_and_content_length() {
     let queue = Queue::new(db);
 
     let id = queue
-        .enqueue("https://example.com/large.pdf", "direct_url", None)
+        .enqueue("https://example.com/large.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue.dequeue().await.unwrap();
@@ -536,7 +537,7 @@ async fn test_update_progress_without_content_length() {
     let queue = Queue::new(db);
 
     let id = queue
-        .enqueue("https://example.com/stream.bin", "direct_url", None)
+        .enqueue("https://example.com/stream.bin", SourceType::DirectUrl, None)
         .await
         .unwrap();
     queue.dequeue().await.unwrap();
@@ -568,11 +569,11 @@ async fn test_duplicate_urls_allowed() {
     let queue = Queue::new(db);
 
     let id1 = queue
-        .enqueue("https://example.com/paper.pdf", "direct_url", None)
+        .enqueue("https://example.com/paper.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
     let id2 = queue
-        .enqueue("https://example.com/paper.pdf", "direct_url", None)
+        .enqueue("https://example.com/paper.pdf", SourceType::DirectUrl, None)
         .await
         .unwrap();
 
@@ -607,7 +608,7 @@ async fn test_long_url_and_error_message() {
     let long_url = format!("https://example.com/{}", "a".repeat(1000));
     let long_error = "Error: ".to_string() + &"x".repeat(1000);
 
-    let id = queue.enqueue(&long_url, "direct_url", None).await.unwrap();
+    let id = queue.enqueue(&long_url, SourceType::DirectUrl, None).await.unwrap();
     queue.dequeue().await.unwrap();
     queue.mark_failed(id, &long_error, 1).await.unwrap();
 
@@ -626,7 +627,7 @@ async fn test_concurrent_dequeue_returns_different_items() {
     // Add 10 items
     for i in 0..10 {
         queue
-            .enqueue(&format!("https://example.com/{i}.pdf"), "direct_url", None)
+            .enqueue(&format!("https://example.com/{i}.pdf"), SourceType::DirectUrl, None)
             .await
             .unwrap();
     }
@@ -700,19 +701,23 @@ Smith, J. (2024). Existing Reference. Journal.
     assert!(
         all_items
             .iter()
-            .any(|item| item.source_type == "direct_url"),
+            .any(|item| item.source_type() == SourceType::DirectUrl),
         "queue should contain direct_url sourced items"
     );
     assert!(
-        all_items.iter().any(|item| item.source_type == "doi"),
+        all_items.iter().any(|item| item.source_type() == SourceType::Doi),
         "queue should contain doi sourced items"
     );
     assert!(
-        all_items.iter().any(|item| item.source_type == "reference"),
+        all_items
+            .iter()
+            .any(|item| item.source_type() == SourceType::Reference),
         "queue should contain reference-sourced items"
     );
     assert!(
-        all_items.iter().any(|item| item.source_type == "bibtex"),
+        all_items
+            .iter()
+            .any(|item| item.source_type() == SourceType::BibTex),
         "queue should contain bibtex-sourced items"
     );
 }

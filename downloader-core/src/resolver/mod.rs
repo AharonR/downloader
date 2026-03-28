@@ -78,7 +78,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use reqwest::cookie::Jar;
-use tracing::warn;
 
 use crate::parser::InputType;
 
@@ -97,86 +96,16 @@ pub fn build_default_resolver_registry(
     let mut registry = ResolverRegistry::new();
 
     registry.register(Box::new(ArxivResolver::new()));
-
-    match PubMedResolver::new(cookie_jar.clone()) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "PubMed resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match IeeeResolver::new(cookie_jar.clone()) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "IEEE resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match OxfordAcademicResolver::new(cookie_jar.clone()) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "Oxford Academic resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match SpringerResolver::new(cookie_jar.clone()) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "Springer resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match ScienceDirectResolver::new(cookie_jar) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "ScienceDirect resolver unavailable; continuing with generic resolvers"
-        ),
-    }
-
-    match AcmResolver::new() {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "ACM resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match WileyResolver::new() {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "Wiley resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match MdpiResolver::new(crossref_mailto) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "MDPI resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match YouTubeResolver::new() {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "YouTube resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match CrossrefResolver::new(crossref_mailto) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "Crossref resolver unavailable; continuing with direct fallback only"
-        ),
-    }
+    registry.try_register("PubMedResolver", PubMedResolver::new(cookie_jar.clone()).map(|r| Box::new(r) as Box<dyn Resolver>));
+    registry.try_register("IeeeResolver", IeeeResolver::new(cookie_jar.clone()).map(|r| Box::new(r) as Box<dyn Resolver>));
+    registry.try_register("OxfordAcademicResolver", OxfordAcademicResolver::new(cookie_jar.clone()).map(|r| Box::new(r) as Box<dyn Resolver>));
+    registry.try_register("SpringerResolver", SpringerResolver::new(cookie_jar.clone()).map(|r| Box::new(r) as Box<dyn Resolver>));
+    registry.try_register("ScienceDirectResolver", ScienceDirectResolver::new(cookie_jar).map(|r| Box::new(r) as Box<dyn Resolver>));
+    registry.try_register("AcmResolver", AcmResolver::new().map(|r| Box::new(r) as Box<dyn Resolver>));
+    registry.try_register("WileyResolver", WileyResolver::new().map(|r| Box::new(r) as Box<dyn Resolver>));
+    registry.try_register("MdpiResolver", MdpiResolver::new(crossref_mailto).map(|r| Box::new(r) as Box<dyn Resolver>));
+    registry.try_register("YouTubeResolver", YouTubeResolver::new().map(|r| Box::new(r) as Box<dyn Resolver>));
+    registry.try_register("CrossrefResolver", CrossrefResolver::new(crossref_mailto).map(|r| Box::new(r) as Box<dyn Resolver>));
     registry.register(Box::new(DirectResolver::new()));
     registry
 }

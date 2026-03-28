@@ -1,7 +1,7 @@
 //! Phase 5 (P1): Queue state corruption, inconsistent DB.
 //! reset_in_progress recovers in_progress items after crash.
 
-use downloader_core::{Database, Queue, QueueStatus};
+use downloader_core::{Database, Queue, QueueStatus, SourceType};
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -12,7 +12,7 @@ async fn p1_reset_in_progress_recovery() {
     let queue = Queue::new(db);
 
     let _ = queue
-        .enqueue("https://example.com/x.pdf", "direct_url", None)
+        .enqueue("https://example.com/x.pdf", SourceType::DirectUrl, None)
         .await
         .expect("enqueue");
     let item = queue.dequeue().await.expect("dequeue").expect("one");

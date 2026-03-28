@@ -366,14 +366,30 @@ fn classify_http_status(status: u16) -> FailureType {
 }
 
 /// Checks if a reqwest error is a TLS/certificate error.
+///
+/// Walks the full error source chain rather than stringifying only the
+/// top-level error, so TLS failures wrapped inside a reqwest connection
+/// error are still detected even when the outer message does not contain
+/// TLS-related keywords.
 fn is_tls_error(error: &reqwest::Error) -> bool {
-    // reqwest errors have methods to check error type
-    // TLS errors typically appear in the error chain
-    let error_string = error.to_string().to_lowercase();
-    error_string.contains("certificate")
-        || error_string.contains("tls")
-        || error_string.contains("ssl")
-        || error_string.contains("handshake")
+    use std::error::Error as StdError;
+
+    // Walk every cause in the chain.
+    let mut source: Option<&dyn StdError> = Some(error);
+    while let Some(err) = source {
+        let msg = err.to_string().to_lowercase();
+        if msg.contains("certificate")
+            || msg.contains("tls")
+            || msg.contains("ssl")
+            || msg.contains("handshake")
+            || msg.contains("rustls")
+            || msg.contains("native_tls")
+        {
+            return true;
+        }
+        source = err.source();
+    }
+    false
 }
 
 #[cfg(test)]

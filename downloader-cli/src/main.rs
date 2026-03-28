@@ -28,6 +28,8 @@ use cli::{DownloadArgs, HistoryStatusArg};
 
 #[cfg(test)]
 use downloader_core::Queue;
+#[cfg(test)]
+use downloader_core::SourceType;
 
 pub(crate) use app::config_runtime::CliValueSources;
 
@@ -330,7 +332,7 @@ mod tests {
     use downloader_core::{
         Database, DownloadAttempt, DownloadAttemptStatus, DownloadErrorType,
         DownloadSearchCandidate, InputType, NewDownloadAttempt, ParseResult, ParsedItem, Queue,
-        QueueMetadata,
+        QueueMetadata, SourceType,
     };
     use tempfile::TempDir;
 
@@ -1116,7 +1118,7 @@ mod tests {
         let id = queue
             .enqueue_with_metadata(
                 "https://example.com/paper.pdf",
-                "doi",
+                SourceType::Doi,
                 Some("10.1000/test"),
                 Some(&metadata),
             )
@@ -1166,7 +1168,7 @@ mod tests {
         let id = queue
             .enqueue_with_metadata(
                 "https://example.org/energy.pdf",
-                "doi",
+                SourceType::Doi,
                 Some("10.1000/energy"),
                 Some(&metadata),
             )
@@ -1208,7 +1210,7 @@ mod tests {
         let old_id = queue
             .enqueue_with_metadata(
                 "https://example.com/old.pdf",
-                "doi",
+                SourceType::Doi,
                 Some("10.1000/old"),
                 Some(&old_metadata),
             )
@@ -1237,7 +1239,7 @@ mod tests {
         let new_id = queue
             .enqueue_with_metadata(
                 "https://example.com/new.pdf",
-                "doi",
+                SourceType::Doi,
                 Some("10.1000/new"),
                 Some(&new_metadata),
             )
@@ -1381,7 +1383,7 @@ mod tests {
         let output_dir = TempDir::new().unwrap();
 
         let id = queue
-            .enqueue("https://example.com/historical.pdf", "direct_url", None)
+            .enqueue("https://example.com/historical.pdf", SourceType::DirectUrl, None)
             .await
             .unwrap();
         let saved_path = output_dir.path().join("historical.pdf");
@@ -1409,7 +1411,7 @@ mod tests {
         let output_dir = TempDir::new().unwrap();
 
         let bad_id = queue
-            .enqueue("https://example.com/bad.pdf", "direct_url", None)
+            .enqueue("https://example.com/bad.pdf", SourceType::DirectUrl, None)
             .await
             .unwrap();
         let bad_saved_path = output_dir.path().join("missing-dir").join("bad.pdf");
@@ -1419,7 +1421,7 @@ mod tests {
             .unwrap();
 
         let good_id = queue
-            .enqueue("https://example.com/good.pdf", "direct_url", None)
+            .enqueue("https://example.com/good.pdf", SourceType::DirectUrl, None)
             .await
             .unwrap();
         let good_saved_path = output_dir.path().join("good.pdf");
@@ -1445,7 +1447,7 @@ mod tests {
         let output_dir = TempDir::new().unwrap();
 
         let historical_id = queue
-            .enqueue("https://example.com/historical.pdf", "direct_url", None)
+            .enqueue("https://example.com/historical.pdf", SourceType::DirectUrl, None)
             .await
             .unwrap();
         let historical_saved = output_dir.path().join("historical.pdf");
@@ -1456,7 +1458,7 @@ mod tests {
             .unwrap();
 
         let new_id = queue
-            .enqueue("https://example.com/new.pdf", "direct_url", None)
+            .enqueue("https://example.com/new.pdf", SourceType::DirectUrl, None)
             .await
             .unwrap();
         let new_saved = output_dir.path().join("new.pdf");

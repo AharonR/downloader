@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use downloader_core::Database;
+use downloader_core::{Database, SourceType};
 use tempfile::TempDir;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, Respond, ResponseTemplate};
@@ -137,7 +137,7 @@ pub async fn concurrent_load_generator(
             let mut my_enqueued = 0_usize;
             for i in 0..ops_per_task {
                 let url = format!("https://example.com/file-{}-{}.pdf", t, i);
-                if q.enqueue(&url, "direct_url", None).await.is_ok() {
+                if q.enqueue(&url, SourceType::DirectUrl, None).await.is_ok() {
                     my_enqueued += 1;
                 }
             }

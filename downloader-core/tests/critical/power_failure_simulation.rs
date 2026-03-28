@@ -1,7 +1,7 @@
 //! Phase 5 (P1): Unclean shutdowns, WAL recovery.
 //! Re-open after normal close; WAL should recover.
 
-use downloader_core::{Database, Queue, QueueStatus};
+use downloader_core::{Database, Queue, QueueStatus, SourceType};
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -13,7 +13,7 @@ async fn p1_wal_recovery_after_reopen() {
         let db = Database::new(&db_path).await.expect("db");
         let queue = Queue::new(db);
         let id = queue
-            .enqueue("https://example.com/a.pdf", "direct_url", None)
+            .enqueue("https://example.com/a.pdf", SourceType::DirectUrl, None)
             .await
             .expect("enqueue");
         drop(queue);
