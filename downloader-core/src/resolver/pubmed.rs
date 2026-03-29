@@ -23,6 +23,11 @@ const DEFAULT_PUBMED_BASE_URL: &str = "https://pubmed.ncbi.nlm.nih.gov";
 const DEFAULT_PMC_BASE_URL: &str = "https://pmc.ncbi.nlm.nih.gov";
 
 static PMCID_RE: LazyLock<Regex> = LazyLock::new(|| compile_static_regex(r"(?i)\b(PMC\d{4,})\b"));
+/// Matches a bare PMC identifier as the whole input (e.g. "PMC1234567").
+static BARE_PMCID_RE: LazyLock<Regex> = LazyLock::new(|| compile_static_regex(r"(?i)^PMC\d{4,}$"));
+/// Matches the normalised PMID form emitted by the parser ("PMID:12345678").
+static BARE_PMID_RE: LazyLock<Regex> =
+    LazyLock::new(|| compile_static_regex(r"(?i)^PMID:(\d{1,9})$"));
 static PDF_LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(r#"(?is)href\s*=\s*["']([^"']*(?:/pdf/[^"']*|\.pdf(?:\?[^"']*)?))["']"#)
 });
@@ -93,6 +98,13 @@ impl Resolver for PubMedResolver {
     }
 
     fn can_handle(&self, input: &str, input_type: InputType) -> bool {
+        // Accept bare PMC IDs ("PMC1234567") and PMID-prefixed inputs ("PMID:12345678")
+        // that the parser emits as InputType::Unknown.
+        if input_type == InputType::Unknown {
+            let trimmed = input.trim();
+            return BARE_PMCID_RE.is_match(trimmed) || BARE_PMID_RE.is_match(trimmed);
+        }
+
         if input_type != InputType::Url {
             return false;
         }
@@ -117,6 +129,27 @@ impl Resolver for PubMedResolver {
         input: &str,
         _ctx: &ResolveContext,
     ) -> Result<ResolveStep, ResolveError> {
+        let trimmed = input.trim();
+
+        // Bare PMC ID (e.g. "PMC1234567") → redirect to the PMC article page,
+        // which the URL-based branch below then resolves to a PDF.
+        if BARE_PMCID_RE.is_match(trimmed) {
+            let pmcid = trimmed.to_ascii_uppercase();
+            let redirect_url = format!(
+                "{}/articles/{}/",
+                self.pmc_base_url.trim_end_matches('/'),
+                pmcid
+            );
+            return Ok(ResolveStep::Redirect(redirect_url));
+        }
+
+        // PMID with prefix (e.g. "PMID:12345678") → redirect to the PubMed record.
+        if let Some(caps) = BARE_PMID_RE.captures(trimmed) {
+            let pmid = &caps[1];
+            let redirect_url = format!("{}/{}/", self.pubmed_base_url.trim_end_matches('/'), pmid);
+            return Ok(ResolveStep::Redirect(redirect_url));
+        }
+
         let Ok(parsed) = Url::parse(input) else {
             return Ok(ResolveStep::Failed(ResolveError::resolution_failed(
                 input,
@@ -335,6 +368,80 @@ mod tests {
             extract_pmcid("https://pmc.ncbi.nlm.nih.gov/articles/PMC7654321/pdf/").unwrap(),
             "PMC7654321"
         );
+    }
+
+    #[test]
+    fn test_pubmed_can_handle_bare_pmc_id() {
+        let resolver = PubMedResolver::new(None).unwrap();
+        assert!(resolver.can_handle("PMC1234567", InputType::Unknown));
+        assert!(resolver.can_handle("pmc9999999", InputType::Unknown));
+        assert!(!resolver.can_handle("1234567", InputType::Unknown)); // bare number not accepted
+        assert!(!resolver.can_handle("PMC123", InputType::Unknown)); // too short (< 4 digits)
+    }
+
+    #[test]
+    fn test_pubmed_can_handle_pmid_with_prefix() {
+        let resolver = PubMedResolver::new(None).unwrap();
+        assert!(resolver.can_handle("PMID:12345678", InputType::Unknown));
+        assert!(resolver.can_handle("pmid:99", InputType::Unknown));
+        assert!(!resolver.can_handle("PMID:", InputType::Unknown)); // no digits
+    }
+
+    #[tokio::test]
+    async fn test_pubmed_resolve_bare_pmc_id_redirects() {
+        let resolver = PubMedResolver::with_base_urls(
+            None,
+            "https://pubmed.ncbi.nlm.nih.gov",
+            "https://pmc.ncbi.nlm.nih.gov",
+        )
+        .unwrap();
+        let ctx = ResolveContext::default();
+        let step = resolver.resolve("PMC1234567", &ctx).await.unwrap();
+        match step {
+            ResolveStep::Redirect(url) => {
+                assert_eq!(url, "https://pmc.ncbi.nlm.nih.gov/articles/PMC1234567/");
+            }
+            other => panic!("expected Redirect, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pubmed_resolve_pmc_id_normalises_to_uppercase() {
+        let resolver = PubMedResolver::with_base_urls(
+            None,
+            "https://pubmed.ncbi.nlm.nih.gov",
+            "https://pmc.ncbi.nlm.nih.gov",
+        )
+        .unwrap();
+        let ctx = ResolveContext::default();
+        let step = resolver.resolve("pmc1234567", &ctx).await.unwrap();
+        match step {
+            ResolveStep::Redirect(url) => {
+                assert!(
+                    url.contains("PMC1234567"),
+                    "PMCID must be uppercased in redirect URL"
+                );
+            }
+            other => panic!("expected Redirect, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pubmed_resolve_pmid_prefix_redirects() {
+        let resolver = PubMedResolver::with_base_urls(
+            None,
+            "https://pubmed.ncbi.nlm.nih.gov",
+            "https://pmc.ncbi.nlm.nih.gov",
+        )
+        .unwrap();
+        let ctx = ResolveContext::default();
+        let step = resolver.resolve("PMID:12345678", &ctx).await.unwrap();
+        match step {
+            ResolveStep::Redirect(url) => {
+                assert_eq!(url, "https://pubmed.ncbi.nlm.nih.gov/12345678/");
+            }
+            other => panic!("expected Redirect, got {other:?}"),
+        }
     }
 
     #[test]

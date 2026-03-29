@@ -55,6 +55,7 @@ impl Resolver for ArxivResolver {
     ) -> Result<ResolveStep, ResolveError> {
         let Some(arxiv_id) = extract_arxiv_id(input, InputType::Url)
             .or_else(|| extract_arxiv_id(input, InputType::Doi))
+            .or_else(|| extract_arxiv_id(input, InputType::Unknown))
         else {
             return Ok(ResolveStep::Failed(ResolveError::resolution_failed(
                 input,
@@ -78,6 +79,8 @@ fn extract_arxiv_id(input: &str, input_type: InputType) -> Option<String> {
     match input_type {
         InputType::Doi => extract_from_doi(input),
         InputType::Url => extract_from_url(input),
+        // Bare arXiv IDs emitted by the parser as InputType::Unknown (e.g. "2301.01234").
+        InputType::Unknown => normalize_arxiv_id(input.trim()),
         _ => None,
     }
 }
@@ -184,5 +187,40 @@ mod tests {
         let ctx = ResolveContext::default();
         let step = resolver.resolve("10.48550/not-arxiv", &ctx).await.unwrap();
         assert!(matches!(step, ResolveStep::Failed(_)));
+    }
+
+    #[test]
+    fn test_arxiv_can_handle_bare_id_as_unknown() {
+        let resolver = ArxivResolver::new();
+        assert!(resolver.can_handle("2301.01234", InputType::Unknown));
+        assert!(resolver.can_handle("2301.01234v3", InputType::Unknown));
+        assert!(!resolver.can_handle("not-an-id", InputType::Unknown));
+        assert!(!resolver.can_handle("2301.01234", InputType::Reference));
+    }
+
+    #[tokio::test]
+    async fn test_arxiv_resolve_bare_id_produces_pdf_url() {
+        let resolver = ArxivResolver::new();
+        let ctx = ResolveContext::default();
+        let step = resolver.resolve("2301.01234", &ctx).await.unwrap();
+        match step {
+            ResolveStep::Url(resolved) => {
+                assert_eq!(resolved.url, "https://arxiv.org/pdf/2301.01234.pdf");
+            }
+            other => panic!("expected Url, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_arxiv_resolve_bare_id_with_version() {
+        let resolver = ArxivResolver::new();
+        let ctx = ResolveContext::default();
+        let step = resolver.resolve("2301.01234v2", &ctx).await.unwrap();
+        match step {
+            ResolveStep::Url(resolved) => {
+                assert_eq!(resolved.url, "https://arxiv.org/pdf/2301.01234v2.pdf");
+            }
+            other => panic!("expected Url, got {other:?}"),
+        }
     }
 }

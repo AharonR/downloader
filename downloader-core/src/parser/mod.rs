@@ -46,7 +46,57 @@ pub use ris::{RisEntry, RisParseResult, parse_ris_content};
 pub use url::extract_urls;
 
 use std::collections::HashSet;
+use std::sync::LazyLock;
+
+use regex::Regex;
 use tracing::{debug, info};
+
+// ── Known structured IDs ──────────────────────────────────────────────────────
+// Matched against whole trimmed lines so that fragments inside longer sentences
+// (e.g. an arXiv URL) are never double-extracted.
+
+#[allow(clippy::expect_used)]
+static PMC_ID_LINE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^PMC\d{4,}$").expect("PMC ID line regex valid"));
+
+#[allow(clippy::expect_used)]
+static ARXIV_ID_LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:\d{4}\.\d{4,5}|[a-z][a-z\-]*(?:\.[a-z]{2})?/\d{7})(?:v\d+)?$")
+        .expect("arXiv bare ID line regex valid")
+});
+
+#[allow(clippy::expect_used)]
+static PMID_PREFIX_LINE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^PMID:?\s*\d{1,9}$").expect("PMID prefix line regex valid"));
+
+/// Extracts known structured identifiers (PMC IDs, arXiv IDs, PMIDs) from
+/// whole-line matches.  Returns `ParsedItem`s with `InputType::Unknown` and
+/// the normalized identifier as the value.
+fn extract_known_ids(input: &str) -> Vec<ParsedItem> {
+    let mut items = Vec::new();
+    for line in input.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if PMC_ID_LINE_RE.is_match(trimmed) {
+            let normalized = trimmed.to_ascii_uppercase();
+            items.push(ParsedItem::new(trimmed, InputType::Unknown, normalized));
+        } else if ARXIV_ID_LINE_RE.is_match(trimmed) {
+            items.push(ParsedItem::new(
+                trimmed,
+                InputType::Unknown,
+                trimmed.to_string(),
+            ));
+        } else if PMID_PREFIX_LINE_RE.is_match(trimmed) {
+            // Normalize to "PMID:<digits>" so resolvers can detect it unambiguously.
+            let digits: String = trimmed.chars().filter(char::is_ascii_digit).collect();
+            let normalized = format!("PMID:{digits}");
+            items.push(ParsedItem::new(trimmed, InputType::Unknown, normalized));
+        }
+    }
+    items
+}
 
 /// Parses raw text input and extracts downloadable items.
 ///
@@ -162,7 +212,10 @@ pub fn parse_input(input: &str) -> ParseResult {
         }
     }
 
-    let residual_input = build_residual_input(input);
+    // Extract known structured IDs (PMC, arXiv, PMID) before residual processing
+    // so they are not silently dropped by the bibliography parser.
+    let (id_count, residual_input) = collect_ids_and_residual(input, &mut result);
+
     if residual_input.lines().any(|line| !line.trim().is_empty()) {
         let residual_stats = process_residual_content(&mut result, &residual_input);
         ref_count += residual_stats.references;
@@ -173,6 +226,7 @@ pub fn parse_input(input: &str) -> ParseResult {
     info!(
         urls = url_count,
         dois = doi_count,
+        ids = id_count,
         references = ref_count,
         bibtex = bibtex_count,
         errors = error_count,
@@ -182,6 +236,33 @@ pub fn parse_input(input: &str) -> ParseResult {
     );
 
     result
+}
+
+/// Adds known structured IDs to `result` and returns `(count, residual_text)` with
+/// matched lines blanked out so the bibliography parser does not re-process them.
+fn collect_ids_and_residual(input: &str, result: &mut ParseResult) -> (usize, String) {
+    let known_id_items = extract_known_ids(input);
+    let known_id_raws: HashSet<String> = known_id_items
+        .iter()
+        .map(|i| i.raw.trim().to_string())
+        .collect();
+    let count = known_id_items.len();
+    for item in known_id_items {
+        result.add_item(item);
+    }
+
+    let residual = build_residual_input(input)
+        .lines()
+        .map(|line| {
+            if known_id_raws.contains(line.trim()) {
+                String::new()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    (count, residual)
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -626,5 +707,98 @@ mod tests {
         assert_eq!(result.bibtex().count(), 1);
         assert_eq!(result.references().count(), 1);
         assert_eq!(result.skipped_count(), 0);
+    }
+
+    // ==================== Known ID extraction ====================
+
+    #[test]
+    fn test_parse_input_recognizes_bare_pmc_id() {
+        let result = parse_input("PMC1234567");
+        let unknowns: Vec<_> = result
+            .items
+            .iter()
+            .filter(|i| i.input_type == InputType::Unknown)
+            .collect();
+        assert_eq!(unknowns.len(), 1);
+        assert_eq!(unknowns[0].value, "PMC1234567");
+        assert_eq!(result.skipped_count(), 0);
+    }
+
+    #[test]
+    fn test_parse_input_normalises_pmc_id_to_uppercase() {
+        let result = parse_input("pmc9876543");
+        let id = result
+            .items
+            .iter()
+            .find(|i| i.input_type == InputType::Unknown)
+            .unwrap();
+        assert_eq!(id.value, "PMC9876543");
+    }
+
+    #[test]
+    fn test_parse_input_recognizes_arxiv_new_style_id() {
+        let result = parse_input("2301.01234");
+        let id = result
+            .items
+            .iter()
+            .find(|i| i.input_type == InputType::Unknown)
+            .unwrap();
+        assert_eq!(id.value, "2301.01234");
+        assert_eq!(result.skipped_count(), 0);
+    }
+
+    #[test]
+    fn test_parse_input_recognizes_arxiv_id_with_version() {
+        let result = parse_input("2301.01234v2");
+        let id = result
+            .items
+            .iter()
+            .find(|i| i.input_type == InputType::Unknown)
+            .unwrap();
+        assert_eq!(id.value, "2301.01234v2");
+    }
+
+    #[test]
+    fn test_parse_input_recognizes_pmid_with_prefix() {
+        let result = parse_input("PMID:12345678");
+        let id = result
+            .items
+            .iter()
+            .find(|i| i.input_type == InputType::Unknown)
+            .unwrap();
+        assert_eq!(id.value, "PMID:12345678");
+        assert_eq!(result.skipped_count(), 0);
+    }
+
+    #[test]
+    fn test_parse_input_pmid_colon_optional() {
+        let result = parse_input("PMID 99999");
+        let id = result
+            .items
+            .iter()
+            .find(|i| i.input_type == InputType::Unknown)
+            .unwrap();
+        assert_eq!(id.value, "PMID:99999");
+    }
+
+    #[test]
+    fn test_parse_input_known_id_does_not_appear_in_skipped() {
+        // PMC IDs must not be counted as uncertain references.
+        let result = parse_input("PMC9999999");
+        assert_eq!(result.skipped_count(), 0);
+    }
+
+    #[test]
+    fn test_parse_input_known_ids_mixed_with_urls_and_dois() {
+        let input = "https://arxiv.org/abs/2301.00001\nPMC1234567\n10.1234/example\n2301.56789";
+        let result = parse_input(input);
+        assert_eq!(result.urls().count(), 1);
+        assert_eq!(result.dois().count(), 1);
+        let unknowns: Vec<_> = result
+            .items
+            .iter()
+            .filter(|i| i.input_type == InputType::Unknown)
+            .collect();
+        assert_eq!(unknowns.len(), 2, "PMC ID + arXiv bare ID");
     }
 }
