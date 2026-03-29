@@ -139,14 +139,12 @@ pub struct QueueItem {
     pub id: i64,
     /// The resolved URL to download.
     pub url: String,
-    /// How this item entered the queue. Use `source_type()` for the typed accessor.
+    /// How this item entered the queue. Stored as text; typed via `source_type()`.
     #[sqlx(rename = "source_type")]
     pub(crate) source_type_str: String,
     /// Original user input before resolution (e.g., DOI string).
     pub original_input: Option<String>,
-    /// Current processing status (stored as text, parsed via `status()`).
-    /// Use `status()` to obtain the typed [`QueueStatus`]; direct access to this
-    /// field is intentionally restricted to crate-internal code.
+    /// Current processing status. Stored as text; typed via `status()`.
     #[sqlx(rename = "status")]
     pub(crate) status_str: String,
     /// Higher priority items processed first (default 0).
@@ -169,10 +167,9 @@ pub struct QueueItem {
     /// Metadata DOI captured at enqueue time.
     #[sqlx(rename = "meta_doi")]
     pub doi: Option<String>,
-    /// Extracted topics as JSON array (Story 8.1)
+    /// Extracted topics as JSON array.
     pub topics: Option<String>,
-    /// Raw parser confidence string as stored in the database.
-    /// Use [`Self::parse_confidence`] for the typed accessor.
+    /// Raw parser confidence string as stored in the database. Typed via `parse_confidence()`.
     #[sqlx(rename = "parse_confidence")]
     pub(crate) parse_confidence_raw: Option<String>,
     /// JSON payload of parser confidence factors for reference-derived items.

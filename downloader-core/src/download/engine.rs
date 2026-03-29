@@ -392,7 +392,7 @@ impl DownloadEngine {
             let permit = tokio::select! {
                 biased;
                 () = async {
-                    while !interrupted.load(Ordering::Relaxed) {
+                    while !interrupted.load(Ordering::Acquire) {
                         tokio::time::sleep(Duration::from_millis(50)).await;
                     }
                 } => {
