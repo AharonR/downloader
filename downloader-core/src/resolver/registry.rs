@@ -336,6 +336,39 @@ mod tests {
     }
 
     #[test]
+    fn test_registry_try_register_ok_adds_resolver() {
+        let mut registry = ResolverRegistry::new();
+        let result: Result<Box<dyn Resolver>, &str> = Ok(Box::new(mock_url_resolver(
+            "ok-resolver",
+            ResolverPriority::General,
+            "https://example.com",
+        )));
+        registry.try_register("ok-resolver", result);
+        assert_eq!(registry.resolver_count(), 1);
+    }
+
+    #[test]
+    fn test_registry_try_register_err_skips_and_does_not_add() {
+        let mut registry = ResolverRegistry::new();
+        let result: Result<Box<dyn Resolver>, &str> = Err("init failed");
+        registry.try_register("bad-resolver", result);
+        assert_eq!(registry.resolver_count(), 0);
+    }
+
+    #[test]
+    fn test_registry_try_register_err_does_not_affect_existing() {
+        let mut registry = ResolverRegistry::new();
+        registry.register(Box::new(mock_url_resolver(
+            "existing",
+            ResolverPriority::General,
+            "https://example.com",
+        )));
+        let result: Result<Box<dyn Resolver>, &str> = Err("init failed");
+        registry.try_register("bad-resolver", result);
+        assert_eq!(registry.resolver_count(), 1);
+    }
+
+    #[test]
     fn test_registry_register_adds_resolver() {
         let mut registry = ResolverRegistry::new();
         registry.register(Box::new(mock_url_resolver(

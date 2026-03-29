@@ -349,6 +349,186 @@ mod tests {
         assert_eq!(status, cloned);
     }
 
+    // ==================== SourceType Tests ====================
+
+    #[test]
+    fn test_source_type_as_str() {
+        assert_eq!(SourceType::DirectUrl.as_str(), "direct_url");
+        assert_eq!(SourceType::Doi.as_str(), "doi");
+        assert_eq!(SourceType::Reference.as_str(), "reference");
+        assert_eq!(SourceType::BibTex.as_str(), "bibtex");
+    }
+
+    #[test]
+    fn test_source_type_display() {
+        assert_eq!(SourceType::DirectUrl.to_string(), "direct_url");
+        assert_eq!(SourceType::Doi.to_string(), "doi");
+        assert_eq!(SourceType::Reference.to_string(), "reference");
+        assert_eq!(SourceType::BibTex.to_string(), "bibtex");
+    }
+
+    #[test]
+    fn test_source_type_from_str_valid() {
+        assert_eq!("direct_url".parse::<SourceType>().unwrap(), SourceType::DirectUrl);
+        assert_eq!("doi".parse::<SourceType>().unwrap(), SourceType::Doi);
+        assert_eq!("reference".parse::<SourceType>().unwrap(), SourceType::Reference);
+        assert_eq!("bibtex".parse::<SourceType>().unwrap(), SourceType::BibTex);
+    }
+
+    #[test]
+    fn test_source_type_from_str_invalid() {
+        assert!("unknown".parse::<SourceType>().is_err());
+        assert!("".parse::<SourceType>().is_err());
+        assert!("DIRECT_URL".parse::<SourceType>().is_err());
+    }
+
+    #[test]
+    fn test_source_type_roundtrip() {
+        for variant in [SourceType::DirectUrl, SourceType::Doi, SourceType::Reference, SourceType::BibTex] {
+            assert_eq!(variant.to_string().parse::<SourceType>().unwrap(), variant);
+        }
+    }
+
+    #[test]
+    fn test_queue_item_source_type_parses_correctly() {
+        let item = QueueItem {
+            id: 1,
+            url: "https://doi.org/10.1000/xyz".to_string(),
+            source_type_str: "doi".to_string(),
+            original_input: None,
+            status_str: "pending".to_string(),
+            priority: 0,
+            retry_count: 0,
+            last_error: None,
+            suggested_filename: None,
+            title: None,
+            authors: None,
+            year: None,
+            doi: None,
+            topics: None,
+            parse_confidence_raw: None,
+            parse_confidence_factors: None,
+            saved_path: None,
+            bytes_downloaded: 0,
+            content_length: None,
+            created_at: "2026-01-01".to_string(),
+            updated_at: "2026-01-01".to_string(),
+        };
+        assert_eq!(item.source_type(), SourceType::Doi);
+    }
+
+    #[test]
+    fn test_queue_item_source_type_fallback_on_invalid() {
+        let item = QueueItem {
+            id: 1,
+            url: "https://example.com".to_string(),
+            source_type_str: "garbage".to_string(),
+            original_input: None,
+            status_str: "pending".to_string(),
+            priority: 0,
+            retry_count: 0,
+            last_error: None,
+            suggested_filename: None,
+            title: None,
+            authors: None,
+            year: None,
+            doi: None,
+            topics: None,
+            parse_confidence_raw: None,
+            parse_confidence_factors: None,
+            saved_path: None,
+            bytes_downloaded: 0,
+            content_length: None,
+            created_at: "2026-01-01".to_string(),
+            updated_at: "2026-01-01".to_string(),
+        };
+        assert_eq!(item.source_type(), SourceType::DirectUrl);
+    }
+
+    #[test]
+    fn test_queue_item_parse_confidence_typed() {
+        let item = QueueItem {
+            id: 1,
+            url: "https://example.com".to_string(),
+            source_type_str: "reference".to_string(),
+            original_input: None,
+            status_str: "pending".to_string(),
+            priority: 0,
+            retry_count: 0,
+            last_error: None,
+            suggested_filename: None,
+            title: None,
+            authors: None,
+            year: None,
+            doi: None,
+            topics: None,
+            parse_confidence_raw: Some("high".to_string()),
+            parse_confidence_factors: None,
+            saved_path: None,
+            bytes_downloaded: 0,
+            content_length: None,
+            created_at: "2026-01-01".to_string(),
+            updated_at: "2026-01-01".to_string(),
+        };
+        assert_eq!(item.parse_confidence(), Some(Confidence::High));
+    }
+
+    #[test]
+    fn test_queue_item_parse_confidence_none_when_absent() {
+        let item = QueueItem {
+            id: 1,
+            url: "https://example.com".to_string(),
+            source_type_str: "direct_url".to_string(),
+            original_input: None,
+            status_str: "pending".to_string(),
+            priority: 0,
+            retry_count: 0,
+            last_error: None,
+            suggested_filename: None,
+            title: None,
+            authors: None,
+            year: None,
+            doi: None,
+            topics: None,
+            parse_confidence_raw: None,
+            parse_confidence_factors: None,
+            saved_path: None,
+            bytes_downloaded: 0,
+            content_length: None,
+            created_at: "2026-01-01".to_string(),
+            updated_at: "2026-01-01".to_string(),
+        };
+        assert_eq!(item.parse_confidence(), None);
+    }
+
+    #[test]
+    fn test_queue_item_parse_confidence_none_on_invalid() {
+        let item = QueueItem {
+            id: 1,
+            url: "https://example.com".to_string(),
+            source_type_str: "direct_url".to_string(),
+            original_input: None,
+            status_str: "pending".to_string(),
+            priority: 0,
+            retry_count: 0,
+            last_error: None,
+            suggested_filename: None,
+            title: None,
+            authors: None,
+            year: None,
+            doi: None,
+            topics: None,
+            parse_confidence_raw: Some("bogus".to_string()),
+            parse_confidence_factors: None,
+            saved_path: None,
+            bytes_downloaded: 0,
+            content_length: None,
+            created_at: "2026-01-01".to_string(),
+            updated_at: "2026-01-01".to_string(),
+        };
+        assert_eq!(item.parse_confidence(), None);
+    }
+
     // ==================== QueueItem Tests ====================
 
     #[test]

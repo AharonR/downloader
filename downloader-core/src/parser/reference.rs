@@ -614,6 +614,27 @@ mod tests {
     // ==================== Confidence ====================
 
     #[test]
+    fn test_confidence_from_str_valid() {
+        assert_eq!("high".parse::<Confidence>().unwrap(), Confidence::High);
+        assert_eq!("medium".parse::<Confidence>().unwrap(), Confidence::Medium);
+        assert_eq!("low".parse::<Confidence>().unwrap(), Confidence::Low);
+    }
+
+    #[test]
+    fn test_confidence_from_str_invalid() {
+        assert!("High".parse::<Confidence>().is_err());
+        assert!("".parse::<Confidence>().is_err());
+        assert!("unknown".parse::<Confidence>().is_err());
+    }
+
+    #[test]
+    fn test_confidence_display_roundtrip() {
+        for level in [Confidence::High, Confidence::Medium, Confidence::Low] {
+            assert_eq!(level.to_string().parse::<Confidence>().unwrap(), level);
+        }
+    }
+
+    #[test]
     fn test_confidence_high() {
         let mut metadata = ReferenceMetadata {
             authors: vec!["Smith, J.".to_string()],
