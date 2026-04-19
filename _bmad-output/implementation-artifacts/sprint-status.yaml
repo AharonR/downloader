@@ -203,15 +203,22 @@ phase_1:
       test_count_end: 702
       clippy: clean
 
-    # Sprint P1-2: Install Story + Design Partner Outreach — planned
+    # Sprint P1-2: Design Partner Outreach — in-progress 2026-03-29
     sprint-p1-2:
-      status: backlog
-      theme: 'Remove install friction; begin design partner outreach'
+      status: in-progress
+      started: '2026-03-29'
+      theme: 'Begin design partner outreach; binary/dmg releases deferred'
       planned:
-        - binary-releases: 'GitHub Actions release workflow: macOS ARM/x86, Linux x86 CLI binaries'
-        - tauri-dmg-release: 'Tauri .dmg release for macOS researchers'
-        - design-partner-outreach: 'First 5 design partner conversations per GTM playbook'
-        - worktree-cleanup: 'Remove stale fku/kav worktrees'
+        - binary-releases: 'DEFERRED — GitHub Actions release workflow: macOS ARM/x86, Linux x86 CLI binaries'
+        - tauri-dmg-release: 'DEFERRED — Tauri .dmg release for macOS researchers'
+        - design-partner-outreach: 'First 5 conversations — Tier 1 priority: AI/ML engineers + bioinformatics; GTM plan revised 2026-03-29'
+        - worktree-cleanup: 'DONE 2026-03-29 (worktrees already gone)'
+      next_actions:
+        - 'Monitor r/MachineLearning and r/bioinformatics for threads about bulk paper acquisition, RAG corpus prep, batch DOI processing'
+        - 'Engage 3-5 threads with helpful answers (do not post tool link until you have contributed value first)'
+        - 'Draft opening post for r/MachineLearning: CLI tool for bulk paper acquisition + RAG-ready corpus output'
+        - 'Identify 3 Tier 1 candidates (AI/ML or bioinformatics) for first design partner conversations'
+        - 'Revisit binary-releases + tauri-dmg when first 5 design partner conversations are complete and install friction is confirmed as a blocker'
 
 # Project Retrospective
 project_retrospective_status: done

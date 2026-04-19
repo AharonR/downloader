@@ -20,125 +20,116 @@ findings_addressed: [20, 21]
 
 ### Ideal Design Partner
 
-- Active researcher or research-adjacent professional handling 20+ sources per project
-- Currently uses a fragmented workflow: browser tabs + Zotero/Mendeley + manual downloading + file renaming
-- Feels pain around corpus preparation, not just source discovery
+- Engineer or researcher who processes large source lists programmatically or needs pipeline-ready corpus output
+- Feels pain around bulk acquisition, messy mixed-format input, or automation — not just one-at-a-time downloading
+- Does not have an entrenched Zotero workflow that already covers their need
+- Comfortable with CLI tools and building from source
 - Willing to provide structured feedback biweekly for 8-12 weeks
-- Comfortable with CLI tools or has a technical collaborator who is
 
 ### Qualification Criteria
 
 | Criterion | Must-Have | Nice-to-Have |
 |-----------|-----------|--------------|
 | Processes 20+ sources per project | Yes | |
-| Active research project in next 3 months | Yes | |
-| Currently uses manual or semi-manual intake | Yes | |
-| Comfortable with CLI or has proxy | Yes | |
+| Active project in next 3 months | Yes | |
+| Needs programmatic / automated acquisition OR messy input handling | Yes | |
+| Comfortable with CLI and building from source | Yes | |
 | Willing to provide biweekly feedback | Yes | |
-| Uses Zotero, Mendeley, or similar | | Yes |
 | Builds or contributes to RAG/AI pipelines | | Yes |
-| Influences tool adoption for a group | | Yes |
-| Based in an institution with proxy access | | Yes |
+| Feeds corpus into downstream tools (NotebookLM, vector DB, analysis scripts) | | Yes |
+| Influences tool adoption for a team or lab | | Yes |
+| High-volume recurring literature pulls (not one-off projects) | | Yes |
 
 ### Target: 10-15 Design Partners
 
-- 6-8 academic power users (PhD candidates, postdocs, research staff)
-- 2-3 research-heavy analysts (think tanks, policy groups, consulting)
-- 2-3 research librarians or research support staff
-- 1-2 AI/ML engineers building research corpora
+**Revised priority (updated 2026-03-29):** AI/ML engineers and computational researchers are Tier 1 because Downloader's real edge — CLI, pipeline-ready output, messy input handling, headless operation — maps directly to their workflow. General academic power users with existing Zotero workflows are deprioritized; Zotero covers most of their need.
+
+- **Tier 1 (primary, 6-8 partners):**
+  - 3-4 AI/ML engineers building RAG corpora or research pipelines
+  - 3-4 computational / bioinformatics researchers with high-volume literature review needs
+- **Tier 2 (secondary, 3-4 partners):**
+  - 3-4 research analysts at think tanks, policy orgs, or consulting firms running recurring bulk pulls
+- **Tier 3 (deprioritize for now):**
+  - General PhD students / postdocs with standard Zotero workflows — insufficient differentiation
+  - Research librarians — long sales cycle, institutional inertia, Zotero deeply entrenched
 
 ---
 
 ## Channel-by-Channel Strategy
 
-### Channel 1: Academic Social Media (Bluesky, Twitter/X)
+> **Updated 2026-03-29:** Channel priority revised to match Tier 1/2 segment focus. Channels 1-2 are primary. Channels 3-4 deprioritized until binary releases are available (build-from-source is not a blocker for Tier 1 but is for librarians and general academics).
 
-**Why:** Researchers publicly share workflow frustrations. Academic Twitter/Bluesky has high density of potential design partners.
+### Channel 1: Reddit — Tier 1 subreddits (PRIMARY)
+
+**Target subreddits (priority order):**
+- r/MachineLearning — RAG pipeline builders, corpus preparation is a known pain
+- r/LocalLLaMA — engineers building local AI stacks who need document ingestion
+- r/bioinformatics — high-volume literature review is standard, CLI-comfortable audience
+- r/PhD, r/GradSchool — secondary; only engage threads with explicit automation or bulk-download pain
+- r/AskAcademia — broad fallback
 
 **Approach:**
-- Search for complaints about corpus preparation, batch downloading, PDF management, citation import friction
-- Engage authentically in threads about research workflow pain
-- Share concrete examples of Downloader solving specific problems (short demo clips, before/after screenshots)
-- Follow and engage with research methodology accounts, open science advocates, digital humanities communities
+- Answer existing questions about batch downloading, corpus preparation, bulk DOI processing, PDF ingestion for RAG
+- Lead with the pipeline/automation angle: "here's how to go from a list of DOIs to a vector-DB-ready corpus"
+- Post a dedicated thread when ready: "I built a CLI tool for bulk paper acquisition and corpus prep — RAG-ready output, provenance sidecars, handles DOIs/arXiv/PMC/URLs in one pass"
+
+**Messaging:** Pipeline-first. Show the output structure: clean directory, JSON-LD sidecars, BibTeX export, completion summary. "Paste your source list, get a corpus."
+
+**Volume:** 3-5 helpful comments per week in Tier 1 subreddits; 1 substantive post per month
+
+### Channel 2: Academic Social Media (Bluesky, Twitter/X) (PRIMARY)
+
+**Why:** AI/ML researchers and computational scientists are active on Bluesky and Twitter/X. Workflow frustration posts are common.
+
+**Approach:**
+- Search for complaints about bulk PDF acquisition, RAG corpus prep, batch DOI processing
+- Engage authentically; demonstrate the tool solving a specific stated problem
+- Share short demos: terminal recording of a 20-DOI batch resolving to a clean corpus
 
 **Messaging:**
-- Lead with the problem, not the product: "Spent 2 hours downloading 40 papers one by one? Here's how I automated it."
-- Show output quality: clean directory, sidecar metadata, completion summary
+- Lead with the pipeline use case: "Turn a BibTeX file into a RAG-ready corpus in one command"
+- Show provenance output — JSON-LD sidecars, completion summary, failure detail
 - Never spam; contribute to conversations first
 
-**Volume:** 3-5 genuine engagements per week, 1-2 demo posts per month
+**Volume:** 3-5 genuine engagements per week; 1-2 demo posts per month
 
-### Channel 2: Reddit
+### Channel 3: Hacker News (SECONDARY — timing-dependent)
 
-**Target subreddits:**
-- r/GradSchool — workflow pain is a constant topic
-- r/bioinformatics — high-volume literature review is standard
-- r/PhD — tool recommendations are actively sought
-- r/AcademicPhilosophy, r/AskAcademia — broader academic audience
-- r/MachineLearning, r/LocalLLaMA — RAG pipeline builders
+**Why:** High-quality technical audience; strong overlap with AI engineers and tool builders.
 
 **Approach:**
-- Answer existing questions about batch downloading, corpus preparation, PDF management
-- Post workflow comparisons only when they add genuine value
-- Create a dedicated post when ready: "I built a tool for turning messy source lists into research-ready corpora — looking for feedback"
+- One well-timed Show HN post focused on the technical story: resolver pipeline, JSON-LD metadata, corpus-as-data, headless/scriptable design
+- Be prepared for extensive technical Q&A
 
-**Messaging:** Problem-first. Show the before (chaotic file list, manual renaming) and after (structured corpus with metadata).
-
-**Volume:** 2-3 helpful comments per week, 1 substantive post per month
-
-### Channel 3: Zotero Forums and Community
-
-**Why:** Zotero users are the closest adjacent audience. They already care about source management and hit Zotero's batch acquisition limits.
-
-**Approach:**
-- Monitor Zotero forums for threads about batch import limitations, bulk DOI processing, corpus export
-- Position Downloader as complementary: "Use Downloader to acquire, Zotero to manage"
-- Contribute to discussions about BibTeX/RIS workflows, bulk identifier processing
-- Offer to help solve specific user problems using Downloader
-
-**Messaging:** Complementary, not competitive. "Downloader + Zotero" is the story.
-
-**Volume:** 1-2 forum contributions per week
-
-### Channel 4: Library Science Listservs and Professional Networks
-
-**Why:** Research librarians evaluate tools for departments. Their recommendation carries institutional weight.
-
-**Targets:**
-- Code4Lib (code4lib.org) — technically sophisticated library community
-- ACRL discussion lists — academic research library professionals
-- Library Carpentry / Software Carpentry communities — research computing training
-- Digital Humanities Slack/Discord communities
-
-**Approach:**
-- Present Downloader as a tool that respects publisher agreements (robots.txt, rate limiting, no paywall circumvention)
-- Emphasize provenance, auditability, and institutional compatibility
-- Offer structured pilot programs for library staff evaluating research tools
-
-**Messaging:** Trust and compliance first. "Every file traced, every source cited, every limit respected."
-
-**Volume:** 1 listserv post per month, ongoing engagement in threads
-
-### Channel 5: Hacker News
-
-**Why:** High-quality technical audience. Show HN posts drive sustained traffic for developer tools.
-
-**Approach:**
-- One well-timed Show HN post when the tool has a polished CLI experience and clear demo
-- Focus on the technical architecture story: resolver pipeline, JSON-LD metadata, corpus-as-data
-- Be prepared for extensive technical Q&A in comments
-
-**Timing:** After Phase 1 hardening, when the tool can handle the "HN hug of death" use case gracefully
+**Timing:** After at least 3 Tier 1 design partners have validated the workflow. Do not rush this.
 
 **Volume:** One major post, then ongoing engagement in related threads
 
-### Channel 6: Conference and Workshop Outreach
+### Channel 4: Zotero Forums (SECONDARY — complementary framing only)
+
+**Why:** Some Zotero power users hit acquisition limits and look for complementary tools.
+
+**Approach:**
+- Only engage threads where users have an explicit need Zotero doesn't cover (headless, automation, messy input, pipeline output)
+- Position as complementary: "Downloader acquires and structures, Zotero manages"
+- Do not position as a replacement or compete on Zotero's strengths
+
+**Messaging:** Complementary, not competitive. Honest about where Zotero already covers the need.
+
+**Volume:** 1 forum contribution per month; do not over-invest here
+
+### Channel 5: Library Science Listservs (DEPRIORITIZED — revisit after binary release)
+
+**Status:** Deprioritized until a binary release removes the build-from-source barrier. Research librarians are not the right early adopter for a source-build tool.
+
+**Revisit when:** macOS binary or `cargo install` path is available.
+
+### Channel 6: Conference and Workshop Outreach (PHASE 1-2 OVERLAP)
 
 **Targets:**
-- Library technology conferences (Code4Lib, ACRL)
-- Research computing workshops (Research Software Engineering conferences)
-- Digital humanities events
+- Research Software Engineering conferences — strongest overlap with Tier 1 segment
 - Local university research computing brown bags
+- Library technology conferences (Code4Lib, ACRL) — lower priority, revisit Phase 2
 
 **Approach:**
 - Lightning talks and demos showing real workflow improvement
@@ -151,17 +142,25 @@ findings_addressed: [20, 21]
 
 ## Outreach Messaging Templates
 
-### Cold Outreach (Academic Researcher)
+### Cold Outreach (AI/ML Engineer — Tier 1 PRIMARY)
 
-> Hi [Name], I saw your thread about [specific pain point]. I'm building an open-source tool called Downloader that turns mixed source lists (URLs, DOIs, BibTeX) into structured research corpora with metadata and provenance tracking. I'm looking for researchers willing to test it on real projects and give feedback. Would you be interested in a 15-minute demo?
+> Hi [Name], I saw your post about [RAG pipeline / corpus prep pain point]. I'm building an open-source CLI tool called Downloader — you give it a list of DOIs, arXiv IDs, PMC IDs, URLs, or a BibTeX file, and it gives you back a structured directory with every file named, a JSON-LD provenance sidecar per paper, and a completion report showing what succeeded and what failed. Built for headless/automated use. Looking for engineers to test it on real corpus-building workflows. Want to take a look?
 
-### Cold Outreach (Research Librarian)
+### Cold Outreach (Computational Researcher — Tier 1 PRIMARY)
+
+> Hi [Name], I saw your thread about [bulk literature acquisition / batch DOI processing]. I'm building an open-source CLI tool for turning mixed source lists into research-ready corpora — handles DOIs, arXiv IDs, PMC IDs, URLs, and BibTeX files in one pass, with open-access resolution before hitting paywalls. Looking for researchers running high-volume literature pulls to test it and give feedback. Would you be interested?
+
+### Cold Outreach (Research Analyst — Tier 2)
+
+> Hi [Name], I'm building an open-source CLI tool that turns mixed source lists (URLs, DOIs, BibTeX) into structured corpora with metadata and provenance tracking — designed for recurring bulk pulls and pipeline integration. Looking for analysts who regularly process large source sets to test it on real projects. Would you have 15 minutes for a quick demo?
+
+### Cold Outreach (Research Librarian — DEPRIORITIZED, revisit after binary release)
 
 > Hi [Name], I'm building an open-source evidence acquisition tool designed to complement reference managers like Zotero. It handles batch downloading with robots.txt compliance, per-domain rate limiting, and structured metadata output. I'm recruiting research librarians to evaluate it for institutional use. Would you have 20 minutes for a walkthrough?
 
-### Forum/Community Post
+### Forum/Community Post (Tier 1 — pipeline angle)
 
-> I built Downloader because I was tired of downloading papers one at a time and losing track of what came from where. It takes a list of URLs, DOIs, or BibTeX entries and gives you back a clean directory with every file named, traced, and ready to cite. Looking for researchers to test it on real projects. [link]
+> I built a CLI tool for bulk paper acquisition and corpus preparation. You give it a list of DOIs, arXiv IDs, PMC IDs, or URLs (or a BibTeX/RIS file), and it resolves open-access versions first, downloads everything, names files consistently, and writes a JSON-LD provenance sidecar per paper. Completion report tells you exactly what succeeded and what failed. Designed to be scriptable and pipeline-friendly — no GUI required. Looking for engineers and researchers building corpora to test it. [link]
 
 ---
 
