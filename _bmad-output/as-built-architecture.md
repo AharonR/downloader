@@ -191,7 +191,7 @@ See `.cargo/audit.toml` and `deny.toml` for current accepted advisories with rat
 
 ---
 
-## Deferred Items (tracked in OPEN_TASKS.md)
+## Deferred Items (tracked in _bmad-output/planning-artifacts/epic-12-backlog.md)
 
 - Windows CI runner (untested; path-related changes need manual validation)
 - Throughput benchmark (Criterion)
