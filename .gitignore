@@ -37,3 +37,4 @@
 # IDE / tool local state (contains credentials and machine-local paths)
 .codex/
 .claude/settings.local.json
+.claude/projects/
