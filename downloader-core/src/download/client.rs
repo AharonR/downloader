@@ -545,8 +545,7 @@ impl HttpClient {
         let existing_bytes = if allow_resume {
             tokio::fs::metadata(candidate_path)
                 .await
-                .map(|meta| meta.len())
-                .unwrap_or(0)
+                .map_or(0, |meta| meta.len())
         } else {
             0
         };
@@ -802,8 +801,7 @@ fn extract_filename(response: &reqwest::Response, url: &Url) -> String {
     // Ultimate fallback: timestamp-based name with content-type detection
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0_u64);
+        .map_or(0_u64, |d| d.as_secs());
 
     // Try to get extension from Content-Type header
     let extension = response

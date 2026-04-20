@@ -46,8 +46,7 @@ where
     let domain = sanitize_filename_component(&domain.replace('.', "-"));
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0_u64);
+        .map_or(0_u64, |d| d.as_secs());
     format!("{domain}_{timestamp}{extension}")
 }
 
@@ -254,8 +253,7 @@ pub(crate) fn resolve_unique_path_with_suffix_start(
     // Fallback (extremely unlikely)
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0_u64);
+        .map_or(0_u64, |d| d.as_secs());
     dir.join(format!("{stem}_{timestamp}{ext}"))
 }
 
@@ -279,8 +277,7 @@ pub(crate) fn fallback_filename_from_url(url: &Url) -> String {
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0_u64);
+        .map_or(0_u64, |d| d.as_secs());
     format!("download_{timestamp}.bin")
 }
 
