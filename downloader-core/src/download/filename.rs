@@ -47,7 +47,7 @@ where
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .unwrap_or(0_u64);
     format!("{domain}_{timestamp}{extension}")
 }
 
@@ -255,7 +255,7 @@ pub(crate) fn resolve_unique_path_with_suffix_start(
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .unwrap_or(0_u64);
     dir.join(format!("{stem}_{timestamp}{ext}"))
 }
 
@@ -280,7 +280,7 @@ pub(crate) fn fallback_filename_from_url(url: &Url) -> String {
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .unwrap_or(0_u64);
     format!("download_{timestamp}.bin")
 }
 

@@ -50,7 +50,7 @@ fn make_session_label() -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .unwrap_or(0_u64);
 
     let seq = SESSION_SEQ.fetch_add(1, Ordering::Relaxed);
 

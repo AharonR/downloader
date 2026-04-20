@@ -803,7 +803,7 @@ fn extract_filename(response: &reqwest::Response, url: &Url) -> String {
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .unwrap_or(0_u64);
 
     // Try to get extension from Content-Type header
     let extension = response
