@@ -217,7 +217,7 @@ fn scan_project_dirs(base: &std::path::Path) -> Vec<String> {
         })
         .collect();
 
-    dirs.sort_by(|a, b| b.0.cmp(&a.0));
+    dirs.sort_by_key(|d| std::cmp::Reverse(d.0));
     dirs.into_iter().map(|(_, name)| name).collect()
 }
 
