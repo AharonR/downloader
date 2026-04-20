@@ -145,7 +145,7 @@ fn validate_cookies(cookies: Vec<CookieLine>, now: u64) -> (Vec<CookieLine>, Vec
 fn unix_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs())
+        .map_or(0_u64, |duration| duration.as_secs())
 }
 
 fn parse_json_cookies(input: &str) -> Result<(Vec<CookieLine>, Vec<String>), CaptureError> {
@@ -224,7 +224,7 @@ fn convert_json_cookie(entry: JsonCookieEntry) -> Result<CookieLine, String> {
     let expires = entry
         .expiration_date
         .or(entry.expires)
-        .map_or(0, normalized_expiry);
+        .map_or(0_u64, normalized_expiry);
 
     Ok(CookieLine::new(
         domain,

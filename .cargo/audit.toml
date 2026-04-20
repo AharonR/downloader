@@ -5,4 +5,10 @@
 #
 # RUSTSEC-2025-0119: number_prefix unmaintained (warning only, no CVE).
 # Transitive via indicatif progress bars. No security impact; maintenance concern only.
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2025-0119"]
+#
+# RUSTSEC-2026-0097: rand unsoundness with custom logger calling rand::rng().
+# rand 0.7.3 and 0.8.5 remain in the tree as Tauri build-time dependencies
+# (phf_generator/phf_macros for compile-time hash table generation). These
+# crates never call rand::rng() from a logger context and are not invoked at
+# runtime. The fixed rand 0.9.3 is used by all runtime code paths.
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2025-0119", "RUSTSEC-2026-0097"]

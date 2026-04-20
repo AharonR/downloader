@@ -404,8 +404,7 @@ impl RateLimiter {
 fn unix_timestamp_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+        .map_or(0_u64, |d| d.as_secs())
 }
 
 /// Extracts the domain from a URL.
