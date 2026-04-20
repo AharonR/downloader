@@ -37,6 +37,10 @@ ignore = [
     { id = "RUSTSEC-2025-0081", reason = "Unmaintained — unic-char-property transitive via Tauri; no CVE, no security impact" },
     { id = "RUSTSEC-2025-0098", reason = "Unmaintained — unic-ucd-version transitive via Tauri; no CVE, no security impact" },
     { id = "RUSTSEC-2025-0100", reason = "Unmaintained — unic-ucd-ident transitive via Tauri; no CVE, no security impact" },
+    # rand 0.7.3 / 0.8.5 remain as Tauri build-time deps (phf_generator/phf_macros for compile-time
+    # hash tables). They never call rand::rng() from a logger context and are not invoked at runtime.
+    # All runtime paths use rand >= 0.9.3 which is patched.
+    { id = "RUSTSEC-2026-0097", reason = "Affected rand 0.7.3/0.8.5 are Tauri build-time deps only; no runtime exposure. Runtime code uses patched rand 0.9.3." },
 ]
 
 # ---------------------------------------------------------------------------
