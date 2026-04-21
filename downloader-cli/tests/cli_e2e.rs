@@ -11,6 +11,14 @@ use downloader_core::{
 use predicates::prelude::*;
 use tempfile::TempDir;
 
+fn isolated_downloader_command() -> (TempDir, Command) {
+    let tempdir = TempDir::new().unwrap();
+    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    // Isolate default `.` output-dir state per test to avoid registry lock contention.
+    cmd.current_dir(tempdir.path());
+    (tempdir, cmd)
+}
+
 fn write_downloader_config(config_home: &std::path::Path, contents: &str) {
     let config_dir = config_home.join("downloader");
     std::fs::create_dir_all(&config_dir).unwrap();
@@ -149,7 +157,7 @@ fn seed_failed_history_row(
 /// Test that the binary can be invoked and exits with code 0.
 #[test]
 fn test_binary_invocation_returns_zero() {
-    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    let (_workspace, mut cmd) = isolated_downloader_command();
     cmd.assert().success();
 }
 
@@ -204,7 +212,7 @@ fn test_binary_version_displays_version() {
 /// Test that successful command paths return exit code 0.
 #[test]
 fn test_binary_exit_code_success_is_zero() {
-    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    let (_workspace, mut cmd) = isolated_downloader_command();
     let assert = cmd.assert().success();
     assert_eq!(assert.get_output().status.code(), Some(0));
 }
@@ -1214,28 +1222,28 @@ fn test_binary_without_project_keeps_default_output_layout() {
 /// Test that -v flag works (verbose mode).
 #[test]
 fn test_binary_verbose_flag_accepted() {
-    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    let (_workspace, mut cmd) = isolated_downloader_command();
     cmd.arg("-v").assert().success();
 }
 
 /// Test that -q flag works (quiet mode).
 #[test]
 fn test_binary_quiet_flag_accepted() {
-    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    let (_workspace, mut cmd) = isolated_downloader_command();
     cmd.arg("-q").assert().success();
 }
 
 /// Test that --no-color flag is accepted.
 #[test]
 fn test_binary_no_color_flag_accepted() {
-    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    let (_workspace, mut cmd) = isolated_downloader_command();
     cmd.arg("--no-color").assert().success();
 }
 
 /// Test that NO_COLOR disables ANSI escape codes in emitted output.
 #[test]
 fn test_binary_no_color_env_disables_ansi_sequences() {
-    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    let (_workspace, mut cmd) = isolated_downloader_command();
     let assert = cmd
         .env("NO_COLOR", "1")
         .env("RUST_LOG", "trace")
@@ -1258,7 +1266,7 @@ fn test_binary_no_color_env_disables_ansi_sequences() {
 /// Test that TERM=dumb forces plain-text output without ANSI escapes.
 #[test]
 fn test_binary_dumb_terminal_disables_ansi_sequences() {
-    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    let (_workspace, mut cmd) = isolated_downloader_command();
     let assert = cmd
         .env("TERM", "dumb")
         .env("RUST_LOG", "trace")
@@ -1374,7 +1382,7 @@ fn test_binary_dry_run_rejects_dual_stdin_cookie_and_url_usage() {
 /// Test that piped stdin with no valid URLs exits cleanly.
 #[test]
 fn test_binary_stdin_no_urls_exits_cleanly() {
-    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    let (_workspace, mut cmd) = isolated_downloader_command();
     cmd.write_stdin("no urls here, just text")
         .assert()
         .success();
@@ -1465,7 +1473,7 @@ fn test_binary_empty_stdin_with_prior_state_does_not_use_empty_guidance() {
 /// Test that malformed stdin URL-like input exits cleanly (no crash).
 #[test]
 fn test_binary_stdin_with_invalid_domain_exits_cleanly() {
-    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    let (_workspace, mut cmd) = isolated_downloader_command();
     // Use non-URL stdin that parser rejects before any network client
     // initialization. This keeps the test deterministic in sandboxed CI.
     cmd.write_stdin("not-a-url-token")
@@ -1479,7 +1487,7 @@ fn test_binary_stdin_with_invalid_domain_exits_cleanly() {
 /// Test that invalid URLs from stdin are handled without any network I/O.
 #[test]
 fn test_binary_stdin_with_invalid_url_exits_cleanly() {
-    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    let (_workspace, mut cmd) = isolated_downloader_command();
     // Exceeds parser MAX_URL_LENGTH, so it is always rejected before download.
     let long_url = format!("https://example.com/{}", "a".repeat(2100));
     cmd.write_stdin(long_url).arg("-q").assert().success();
@@ -1488,7 +1496,7 @@ fn test_binary_stdin_with_invalid_url_exits_cleanly() {
 /// Test that flags after positional URLs are parsed as flags, not URLs.
 #[test]
 fn test_binary_flag_after_positional_url_is_parsed_as_flag() {
-    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    let (_workspace, mut cmd) = isolated_downloader_command();
     // Non-URL positional token avoids network I/O while still exercising flag ordering.
     cmd.arg("not-a-url-token")
         .arg("-q")
@@ -1500,7 +1508,7 @@ fn test_binary_flag_after_positional_url_is_parsed_as_flag() {
 /// Test that malformed-only input still surfaces skipped diagnostics.
 #[test]
 fn test_binary_malformed_input_surfaces_skipped_output() {
-    let mut cmd = Command::cargo_bin("downloader").unwrap();
+    let (_workspace, mut cmd) = isolated_downloader_command();
     cmd.write_stdin("@article{bad, title={Broken}, year={2024}")
         .arg("-v")
         .assert()
