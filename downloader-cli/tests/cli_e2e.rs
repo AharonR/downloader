@@ -1746,6 +1746,7 @@ fn test_auth_clear_removes_persisted_file() {
 fn test_persisted_cookies_auto_loaded_in_download_mode() {
     let tempdir = TempDir::new().unwrap();
     let config_home = tempdir.path().join("xdg-config");
+    let output_dir = tempdir.path().join("output");
 
     // First run: persist cookies via auth capture.
     let mut capture_cmd = Command::cargo_bin("downloader").unwrap();
@@ -1760,6 +1761,8 @@ fn test_persisted_cookies_auto_loaded_in_download_mode() {
     // Second run: no --cookies flag, but persisted cookies should be loaded.
     let mut run_cmd = Command::cargo_bin("downloader").unwrap();
     run_cmd
+        .arg("--output-dir")
+        .arg(&output_dir)
         .env("XDG_CONFIG_HOME", &config_home)
         .env("DOWNLOADER_MASTER_KEY", "test-master-key")
         .env("RUST_LOG", "info")
