@@ -70,11 +70,11 @@ static ARXIV_ID_LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
         .expect("arXiv bare ID line regex valid")
 });
 
-/// Matches an arXiv ID with an explicit `arXiv:` prefix (e.g. `arXiv:2301.01234v2`).
-/// Capture group 1 is the bare ID (without the prefix).
+/// Matches an arXiv ID with an explicit `arXiv:` prefix (e.g. `arXiv:2301.01234v2`
+/// or `arXiv: 2301.01234`).  Capture group 1 is the bare ID (without the prefix).
 #[allow(clippy::expect_used)]
 static ARXIV_PREFIX_LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^arXiv:((?:\d{4}\.\d{4,5}|[a-z\-]+(?:\.[a-z]{2})?/\d{7})(?:v\d+)?)$")
+    Regex::new(r"(?i)^arXiv:\s*((?:\d{4}\.\d{4,5}|[a-z\-]+(?:\.[a-z]{2})?/\d{7})(?:v\d+)?)$")
         .expect("arXiv prefix line regex valid")
 });
 
@@ -830,6 +830,29 @@ mod tests {
         // PMC IDs must not be counted as uncertain references.
         let result = parse_input("PMC9999999");
         assert_eq!(result.skipped_count(), 0);
+    }
+
+    #[test]
+    fn test_parse_input_arxiv_prefix_with_space_after_colon() {
+        let result = parse_input("arXiv: 2301.01234");
+        let id = result
+            .items
+            .iter()
+            .find(|i| i.input_type == InputType::Unknown)
+            .unwrap();
+        assert_eq!(id.value, "2301.01234");
+        assert_eq!(result.skipped_count(), 0);
+    }
+
+    #[test]
+    fn test_parse_input_arxiv_prefix_with_multiple_spaces_after_colon() {
+        let result = parse_input("arXiv:  2301.01234");
+        let id = result
+            .items
+            .iter()
+            .find(|i| i.input_type == InputType::Unknown)
+            .unwrap();
+        assert_eq!(id.value, "2301.01234");
     }
 
     #[test]
