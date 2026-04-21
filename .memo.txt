@@ -1,5 +1,22 @@
-When you're ready for the next cycle, the natural entry points are:
+Memory — 2026-04-21 (registry/dedup hardening pass)
 
-  - /bmad:bmm:workflows:sprint-planning — open a new sprint with the carry-forward items and next-cycle work
-  (coverage tooling, benchmarks, architecture amendment, UI scope evaluation)
-  - Architecture doc amendment can be started directly with the Architect agent
+- Registry now uses fail-fast project lock (`downloaded-registry.v1.lock`) held for
+  `DownloadedRegistry` lifetime; `Clone` removed to keep single lock owner.
+- App + CLI policy: post-download registry persist failures are warnings (not hard
+  errors) so completed downloads remain successful; warning code is
+  `registry_persist_failed`.
+- Windows atomic write path switched to `ReplaceFileW` flow with bounded transient
+  retry; destination delete gap removed.
+- App dedup correctness fix: removed unscoped active URL gate before project-scoped
+  duplicate check.
+- Sidecar recovery now quarantines invalid/truncated JSON sidecars using
+  collision-resistant names and retries on `AlreadyExists`.
+- Added focused tests for:
+  - cross-project enqueue isolation
+  - duplicate-active skip history persistence
+  - sidecar quarantine/regeneration and uniqueness.
+
+Natural next checks:
+- Add command-level `start_download_with_progress` isolation test (window/state
+  harness or integration-style test path).
+- Add `cfg(windows)` contention retry validation for atomic replace path.

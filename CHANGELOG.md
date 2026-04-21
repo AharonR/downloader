@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Durable per-project registry coordination** — `downloader-core/src/project_registry.rs`
+  now acquires a fail-fast advisory lock (`downloaded-registry.v1.lock`) for the
+  lifetime of `DownloadedRegistry`, preventing concurrent same-project snapshot
+  clobbering in multi-process runs.
+- **Structured app completion warnings** — `downloader-app` `DownloadSummary` now
+  includes `warnings` entries, including `registry_persist_failed` with path,
+  error, impact, and operator fix guidance.
+- **Targeted regression coverage for project isolation and dedup skip accounting**
+  in `downloader-app/src-tauri/src/commands.rs`:
+  - cross-project active URL no longer blocks enqueue in the current project
+  - same-project `duplicate_active` skips persist as `DownloadAttemptStatus::Skipped`
+    history rows with reason code.
+- **Sidecar corruption recovery tests** in `downloader-core/src/sidecar/mod.rs`
+  validating quarantine + regeneration and quarantine-name uniqueness.
+
+### Changed
+
+- **Windows atomic replacement path hardened** — `downloader-core/src/atomic_write.rs`
+  now uses `ReplaceFileW` with bounded retries for transient share/access lock
+  errors and safe fallback when destination is missing.
+- **Registry save semantics in app/CLI** — post-download `save_if_dirty` failures
+  are surfaced as warnings rather than hard-failing otherwise completed runs.
+- **Project-scoped dedup gating correctness** — removed unscoped active-URL short
+  circuit in app resolve/enqueue flow so scoped duplicate checks and skip history
+  are authoritative.
+
+### Fixed
+
+- **Cross-project queue interference in app dedup flow** — URLs active in another
+  project no longer cause silent skip in the current project.
+- **Sidecar quarantine collision risk** — corrupt sidecar quarantine filenames now
+  include high-entropy suffixes (`nanos`, process id, sequence) and retry on
+  `AlreadyExists` collisions.
+
 ## [Phase 1 — Wedge Hardening] — 2026-03-09/10
 
 ### Added
