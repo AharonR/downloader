@@ -201,6 +201,10 @@ pub struct QueueProcessingOptions {
     pub check_robots: bool,
     /// Shared robots.txt cache; used when [`Self::check_robots`] is true.
     pub robots_cache: Option<Arc<super::RobotsCache>>,
+    /// Optional queue project scope key.
+    ///
+    /// When set, only queue rows matching this key are dequeued/processed.
+    pub project_scope: Option<String>,
 }
 
 impl DownloadEngine {
@@ -375,7 +379,10 @@ impl DownloadEngine {
             }
             drain_finished_download_tasks(&mut handles, queue, stats.as_ref()).await;
 
-            let Some(item) = queue.dequeue().await? else {
+            let Some(item) = queue
+                .dequeue_in_project(options.project_scope.as_deref())
+                .await?
+            else {
                 break; // No more pending items
             };
 

@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use downloader_core::{
     DownloadEngine, HttpClient, Queue, QueueProcessingOptions, RateLimiter, RetryPolicy,
-    RobotsCache,
+    RobotsCache, project_history_key,
 };
 use tracing::debug;
 
@@ -77,6 +77,7 @@ pub(crate) async fn run_download(
                 generate_sidecars: ctx.args.sidecar,
                 check_robots: ctx.args.check_robots,
                 robots_cache,
+                project_scope: Some(project_history_key(&ctx.output_dir)),
             },
         )
         .await

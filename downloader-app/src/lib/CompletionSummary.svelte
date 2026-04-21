@@ -6,11 +6,21 @@
     error: string;
   }
 
+  export interface DownloadWarning {
+    code: string;
+    path: string;
+    error: string;
+    impact: string;
+    fix: string;
+  }
+
   export interface DownloadSummary {
     completed: number;
     failed: number;
+    skipped_duplicates?: number;
     output_dir: string;
     failed_items: FailedItem[];
+    warnings?: DownloadWarning[];
   }
 
   let {
@@ -23,6 +33,8 @@
   let openFolderError = $state<string | null>(null);
   const EXPAND_ALL_THRESHOLD = 5;
   let expandAll = $state(false);
+  const skippedDuplicates = $derived(summary.skipped_duplicates ?? 0);
+  const warnings = $derived(summary.warnings ?? []);
 
   async function handleOpenFolder() {
     openFolderError = null;
@@ -54,6 +66,9 @@
       {#if cancelled}
         <h3 class="status-cancelled">Run stopped</h3>
         <p class="status-copy">You still have the files that completed before the run was cancelled.</p>
+      {:else if summary.completed === 0 && summary.failed === 0 && skippedDuplicates > 0}
+        <h3 class="status-success">Run complete</h3>
+        <p class="status-copy">No new files were needed because matching items were already downloaded.</p>
       {:else if summary.failed === 0}
         <h3 class="status-success">Run complete</h3>
         <p class="status-copy">The corpus is ready for review and handoff.</p>
@@ -74,10 +89,16 @@
       <strong class="metric-value">{summary.failed}</strong>
     </div>
     <div class="metric-card">
+      <span class="metric-label">Already downloaded</span>
+      <strong class="metric-value">{skippedDuplicates}</strong>
+    </div>
+    <div class="metric-card">
       <span class="metric-label">Status</span>
       <strong class="metric-value metric-value--text">
         {#if cancelled}
           Cancelled
+        {:else if summary.completed === 0 && summary.failed === 0 && skippedDuplicates > 0}
+          No-op
         {:else if summary.failed === 0}
           Ready
         {:else}
@@ -87,7 +108,7 @@
     </div>
   </div>
 
-  {#if summary.output_dir && summary.completed > 0}
+  {#if summary.output_dir && (summary.completed > 0 || skippedDuplicates > 0)}
     <div class="output-block">
       <div class="output-copy">
         <p class="output-label">Project output</p>
@@ -130,6 +151,22 @@
         {/each}
       </ul>
     {/if}
+  {/if}
+
+  {#if warnings.length > 0}
+    <div class="warning-block" role="status" aria-label="Post-run warnings">
+      <p class="warning-heading">Warnings</p>
+      <ul class="warning-list">
+        {#each warnings as warning}
+          <li class="warning-item">
+            <p class="warning-line"><code>{warning.code}</code>: {warning.error}</p>
+            <p class="warning-meta">Path: <code>{warning.path}</code></p>
+            <p class="warning-meta">Impact: {warning.impact}</p>
+            <p class="warning-meta">Fix: {warning.fix}</p>
+          </li>
+        {/each}
+      </ul>
+    </div>
   {/if}
 
   <div class="action-row">
@@ -194,7 +231,7 @@
 
   .summary-metrics {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.7rem;
   }
 
@@ -251,6 +288,45 @@
     font-weight: 600;
     letter-spacing: 0.02em;
     text-transform: uppercase;
+  }
+
+  .warning-block {
+    padding: 0.85rem 0.95rem;
+    border: 1px solid rgba(158, 118, 25, 0.38);
+    border-radius: 14px;
+    background: rgba(249, 238, 211, 0.7);
+  }
+
+  .warning-heading {
+    margin: 0 0 0.5rem;
+    color: var(--fg-strong);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .warning-list {
+    margin: 0;
+    padding-left: 1rem;
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .warning-item {
+    color: var(--fg-strong);
+    font-size: 0.86rem;
+    line-height: 1.45;
+  }
+
+  .warning-line {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .warning-meta {
+    margin: 0.12rem 0 0;
+    color: var(--fg-muted);
   }
 
   .output-dir {

@@ -51,6 +51,9 @@ rand = "0.8"
 # Thread-safe concurrent HashMap - required for per-domain rate limiting (Story 1.7)
 dashmap = "5.5"
 
+# Cross-platform advisory file locking for registry coordination
+fs2 = "0.4"
+
 # RFC 7231 HTTP-date parsing - required for Retry-After header (Story 1.7)
 httpdate = "1.0"
 
@@ -73,3 +76,6 @@ tempfile = "3"
 tokio-test = "0.4"
 libc = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }

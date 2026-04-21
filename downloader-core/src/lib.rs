@@ -24,12 +24,14 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
+pub mod atomic_write;
 pub mod auth;
 pub mod db;
 pub mod download;
 pub mod export;
 pub mod parser;
 pub mod project;
+pub mod project_registry;
 pub mod queue;
 pub mod resolver;
 pub mod sidecar;
@@ -65,6 +67,9 @@ pub use parser::{
 pub use project::{
     ProjectError, escape_markdown_cell, project_history_key, resolve_project_output_dir,
     sanitize_project_name, truncate_field,
+};
+pub use project_registry::{
+    DownloadedRegistry, RegistryLookup, canonicalize_url, dedup_key_for, normalize_doi,
 };
 pub use queue::{
     DownloadAttempt, DownloadAttemptQuery, DownloadAttemptStatus, DownloadErrorType,

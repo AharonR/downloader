@@ -95,6 +95,8 @@ pub struct QueueItem {
     pub source_type: String,
     /// Original user input before resolution (e.g., DOI string).
     pub original_input: Option<String>,
+    /// Project scope key for isolating queue operations in shared databases.
+    pub project: Option<String>,
     /// Current processing status (stored as text, parsed via `status()`).
     #[sqlx(rename = "status")]
     pub status_str: String,
@@ -275,6 +277,7 @@ mod tests {
             url: "https://example.com".to_string(),
             source_type: "direct_url".to_string(),
             original_input: None,
+            project: None,
             status_str: "in_progress".to_string(),
             priority: 0,
             retry_count: 0,
@@ -304,6 +307,7 @@ mod tests {
             url: "https://example.com".to_string(),
             source_type: "direct_url".to_string(),
             original_input: None,
+            project: None,
             status_str: "garbage".to_string(),
             priority: 0,
             retry_count: 0,
@@ -333,6 +337,7 @@ mod tests {
             url: "https://example.com/file.pdf".to_string(),
             source_type: "direct_url".to_string(),
             original_input: None,
+            project: None,
             status_str: "pending".to_string(),
             priority: 0,
             retry_count: 0,
@@ -380,6 +385,7 @@ mod tests {
             url: "https://example.com".to_string(),
             source_type: "direct_url".to_string(),
             original_input: None,
+            project: None,
             status_str: "pending".to_string(),
             priority: 0,
             retry_count: 0,
@@ -410,6 +416,7 @@ mod tests {
             url: "https://example.com".to_string(),
             source_type: "direct_url".to_string(),
             original_input: None,
+            project: None,
             status_str: "pending".to_string(),
             priority: 0,
             retry_count: 0,
@@ -438,6 +445,7 @@ mod tests {
             url: "https://example.com".to_string(),
             source_type: "direct_url".to_string(),
             original_input: None,
+            project: None,
             status_str: "pending".to_string(),
             priority: 0,
             retry_count: 0,

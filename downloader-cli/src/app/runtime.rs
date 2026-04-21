@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Result, bail};
-use downloader_core::QueueStatus;
+use downloader_core::{DownloadedRegistry, QueueStatus};
 use tracing::{debug, info, warn};
 
 use crate::app::{
@@ -114,6 +114,25 @@ fn check_tos_acknowledgment(quiet: bool) -> Result<ProcessExit> {
     Ok(ProcessExit::Failure)
 }
 
+fn save_registry_or_warn(registry: &mut DownloadedRegistry) {
+    if let Err(err) = registry.save_if_dirty() {
+        let path = registry.path().display().to_string();
+        let impact = "future runs may re-download";
+        let fix = "Check write permissions for the project .downloader directory and rerun.";
+        warn!(
+            code = "registry_persist_failed",
+            path = %path,
+            error = %err,
+            impact,
+            fix,
+            "Failed to persist dedup registry after downloads"
+        );
+        eprintln!(
+            "Warning: registry_persist_failed at {path}: {err}. Impact: {impact}. Fix: {fix}"
+        );
+    }
+}
+
 pub(crate) async fn run_downloader() -> Result<ProcessExit> {
     let (cli, cli_sources) = config_runtime::parse_cli_with_sources();
 
@@ -191,10 +210,21 @@ pub(crate) async fn run_downloader() -> Result<ProcessExit> {
     let (queue, history_start_id) =
         queue_manager::create_queue(&ctx.output_dir, &ctx.db_options).await?;
 
-    let resolution = resolution_orchestrator::run_resolution(&ctx, Arc::clone(&queue)).await?;
+    let project_key = project::project_history_key(&ctx.output_dir);
+    let mut registry = DownloadedRegistry::load(&ctx.output_dir, &project_key)?;
+    let resolution = resolution_orchestrator::run_resolution(
+        &ctx,
+        Arc::clone(&queue),
+        &project_key,
+        &mut registry,
+    )
+    .await?;
 
     if resolution.parsed_item_count > 0
-        && resolution.resolution_failed_count == resolution.parsed_item_count
+        && resolution.enqueued_count == 0
+        && resolution.duplicate_skipped_count == 0
+        && (resolution.resolution_failed_auth_count + resolution.resolution_failed_other_count)
+            == resolution.parsed_item_count
     {
         let first_error = resolution
             .first_resolution_error
@@ -203,12 +233,14 @@ pub(crate) async fn run_downloader() -> Result<ProcessExit> {
         bail!(
             "All parsed items failed URL resolution ({}/{}).\n  \
              First error: {first_error}",
-            resolution.resolution_failed_count,
+            resolution.resolution_failed_auth_count + resolution.resolution_failed_other_count,
             resolution.parsed_item_count
         );
     }
 
-    let pending_items = queue.list_by_status(QueueStatus::Pending).await?;
+    let pending_items = queue
+        .list_by_status_in_project(QueueStatus::Pending, Some(&project_key))
+        .await?;
     let total_queued = pending_items.len();
     let uncertain_references_in_run = pending_items
         .iter()
@@ -216,12 +248,35 @@ pub(crate) async fn run_downloader() -> Result<ProcessExit> {
         .count();
 
     if total_queued == 0 {
+        if resolution.duplicate_skipped_count > 0 && !resolution.has_failures() {
+            info!(
+                skipped_duplicates = resolution.duplicate_skipped_count,
+                "No new downloads needed; all items were already downloaded"
+            );
+            return Ok(ProcessExit::Success);
+        }
+        if resolution.has_failures() {
+            let first_enqueue_error = resolution.first_enqueue_error.as_deref().unwrap_or("n/a");
+            bail!(
+                "No runnable items remained after resolution.\n  \
+                 Duplicates skipped: {}\n  \
+                 Resolution failures (auth): {}\n  \
+                 Resolution failures (other): {}\n  \
+                 Enqueue failures: {}\n  \
+                 First enqueue error: {}",
+                resolution.duplicate_skipped_count,
+                resolution.resolution_failed_auth_count,
+                resolution.resolution_failed_other_count,
+                resolution.enqueue_failed_count,
+                first_enqueue_error
+            );
+        }
         info!("No queue items were enqueued for downloading");
         return Ok(ProcessExit::Success);
     }
 
     let completed_before: HashSet<i64> = queue
-        .list_by_status(QueueStatus::Completed)
+        .list_by_status_in_project(QueueStatus::Completed, Some(&project_key))
         .await?
         .into_iter()
         .map(|item| item.id)
@@ -271,12 +326,28 @@ pub(crate) async fn run_downloader() -> Result<ProcessExit> {
     .await?;
 
     if ctx.args.sidecar {
-        let count =
-            project::generate_sidecars_for_completed(queue.as_ref(), &completed_before).await;
+        let count = project::generate_sidecars_for_completed(
+            queue.as_ref(),
+            &ctx.output_dir,
+            &completed_before,
+        )
+        .await;
         if count > 0 {
             info!(count, "Generated sidecar files");
         }
     }
+
+    for item in queue
+        .list_by_status_in_project(QueueStatus::Completed, Some(&project_key))
+        .await?
+        .into_iter()
+        .filter(|item| !completed_before.contains(&item.id))
+    {
+        if let Some(path) = item.saved_path.as_deref().map(std::path::Path::new) {
+            registry.record_success(&ctx.output_dir, &item.url, item.meta_doi.as_deref(), path);
+        }
+    }
+    save_registry_or_warn(&mut registry);
 
     if stats.was_interrupted() || interrupted.load(Ordering::SeqCst) {
         warn!(
@@ -296,4 +367,43 @@ pub(crate) async fn run_downloader() -> Result<ProcessExit> {
         stats.completed(),
         stats.failed(),
     ))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use downloader_core::project::project_history_key;
+
+    #[test]
+    fn test_save_registry_or_warn_keeps_success_path_when_persist_succeeds() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let output_dir = temp.path();
+        let project_key = project_history_key(output_dir);
+        let mut registry = DownloadedRegistry::load(output_dir, &project_key).unwrap();
+
+        let file_path = output_dir.join("ok.pdf");
+        std::fs::write(&file_path, b"ok").unwrap();
+        registry.record_success(output_dir, "https://example.com/ok.pdf", None, &file_path);
+
+        save_registry_or_warn(&mut registry);
+        assert!(!registry.is_dirty());
+    }
+
+    #[test]
+    fn test_save_registry_or_warn_does_not_error_when_persist_fails() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let output_dir = temp.path();
+        let project_key = project_history_key(output_dir);
+        let mut registry = DownloadedRegistry::load(output_dir, &project_key).unwrap();
+
+        let file_path = output_dir.join("warn.pdf");
+        std::fs::write(&file_path, b"warn").unwrap();
+        registry.record_success(output_dir, "https://example.com/warn.pdf", None, &file_path);
+
+        std::fs::create_dir_all(registry.path()).unwrap();
+
+        save_registry_or_warn(&mut registry);
+        assert!(registry.is_dirty());
+    }
 }

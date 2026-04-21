@@ -2,7 +2,7 @@
 //!
 //! Bridges the Svelte frontend to `downloader_core` via Tauri's IPC layer.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -13,14 +13,15 @@ use downloader_core::project::{
     project_history_key, resolve_project_output_dir,
 };
 use downloader_core::{
-    DEFAULT_CONCURRENCY, Database, DownloadAttemptQuery, DownloadEngine, HttpClient, InputType,
-    Queue, QueueMetadata, QueueStatus, RateLimiter, ResolveContext, ResolveError, RetryPolicy,
-    build_default_resolver_registry, build_preferred_filename, extract_reference_confidence,
-    load_runtime_cookie_jar, parse_input, parse_ris_content,
+    DEFAULT_CONCURRENCY, Database, DownloadAttemptQuery, DownloadAttemptStatus, DownloadEngine,
+    DownloadedRegistry, HttpClient, InputType, NewDownloadAttempt, Queue, QueueMetadata,
+    QueueProcessingOptions, QueueStatus, RateLimiter, RegistryLookup, ResolveContext, ResolveError,
+    RetryPolicy, build_default_resolver_registry, build_preferred_filename,
+    extract_reference_confidence, load_runtime_cookie_jar, parse_input, parse_ris_content,
 };
 use serde::Serialize;
 use tauri::Emitter;
-use tracing::{debug, warn};
+use tracing::warn;
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -31,8 +32,10 @@ use tracing::{debug, warn};
 pub struct DownloadSummary {
     pub completed: usize,
     pub failed: usize,
+    pub skipped_duplicates: usize,
     pub output_dir: String,
     pub failed_items: Vec<FailedItem>,
+    pub warnings: Vec<DownloadWarning>,
 }
 
 /// Per-item failure detail included in [`DownloadSummary`].
@@ -40,6 +43,16 @@ pub struct DownloadSummary {
 pub struct FailedItem {
     pub input: String,
     pub error: String,
+}
+
+/// Non-fatal completion warning returned to the frontend.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DownloadWarning {
+    pub code: String,
+    pub path: String,
+    pub error: String,
+    pub impact: String,
+    pub fix: String,
 }
 
 /// Per-item progress snapshot emitted during active downloads.
@@ -176,6 +189,13 @@ impl AppDefaults {
     }
 }
 
+fn app_db_path() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".downloader")
+        .join("downloader-app.db")
+}
+
 // ---------------------------------------------------------------------------
 // list_projects helper
 // ---------------------------------------------------------------------------
@@ -292,10 +312,136 @@ fn validate_inputs(inputs: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, Default, Clone)]
+struct ResolveEnqueueOutcome {
+    parsed: usize,
+    enqueued: usize,
+    duplicate_skipped: usize,
+    resolution_failed_auth: usize,
+    resolution_failed_other: usize,
+    enqueue_failed: usize,
+    first_enqueue_error: Option<String>,
+}
+
+impl ResolveEnqueueOutcome {
+    fn has_failures(&self) -> bool {
+        self.resolution_failed_auth > 0
+            || self.resolution_failed_other > 0
+            || self.enqueue_failed > 0
+    }
+}
+
+fn queue_operational_error(action: &str, err: impl std::fmt::Display) -> String {
+    format!(
+        "What: Queue operation failed.\n\
+         Why: Could not {action}: {err}\n\
+         Fix: Check that ~/.downloader/ is writable and retry."
+    )
+}
+
+fn registry_persist_warning(
+    registry: &DownloadedRegistry,
+    err: &std::io::Error,
+) -> DownloadWarning {
+    DownloadWarning {
+        code: "registry_persist_failed".to_string(),
+        path: registry.path().display().to_string(),
+        error: err.to_string(),
+        impact: "future runs may re-download".to_string(),
+        fix: "Check write permissions for the project .downloader directory and rerun.".to_string(),
+    }
+}
+
+fn save_registry_with_warning(registry: &mut DownloadedRegistry) -> Option<DownloadWarning> {
+    match registry.save_if_dirty() {
+        Ok(()) => None,
+        Err(err) => {
+            let warning = registry_persist_warning(registry, &err);
+            warn!(
+                code = %warning.code,
+                path = %warning.path,
+                error = %warning.error,
+                impact = %warning.impact,
+                fix = %warning.fix,
+                "Failed to persist dedup registry after download run"
+            );
+            Some(warning)
+        }
+    }
+}
+
+fn render_no_runnable_items_error(outcome: &ResolveEnqueueOutcome) -> String {
+    if outcome.has_failures() {
+        let enqueue_reason = outcome.first_enqueue_error.as_deref().unwrap_or("n/a");
+        return format!(
+            "What: Download could not start.\n\
+             Why: No runnable items remained after resolving {} parsed item(s) (duplicates skipped: {}, auth resolution failures: {}, other resolution failures: {}, enqueue failures: {}; first enqueue error: {}).\n\
+             Fix: Resolve the failing items, then retry.",
+            outcome.parsed,
+            outcome.duplicate_skipped,
+            outcome.resolution_failed_auth,
+            outcome.resolution_failed_other,
+            outcome.enqueue_failed,
+            enqueue_reason
+        );
+    }
+
+    format!(
+        "What: Download could not start.\n\
+         Why: All {} parsed item(s) were already queued or downloaded for this project.\n\
+         Fix: Add new inputs, or remove existing outputs if you want to re-download.",
+        outcome.parsed
+    )
+}
+
+async fn log_skipped_attempt(
+    queue: &Queue,
+    project_key: &str,
+    url: &str,
+    original_input: &str,
+    metadata: &QueueMetadata,
+    reason_code: &'static str,
+) {
+    let attempt = NewDownloadAttempt {
+        url,
+        final_url: Some(url),
+        status: DownloadAttemptStatus::Skipped,
+        file_path: None,
+        file_size: None,
+        content_type: None,
+        error_message: Some(reason_code),
+        error_type: None,
+        retry_count: 0,
+        project: Some(project_key),
+        original_input: Some(original_input),
+        http_status: None,
+        duration_ms: Some(0),
+        title: metadata.title.as_deref(),
+        authors: metadata.authors.as_deref(),
+        doi: metadata.doi.as_deref(),
+        topics: None,
+        parse_confidence: metadata.parse_confidence.as_deref(),
+        parse_confidence_factors: metadata.parse_confidence_factors.as_deref(),
+    };
+    if let Err(err) = queue.log_download_attempt(&attempt).await {
+        warn!(
+            url = %url,
+            reason = reason_code,
+            error = %err,
+            "Failed to persist skipped download attempt"
+        );
+    }
+}
+
 /// Parse `inputs`, resolve each item, and enqueue into `queue`.
-/// Returns the number of items successfully enqueued.
-/// On total failure returns an error string.
-async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, String> {
+/// Returns rich counters for resolution/enqueue outcomes.
+async fn resolve_and_enqueue(
+    inputs: &[String],
+    queue: &Queue,
+    project_key: &str,
+    output_dir: &std::path::Path,
+    registry: &mut DownloadedRegistry,
+) -> Result<ResolveEnqueueOutcome, String> {
     validate_inputs(inputs)?;
 
     let joined = inputs
@@ -318,8 +464,10 @@ async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, 
         build_default_resolver_registry(cookie_jar, "downloader-app@downloader");
     let resolve_context = ResolveContext::default();
 
-    let mut enqueued = 0usize;
-    let mut resolve_failures = ResolveFailureSummary::default();
+    let mut outcome = ResolveEnqueueOutcome {
+        parsed: parse_result.items.len(),
+        ..ResolveEnqueueOutcome::default()
+    };
 
     for item in &parse_result.items {
         let resolver_input = if item.input_type == InputType::BibTex {
@@ -334,16 +482,14 @@ async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, 
         {
             Ok(r) => r,
             Err(e) => {
-                resolve_failures.record(&e);
+                match e {
+                    ResolveError::AuthRequired { .. } => outcome.resolution_failed_auth += 1,
+                    _ => outcome.resolution_failed_other += 1,
+                }
                 warn!(error = %e, "Skipped unresolved item");
                 continue;
             }
         };
-
-        if queue.has_active_url(&resolved.url).await.unwrap_or(false) {
-            debug!("Skipping duplicate URL already in queue");
-            continue;
-        }
 
         let reference_confidence = (item.input_type == InputType::Reference)
             .then(|| extract_reference_confidence(&item.raw));
@@ -360,110 +506,92 @@ async fn resolve_and_enqueue(inputs: &[String], queue: &Queue) -> Result<usize, 
                 .and_then(|d| serde_json::to_string(&d.factors).ok()),
         };
 
+        if queue
+            .has_active_url_in_project(&resolved.url, Some(project_key))
+            .await
+            .map_err(|e| queue_operational_error("check active URL state", e))?
+        {
+            outcome.duplicate_skipped += 1;
+            log_skipped_attempt(
+                queue,
+                project_key,
+                &resolved.url,
+                &item.raw,
+                &metadata,
+                "duplicate_active",
+            )
+            .await;
+            continue;
+        }
+
+        match registry.lookup(output_dir, &resolved.url, metadata.doi.as_deref()) {
+            RegistryLookup::Hit { .. } => {
+                outcome.duplicate_skipped += 1;
+                log_skipped_attempt(
+                    queue,
+                    project_key,
+                    &resolved.url,
+                    &item.raw,
+                    &metadata,
+                    "duplicate_existing",
+                )
+                .await;
+                continue;
+            }
+            RegistryLookup::StaleRecovered => {
+                log_skipped_attempt(
+                    queue,
+                    project_key,
+                    &resolved.url,
+                    &item.raw,
+                    &metadata,
+                    "stale_mapping_recovered",
+                )
+                .await;
+            }
+            RegistryLookup::Miss => {}
+        }
+
         if let Err(e) = queue
-            .enqueue_with_metadata(
+            .enqueue_with_metadata_in_project(
                 &resolved.url,
                 item.input_type.queue_source_type(),
                 Some(&item.raw),
                 Some(&metadata),
+                Some(project_key),
             )
             .await
         {
-            warn!(error = %e, "Failed to enqueue item");
-        } else {
-            enqueued += 1;
-        }
-    }
-
-    if enqueued == 0 {
-        return Err(resolve_failures.render_start_download_error());
-    }
-
-    Ok(enqueued)
-}
-
-#[derive(Debug, Default)]
-struct ResolveFailureSummary {
-    auth_errors: usize,
-    other_errors: usize,
-    auth_domains: BTreeSet<String>,
-}
-
-impl ResolveFailureSummary {
-    fn record(&mut self, error: &ResolveError) {
-        match error {
-            ResolveError::AuthRequired { domain, .. } => {
-                self.auth_errors += 1;
-                self.auth_domains.insert(domain.clone());
+            outcome.enqueue_failed += 1;
+            if outcome.first_enqueue_error.is_none() {
+                outcome.first_enqueue_error = Some(e.to_string());
             }
-            _ => {
-                self.other_errors += 1;
-            }
+            warn!(error = %e, "Failed to enqueue resolved item");
+            continue;
         }
+        outcome.enqueued += 1;
     }
 
-    fn render_start_download_error(&self) -> String {
-        if self.auth_errors > 0 && self.other_errors == 0 {
-            let domain_phrase = format_auth_domain_phrase(&self.auth_domains);
-            return format!(
-                "What: Download could not start.\n\
-                 Why: All {} item(s) require authentication{} before download can start.\n\
-                 Fix: Run `downloader auth capture` to authenticate, then retry.",
-                self.auth_errors, domain_phrase
-            );
-        }
+    registry
+        .save_if_dirty()
+        .map_err(|e| format!("What: Failed to update dedup registry.\nWhy: {e}\nFix: Check project output directory permissions."))?;
 
-        if self.auth_errors > 0 && self.other_errors > 0 {
-            let domain_phrase = format_auth_domain_phrase(&self.auth_domains);
-            return format!(
-                "What: Download could not start.\n\
-                 Why: {} item(s) require authentication{} and {} item(s) failed to resolve to a download URL.\n\
-                 Fix: Run `downloader auth capture` to authenticate, then verify the remaining URLs/DOIs and network access.",
-                self.auth_errors, domain_phrase, self.other_errors
-            );
-        }
-
-        if self.other_errors > 0 {
-            return format!(
-                "What: Download could not start.\n\
-                 Why: All {} item(s) failed to resolve to a download URL.\n\
-                 Fix: Verify the URLs/DOIs are correct and that network access is available.",
-                self.other_errors
-            );
-        }
-
-        "What: Download could not start.\n\
-         Why: No items could be enqueued.\n\
-         Fix: Remove duplicates or verify that the queue does not already contain these items."
-            .to_string()
+    if outcome.enqueued == 0 && outcome.duplicate_skipped == 0 && outcome.has_failures() {
+        return Err(render_no_runnable_items_error(&outcome));
     }
-}
 
-fn format_auth_domain_phrase(domains: &BTreeSet<String>) -> String {
-    if domains.is_empty() {
-        String::new()
-    } else if domains.len() == 1 {
-        format!(
-            " for {}",
-            domains
-                .iter()
-                .next()
-                .map(String::as_str)
-                .unwrap_or_default()
-        )
-    } else {
-        format!(
-            " for {}",
-            domains.iter().cloned().collect::<Vec<_>>().join(", ")
-        )
-    }
+    Ok(outcome)
 }
 
 /// Collects newly-failed items from the queue, excluding those that were
 /// already failed before this run (identified by `failed_before` IDs).
-async fn collect_failed_items(queue: &Queue, failed_before: &HashSet<i64>) -> Vec<FailedItem> {
+async fn collect_failed_items(
+    queue: &Queue,
+    failed_before: &HashSet<i64>,
+    project_key: &str,
+) -> Vec<FailedItem> {
     queue
-        .list_by_status(QueueStatus::Failed)
+        .list_by_status_in_project(QueueStatus::Failed, Some(project_key))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -510,22 +638,17 @@ pub async fn start_download(
         ));
     }
 
-    // Dual-DB design note: `start_download` uses a separate database file
-    // (`downloader-app.db`) from `start_download_with_progress` (`downloader-app-progress.db`).
-    // This split was introduced in Story 10-2 to preserve unit-test isolation: the progress
-    // command's tests assume a fresh DB state and would otherwise conflict with tests for this
-    // simpler command.
-    //
-    // Tradeoff: project history written by one command is invisible to the other. In practice
-    // the frontend always calls `start_download_with_progress`, so `start_download` is a
-    // fallback/test path only and its history is not surfaced in the UI. If the two commands
-    // are ever consolidated, merge their DB paths at the same time.
-    let db_path = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".downloader")
-        .join("downloader-app.db");
+    let project_key = project_history_key(&output_dir);
+    let mut registry = DownloadedRegistry::load(&output_dir, &project_key).map_err(|e| {
+        format!(
+            "What: Failed to initialize dedup registry.\n\
+             Why: {e}\n\
+             Fix: Check that '{dir}' is writable.",
+            dir = output_dir.display()
+        )
+    })?;
 
-    let db = Database::new(&db_path).await.map_err(|e| {
+    let db = Database::new(&app_db_path()).await.map_err(|e| {
         format!(
             "What: Failed to initialise database.\n\
              Why: {e}\n\
@@ -534,11 +657,44 @@ pub async fn start_download(
     })?;
 
     let queue = Arc::new(Queue::new(db));
-    resolve_and_enqueue(&inputs, &queue).await?;
+    queue
+        .reset_in_progress_in_project(Some(&project_key))
+        .await
+        .map_err(|e| queue_operational_error("recover interrupted project items", e))?;
+
+    let legacy_rows = queue.count_legacy_unscoped_rows().await.unwrap_or_default();
+    if legacy_rows > 0 {
+        warn!(
+            legacy_rows,
+            "Legacy queue rows without project scope were ignored for this run"
+        );
+    }
+
+    let outcome =
+        resolve_and_enqueue(&inputs, &queue, &project_key, &output_dir, &mut registry).await?;
+    let total_queued = queue
+        .count_by_status_in_project(QueueStatus::Pending, Some(&project_key))
+        .await
+        .map_err(|e| queue_operational_error("count pending project items", e))?
+        as usize;
+
+    if total_queued == 0 {
+        if outcome.duplicate_skipped > 0 && !outcome.has_failures() {
+            return Ok(DownloadSummary {
+                completed: 0,
+                failed: 0,
+                skipped_duplicates: outcome.duplicate_skipped,
+                output_dir: output_dir.display().to_string(),
+                failed_items: vec![],
+                warnings: vec![],
+            });
+        }
+        return Err(render_no_runnable_items_error(&outcome));
+    }
 
     // Capture state before this run to identify newly-completed/failed items and bound the log.
     let completed_before: HashSet<i64> = queue
-        .list_by_status(QueueStatus::Completed)
+        .list_by_status_in_project(QueueStatus::Completed, Some(&project_key))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -546,7 +702,7 @@ pub async fn start_download(
         .collect();
 
     let failed_before: HashSet<i64> = queue
-        .list_by_status(QueueStatus::Failed)
+        .list_by_status_in_project(QueueStatus::Failed, Some(&project_key))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -578,7 +734,16 @@ pub async fn start_download(
         })?;
 
     let stats = engine
-        .process_queue(&queue, &client, &output_dir)
+        .process_queue_interruptible_with_options(
+            &queue,
+            &client,
+            &output_dir,
+            Arc::new(AtomicBool::new(false)),
+            QueueProcessingOptions {
+                project_scope: Some(project_key.clone()),
+                ..QueueProcessingOptions::default()
+            },
+        )
         .await
         .map_err(|e| {
             format!(
@@ -591,16 +756,33 @@ pub async fn start_download(
     if project.is_some() {
         let _ = append_project_index(&queue, &output_dir, &completed_before).await;
         let _ = append_project_download_log(&queue, &output_dir, log_watermark).await;
-        generate_sidecars_for_completed(&queue, &completed_before).await;
+        generate_sidecars_for_completed(&queue, &output_dir, &completed_before).await;
     }
 
-    let failed_items = collect_failed_items(&queue, &failed_before).await;
+    for item in queue
+        .list_by_status_in_project(QueueStatus::Completed, Some(&project_key))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|item| !completed_before.contains(&item.id))
+    {
+        if let Some(path) = item.saved_path.as_deref().map(std::path::Path::new) {
+            registry.record_success(&output_dir, &item.url, item.meta_doi.as_deref(), path);
+        }
+    }
+    let warnings = save_registry_with_warning(&mut registry)
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    let failed_items = collect_failed_items(&queue, &failed_before, &project_key).await;
 
     Ok(DownloadSummary {
         completed: stats.completed(),
         failed: stats.failed(),
+        skipped_duplicates: outcome.duplicate_skipped,
         output_dir: output_dir.display().to_string(),
         failed_items,
+        warnings,
     })
 }
 
@@ -670,12 +852,17 @@ pub async fn start_download_with_progress(
         ));
     }
 
-    let db_path = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".downloader")
-        .join("downloader-app-progress.db");
+    let project_key = project_history_key(&output_dir);
+    let mut registry = DownloadedRegistry::load(&output_dir, &project_key).map_err(|e| {
+        format!(
+            "What: Failed to initialize dedup registry.\n\
+             Why: {e}\n\
+             Fix: Check that '{dir}' is writable.",
+            dir = output_dir.display()
+        )
+    })?;
 
-    let db = Database::new(&db_path).await.map_err(|e| {
+    let db = Database::new(&app_db_path()).await.map_err(|e| {
         format!(
             "What: Failed to initialise database.\n\
              Why: {e}\n\
@@ -684,7 +871,46 @@ pub async fn start_download_with_progress(
     })?;
 
     let queue = Arc::new(Queue::new(db));
-    let enqueued = resolve_and_enqueue(&augmented_inputs, &queue).await?;
+    queue
+        .reset_in_progress_in_project(Some(&project_key))
+        .await
+        .map_err(|e| queue_operational_error("recover interrupted project items", e))?;
+
+    let legacy_rows = queue.count_legacy_unscoped_rows().await.unwrap_or_default();
+    if legacy_rows > 0 {
+        warn!(
+            legacy_rows,
+            "Legacy queue rows without project scope were ignored for this run"
+        );
+    }
+
+    let outcome = resolve_and_enqueue(
+        &augmented_inputs,
+        &queue,
+        &project_key,
+        &output_dir,
+        &mut registry,
+    )
+    .await?;
+    let total_queued = queue
+        .count_by_status_in_project(QueueStatus::Pending, Some(&project_key))
+        .await
+        .map_err(|e| queue_operational_error("count pending project items", e))?
+        as usize;
+
+    if total_queued == 0 {
+        if outcome.duplicate_skipped > 0 && !outcome.has_failures() {
+            return Ok(DownloadSummary {
+                completed: 0,
+                failed: 0,
+                skipped_duplicates: outcome.duplicate_skipped,
+                output_dir: output_dir.display().to_string(),
+                failed_items: vec![],
+                warnings: vec![],
+            });
+        }
+        return Err(render_no_runnable_items_error(&outcome));
+    }
 
     // Create a fresh interrupt flag for this run; register it for cancel_download.
     let flag = Arc::new(AtomicBool::new(false));
@@ -703,7 +929,7 @@ pub async fn start_download_with_progress(
 
     // Capture state before this run to identify newly-completed/failed items and bound the log.
     let completed_before: HashSet<i64> = queue
-        .list_by_status(QueueStatus::Completed)
+        .list_by_status_in_project(QueueStatus::Completed, Some(&project_key))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -711,7 +937,7 @@ pub async fn start_download_with_progress(
         .collect();
 
     let failed_before: HashSet<i64> = queue
-        .list_by_status(QueueStatus::Failed)
+        .list_by_status_in_project(QueueStatus::Failed, Some(&project_key))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -737,17 +963,22 @@ pub async fn start_download_with_progress(
         .map(|a| a.id);
 
     let output_dir_for_engine = output_dir.clone();
+    let project_key_for_engine = project_key.clone();
 
     // Spawn engine in a background task.
     let queue_for_engine = Arc::clone(&queue);
     let flag_for_engine = Arc::clone(&flag);
     let engine_task = tokio::spawn(async move {
         engine
-            .process_queue_interruptible(
+            .process_queue_interruptible_with_options(
                 queue_for_engine.as_ref(),
                 &client,
                 &output_dir_for_engine,
                 flag_for_engine,
+                QueueProcessingOptions {
+                    project_scope: Some(project_key_for_engine),
+                    ..QueueProcessingOptions::default()
+                },
             )
             .await
     });
@@ -755,19 +986,29 @@ pub async fn start_download_with_progress(
     // Polling loop: emit progress events until engine finishes.
     let queue_for_poll = Arc::clone(&queue);
     let window_for_poll = window.clone();
+    let project_key_for_poll = project_key.clone();
     let poll_handle = tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_millis(300)).await;
 
             let completed = queue_for_poll
-                .count_by_status(QueueStatus::Completed)
+                .count_by_status_in_project(
+                    QueueStatus::Completed,
+                    Some(project_key_for_poll.as_str()),
+                )
                 .await
                 .unwrap_or(0) as usize;
             let failed = queue_for_poll
-                .count_by_status(QueueStatus::Failed)
+                .count_by_status_in_project(
+                    QueueStatus::Failed,
+                    Some(project_key_for_poll.as_str()),
+                )
                 .await
                 .unwrap_or(0) as usize;
-            let in_progress_items = queue_for_poll.get_in_progress().await.unwrap_or_default();
+            let in_progress_items = queue_for_poll
+                .get_in_progress_in_project(Some(project_key_for_poll.as_str()))
+                .await
+                .unwrap_or_default();
 
             let in_progress = in_progress_items
                 .into_iter()
@@ -786,13 +1027,19 @@ pub async fn start_download_with_progress(
             let payload = ProgressPayload {
                 completed: this_run_completed,
                 failed: this_run_failed,
-                total: enqueued,
+                total: total_queued,
                 in_progress,
             };
 
             let _ = window_for_poll.emit("download://progress", &payload);
 
-            if poll_should_break(completed, failed, prior_completed, prior_failed, enqueued) {
+            if poll_should_break(
+                completed,
+                failed,
+                prior_completed,
+                prior_failed,
+                total_queued,
+            ) {
                 break;
             }
         }
@@ -828,7 +1075,7 @@ pub async fn start_download_with_progress(
         &ProgressPayload {
             completed: stats.completed(),
             failed: stats.failed(),
-            total: enqueued,
+            total: total_queued,
             in_progress: vec![],
         },
     );
@@ -840,16 +1087,33 @@ pub async fn start_download_with_progress(
     if project.is_some() {
         let _ = append_project_index(&queue, &output_dir, &completed_before).await;
         let _ = append_project_download_log(&queue, &output_dir, log_watermark).await;
-        generate_sidecars_for_completed(&queue, &completed_before).await;
+        generate_sidecars_for_completed(&queue, &output_dir, &completed_before).await;
     }
 
-    let failed_items = collect_failed_items(&queue, &failed_before).await;
+    for item in queue
+        .list_by_status_in_project(QueueStatus::Completed, Some(&project_key))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|item| !completed_before.contains(&item.id))
+    {
+        if let Some(path) = item.saved_path.as_deref().map(std::path::Path::new) {
+            registry.record_success(&output_dir, &item.url, item.meta_doi.as_deref(), path);
+        }
+    }
+    let warnings = save_registry_with_warning(&mut registry)
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    let failed_items = collect_failed_items(&queue, &failed_before, &project_key).await;
 
     Ok(DownloadSummary {
         completed: stats.completed(),
         failed: stats.failed(),
+        skipped_duplicates: outcome.duplicate_skipped,
         output_dir: output_dir.display().to_string(),
         failed_items,
+        warnings,
     })
 }
 
@@ -1067,10 +1331,42 @@ pub async fn clear_cookies() -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
     use std::sync::atomic::AtomicU64;
+    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn env_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct HomeEnvGuard {
+        previous_home: Option<OsString>,
+    }
+
+    impl HomeEnvGuard {
+        fn set_to(path: &std::path::Path) -> Self {
+            let previous_home = std::env::var_os("HOME");
+            // SAFETY: These tests serialize HOME mutation via `env_test_lock`.
+            unsafe { std::env::set_var("HOME", path) };
+            Self { previous_home }
+        }
+    }
+
+    impl Drop for HomeEnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous_home.take() {
+                // SAFETY: These tests serialize HOME mutation via `env_test_lock`.
+                unsafe { std::env::set_var("HOME", previous) };
+            } else {
+                // SAFETY: These tests serialize HOME mutation via `env_test_lock`.
+                unsafe { std::env::remove_var("HOME") };
+            }
+        }
+    }
 
     fn unique_db_path(label: &str) -> PathBuf {
         let ts = SystemTime::now()
@@ -1209,8 +1505,19 @@ mod tests {
         let db_path = unique_db_path("whitespace-input");
         let db = Database::new(&db_path).await.expect("test DB");
         let queue = Queue::new(db);
+        let output_dir = tempfile::TempDir::new().expect("temp output dir");
+        let project_key = project_history_key(output_dir.path());
+        let mut registry =
+            DownloadedRegistry::load(output_dir.path(), &project_key).expect("registry");
 
-        let result = resolve_and_enqueue(&["   ".to_string(), "\t".to_string()], &queue).await;
+        let result = resolve_and_enqueue(
+            &["   ".to_string(), "\t".to_string()],
+            &queue,
+            &project_key,
+            output_dir.path(),
+            &mut registry,
+        )
+        .await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("What: No input provided."));
@@ -1223,8 +1530,19 @@ mod tests {
         let db_path = unique_db_path("garbage-input");
         let db = Database::new(&db_path).await.expect("test DB");
         let queue = Queue::new(db);
+        let output_dir = tempfile::TempDir::new().expect("temp output dir");
+        let project_key = project_history_key(output_dir.path());
+        let mut registry =
+            DownloadedRegistry::load(output_dir.path(), &project_key).expect("registry");
 
-        let result = resolve_and_enqueue(&["not a url or doi at all".to_string()], &queue).await;
+        let result = resolve_and_enqueue(
+            &["not a url or doi at all".to_string()],
+            &queue,
+            &project_key,
+            output_dir.path(),
+            &mut registry,
+        )
+        .await;
 
         assert!(result.is_err());
         assert!(
@@ -1241,11 +1559,20 @@ mod tests {
         let db_path = unique_db_path("partial-success");
         let db = Database::new(&db_path).await.expect("test DB");
         let queue = Queue::new(db);
+        let output_dir = tempfile::TempDir::new().expect("temp output dir");
+        let project_key = project_history_key(output_dir.path());
+        let mut registry =
+            DownloadedRegistry::load(output_dir.path(), &project_key).expect("registry");
 
-        queue
-            .enqueue("https://example.com/already-queued.pdf", "direct_url", None)
-            .await
-            .expect("seed duplicate");
+        let existing_file = output_dir.path().join("already-queued.pdf");
+        std::fs::write(&existing_file, b"existing").expect("seed file");
+        registry.record_success(
+            output_dir.path(),
+            "https://example.com/already-queued.pdf",
+            None,
+            &existing_file,
+        );
+        registry.save_if_dirty().expect("persist registry");
 
         let result = resolve_and_enqueue(
             &[
@@ -1253,82 +1580,195 @@ mod tests {
                 "https://example.com/new-file.pdf".to_string(),
             ],
             &queue,
+            &project_key,
+            output_dir.path(),
+            &mut registry,
         )
         .await;
 
-        assert_eq!(result.expect("one item should enqueue"), 1);
+        let outcome = result.expect("one item should enqueue");
+        assert_eq!(outcome.enqueued, 1);
+        assert_eq!(outcome.duplicate_skipped, 1);
+        assert_eq!(outcome.enqueue_failed, 0);
 
         let pending = queue
-            .count_by_status(QueueStatus::Pending)
+            .count_by_status_in_project(QueueStatus::Pending, Some(&project_key))
             .await
             .expect("count pending");
-        assert_eq!(pending, 2);
+        assert_eq!(pending, 1);
 
         let _ = std::fs::remove_file(&db_path);
     }
 
     #[tokio::test]
-    async fn test_resolve_and_enqueue_returns_error_when_only_duplicates_are_available() {
+    async fn test_resolve_and_enqueue_allows_same_url_when_active_in_other_project() {
+        let db_path = unique_db_path("cross-project-active");
+        let db = Database::new(&db_path).await.expect("test DB");
+        let queue = Queue::new(db);
+        let output_dir = tempfile::TempDir::new().expect("temp output dir");
+        let project_a = "project:A";
+        let project_b = "project:B";
+        let mut registry =
+            DownloadedRegistry::load(output_dir.path(), project_b).expect("registry");
+
+        queue
+            .enqueue_in_project(
+                "https://example.com/shared.pdf",
+                "direct_url",
+                Some("https://example.com/shared.pdf"),
+                Some(project_a),
+            )
+            .await
+            .expect("seed active item in project A");
+
+        let outcome = resolve_and_enqueue(
+            &["https://example.com/shared.pdf".to_string()],
+            &queue,
+            project_b,
+            output_dir.path(),
+            &mut registry,
+        )
+        .await
+        .expect("project B should still enqueue");
+
+        assert_eq!(outcome.enqueued, 1);
+        assert_eq!(outcome.duplicate_skipped, 0);
+
+        let pending_a = queue
+            .count_by_status_in_project(QueueStatus::Pending, Some(project_a))
+            .await
+            .expect("count project A pending");
+        let pending_b = queue
+            .count_by_status_in_project(QueueStatus::Pending, Some(project_b))
+            .await
+            .expect("count project B pending");
+        assert_eq!(pending_a, 1);
+        assert_eq!(pending_b, 1);
+
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_and_enqueue_returns_noop_when_only_duplicates_are_available() {
         let db_path = unique_db_path("duplicate-only");
         let db = Database::new(&db_path).await.expect("test DB");
         let queue = Queue::new(db);
+        let output_dir = tempfile::TempDir::new().expect("temp output dir");
+        let project_key = project_history_key(output_dir.path());
+        let mut registry =
+            DownloadedRegistry::load(output_dir.path(), &project_key).expect("registry");
 
-        queue
-            .enqueue("https://example.com/already-queued.pdf", "direct_url", None)
-            .await
-            .expect("seed duplicate");
+        let existing_file = output_dir.path().join("already-queued.pdf");
+        std::fs::write(&existing_file, b"existing").expect("seed file");
+        registry.record_success(
+            output_dir.path(),
+            "https://example.com/already-queued.pdf",
+            None,
+            &existing_file,
+        );
+        registry.save_if_dirty().expect("persist registry");
 
         let result = resolve_and_enqueue(
             &["https://example.com/already-queued.pdf".to_string()],
             &queue,
+            &project_key,
+            output_dir.path(),
+            &mut registry,
         )
         .await;
 
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .contains("What: Download could not start.")
-        );
+        let outcome = result.expect("duplicate-only should be handled as a no-op at this layer");
+        assert_eq!(outcome.enqueued, 0);
+        assert_eq!(outcome.duplicate_skipped, 1);
+        assert!(!outcome.has_failures());
 
         let _ = std::fs::remove_file(&db_path);
     }
 
     #[test]
-    fn test_resolve_failure_summary_renders_auth_only_message() {
-        let mut summary = ResolveFailureSummary::default();
-        summary.record(&ResolveError::auth_required(
-            "academic.oup.com",
-            "subscription required",
-        ));
-        summary.record(&ResolveError::auth_required(
-            "academic.oup.com",
-            "subscription required",
-        ));
-
-        let message = summary.render_start_download_error();
-        assert!(message.contains("All 2 item(s) require authentication"));
-        assert!(message.contains("academic.oup.com"));
-        assert!(message.contains("downloader auth capture"));
-        assert!(!message.contains("failed to resolve to a download URL"));
+    fn test_render_no_runnable_items_error_for_duplicates_only() {
+        let outcome = ResolveEnqueueOutcome {
+            parsed: 3,
+            duplicate_skipped: 3,
+            ..ResolveEnqueueOutcome::default()
+        };
+        let message = render_no_runnable_items_error(&outcome);
+        assert!(message.contains("already queued or downloaded"));
+        assert!(message.contains("All 3 parsed item(s)"));
     }
 
     #[test]
-    fn test_resolve_failure_summary_renders_mixed_auth_and_resolve_message() {
-        let mut summary = ResolveFailureSummary::default();
-        summary.record(&ResolveError::auth_required(
-            "academic.oup.com",
-            "subscription required",
-        ));
-        summary.record(&ResolveError::resolution_failed(
-            "https://example.com/paper",
-            "no PDF link found",
-        ));
+    fn test_render_no_runnable_items_error_for_mixed_failures() {
+        let outcome = ResolveEnqueueOutcome {
+            parsed: 5,
+            duplicate_skipped: 1,
+            resolution_failed_auth: 2,
+            resolution_failed_other: 1,
+            enqueue_failed: 1,
+            first_enqueue_error: Some("db locked".to_string()),
+            ..ResolveEnqueueOutcome::default()
+        };
+        let message = render_no_runnable_items_error(&outcome);
+        assert!(message.contains("No runnable items remained after resolving 5 parsed item(s)"));
+        assert!(message.contains("auth resolution failures: 2"));
+        assert!(message.contains("other resolution failures: 1"));
+        assert!(message.contains("enqueue failures: 1"));
+        assert!(message.contains("db locked"));
+    }
 
-        let message = summary.render_start_download_error();
-        assert!(message.contains("1 item(s) require authentication"));
-        assert!(message.contains("1 item(s) failed to resolve"));
-        assert!(message.contains("downloader auth capture"));
+    #[test]
+    fn test_save_registry_with_warning_returns_none_on_success() {
+        let temp = tempfile::TempDir::new().expect("temp output dir");
+        let output_dir = temp.path();
+        let project_key = project_history_key(output_dir);
+        let mut registry =
+            DownloadedRegistry::load(output_dir, &project_key).expect("load registry");
+
+        let saved_path = output_dir.join("paper.pdf");
+        std::fs::write(&saved_path, b"ok").expect("seed output file");
+        registry.record_success(
+            output_dir,
+            "https://example.com/paper.pdf",
+            None,
+            &saved_path,
+        );
+
+        let warning = save_registry_with_warning(&mut registry);
+        assert!(
+            warning.is_none(),
+            "successful save should not produce a warning"
+        );
+    }
+
+    #[test]
+    fn test_save_registry_with_warning_returns_structured_warning_on_failure() {
+        let temp = tempfile::TempDir::new().expect("temp output dir");
+        let output_dir = temp.path();
+        let project_key = project_history_key(output_dir);
+        let mut registry =
+            DownloadedRegistry::load(output_dir, &project_key).expect("load registry");
+
+        let saved_path = output_dir.join("paper.pdf");
+        std::fs::write(&saved_path, b"ok").expect("seed output file");
+        registry.record_success(
+            output_dir,
+            "https://example.com/paper.pdf",
+            None,
+            &saved_path,
+        );
+
+        std::fs::create_dir_all(registry.path()).expect("create blocking directory");
+
+        let warning = save_registry_with_warning(&mut registry)
+            .expect("failed registry save should surface warning");
+        assert_eq!(warning.code, "registry_persist_failed");
+        assert_eq!(warning.path, registry.path().display().to_string());
+        assert!(!warning.error.is_empty(), "error text should be populated");
+        assert_eq!(warning.impact, "future runs may re-download");
+        assert!(
+            warning.fix.contains("Check write permissions"),
+            "warning should include operator guidance"
+        );
     }
 
     #[test]
@@ -1533,6 +1973,96 @@ mod tests {
             err.contains("No valid URLs or DOIs"),
             "expected URL parse error, got: {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_start_download_cross_project_active_url_is_not_skipped() {
+        let _env_guard = env_test_lock().lock().unwrap();
+        let home_dir = tempfile::TempDir::new().expect("temp HOME");
+        let _home_override = HomeEnvGuard::set_to(home_dir.path());
+
+        let defaults = AppDefaults::load();
+        let project_a_output = resolve_project_output_dir(&defaults.output_dir, Some("Project A"))
+            .expect("project A output dir");
+        std::fs::create_dir_all(&project_a_output).expect("create project A dir");
+        let project_a_key = project_history_key(&project_a_output);
+
+        let url = "https://127.0.0.1:9/shared.pdf";
+        let db = Database::new(&app_db_path()).await.expect("app DB");
+        let queue = Queue::new(db);
+        queue
+            .enqueue_in_project(url, "direct_url", Some(url), Some(&project_a_key))
+            .await
+            .expect("seed project A pending row");
+
+        let summary = start_download(vec![url.to_string()], Some("Project B".to_string()))
+            .await
+            .expect("start_download should return a summary");
+        assert_eq!(summary.skipped_duplicates, 0);
+        assert!(
+            summary.completed + summary.failed >= 1,
+            "project B input should be processed, not skipped"
+        );
+
+        let db = Database::new(&app_db_path()).await.expect("app DB reopen");
+        let queue = Queue::new(db);
+        let pending_a = queue
+            .count_by_status_in_project(QueueStatus::Pending, Some(&project_a_key))
+            .await
+            .expect("count project A pending");
+        assert_eq!(
+            pending_a, 1,
+            "project A queue rows must remain untouched by project B run"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_and_enqueue_persists_duplicate_active_skip_history() {
+        let db_path = unique_db_path("duplicate-active-history");
+        let db = Database::new(&db_path).await.expect("test DB");
+        let queue = Queue::new(db);
+        let output_dir = tempfile::TempDir::new().expect("temp output dir");
+        let project_key = project_history_key(output_dir.path());
+        let mut registry =
+            DownloadedRegistry::load(output_dir.path(), &project_key).expect("registry");
+
+        let url = "https://example.com/duplicate-active.pdf";
+        queue
+            .enqueue_in_project(url, "direct_url", Some(url), Some(&project_key))
+            .await
+            .expect("seed active queue row in project");
+
+        let outcome = resolve_and_enqueue(
+            &[url.to_string()],
+            &queue,
+            &project_key,
+            output_dir.path(),
+            &mut registry,
+        )
+        .await
+        .expect("resolve should succeed with duplicate skip");
+        assert_eq!(outcome.enqueued, 0);
+        assert_eq!(outcome.duplicate_skipped, 1);
+
+        let attempts = queue
+            .query_download_attempts(&DownloadAttemptQuery {
+                project: Some(project_key.clone()),
+                status: Some(DownloadAttemptStatus::Skipped),
+                ..DownloadAttemptQuery::default()
+            })
+            .await
+            .expect("query skipped attempts");
+        assert_eq!(
+            attempts.len(),
+            1,
+            "exactly one skip attempt should be persisted"
+        );
+        let attempt = &attempts[0];
+        assert_eq!(attempt.status(), DownloadAttemptStatus::Skipped);
+        assert_eq!(attempt.error_message.as_deref(), Some("duplicate_active"));
+        assert_eq!(attempt.original_input.as_deref(), Some(url));
+
+        let _ = std::fs::remove_file(&db_path);
     }
 
     // -----------------------------------------------------------------------

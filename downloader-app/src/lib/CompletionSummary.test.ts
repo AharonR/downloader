@@ -137,6 +137,30 @@ describe('CompletionSummary', () => {
     expect(onReset).toHaveBeenCalledOnce();
   });
 
+  it('renders structured post-run warnings when present', () => {
+    render(CompletionSummary, {
+      props: {
+        summary: makeSummary({
+          warnings: [
+            {
+              code: 'registry_persist_failed',
+              path: '/tmp/project/.downloader/downloaded-registry.v1.json',
+              error: 'Permission denied',
+              impact: 'future runs may re-download',
+              fix: 'Check write permissions and rerun.',
+            },
+          ],
+        }),
+        onReset: vi.fn(),
+      },
+    });
+
+    expect(screen.getByText(/Warnings/)).toBeTruthy();
+    expect(screen.getByText(/registry_persist_failed/)).toBeTruthy();
+    expect(screen.getByText(/Permission denied/)).toBeTruthy();
+    expect(screen.getByText(/future runs may re-download/)).toBeTruthy();
+  });
+
   it('shows "Open output folder" button when output_dir is non-empty and files completed', () => {
     render(CompletionSummary, {
       props: { summary: makeSummary({ output_dir: '/home/user/papers', completed: 2 }), onReset: vi.fn() },

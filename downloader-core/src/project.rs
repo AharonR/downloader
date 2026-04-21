@@ -14,7 +14,7 @@ use tracing::{info, warn};
 
 use crate::{
     DownloadAttempt, DownloadAttemptQuery, DownloadAttemptStatus, Queue, QueueError, QueueItem,
-    QueueStatus, generate_sidecar, normalize_topics,
+    QueueStatus, atomic_write::atomic_write, generate_sidecar, normalize_topics,
 };
 
 // ---------------------------------------------------------------------------
@@ -383,7 +383,7 @@ pub async fn append_project_download_log(
     }
     content.push('\n');
     content.push_str(&section);
-    fs::write(&log_path, content)?;
+    atomic_write(&log_path, content.as_bytes())?;
 
     info!(
         path = %log_path.display(),
@@ -448,8 +448,9 @@ pub async fn append_project_index<S: BuildHasher>(
     output_dir: &Path,
     completed_before: &HashSet<i64, S>,
 ) -> Result<(), ProjectError> {
+    let project_key = project_history_key(output_dir);
     let mut new_items: Vec<_> = queue
-        .list_by_status(QueueStatus::Completed)
+        .list_by_status_in_project(QueueStatus::Completed, Some(&project_key))
         .await?
         .into_iter()
         .filter(|item| !completed_before.contains(&item.id))
@@ -475,7 +476,7 @@ pub async fn append_project_index<S: BuildHasher>(
     }
     content.push('\n');
     content.push_str(&section);
-    fs::write(&index_path, content)?;
+    atomic_write(&index_path, content.as_bytes())?;
 
     info!(
         path = %index_path.display(),
@@ -490,9 +491,14 @@ pub async fn append_project_index<S: BuildHasher>(
 /// Returns the number of sidecars successfully created.
 pub async fn generate_sidecars_for_completed<S: BuildHasher>(
     queue: &Queue,
+    output_dir: &Path,
     completed_before: &HashSet<i64, S>,
 ) -> usize {
-    let items = match queue.list_by_status(QueueStatus::Completed).await {
+    let project_key = project_history_key(output_dir);
+    let items = match queue
+        .list_by_status_in_project(QueueStatus::Completed, Some(&project_key))
+        .await
+    {
         Ok(items) => items,
         Err(err) => {
             warn!(
@@ -714,6 +720,7 @@ mod tests {
             url: "https://example.com/paper.pdf".to_string(),
             source_type: "direct_url".to_string(),
             original_input: None,
+            project: None,
             status_str: "completed".to_string(),
             priority: 0,
             retry_count: 0,

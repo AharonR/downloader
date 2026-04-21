@@ -11,14 +11,19 @@
 //! `mod.rs` should contain only declarations.
 
 use std::fs;
-use std::io::{BufWriter, ErrorKind};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use thiserror::Error;
 use tracing::{debug, instrument};
 
+use crate::atomic_write::atomic_write_json;
 use crate::queue::QueueItem;
+
+static QUARANTINE_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Errors produced by sidecar generation.
 #[derive(Debug, Error)]
@@ -108,32 +113,24 @@ pub fn generate_sidecar(item: &QueueItem) -> Result<Option<PathBuf>, SidecarErro
         return Ok(None);
     }
     let sidecar_path = derive_sidecar_path(saved_path);
-
-    let article = build_scholarly_article(item);
-    let file = match fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&sidecar_path)
-    {
-        Ok(file) => file,
-        Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+    if sidecar_path.exists() {
+        if sidecar_is_valid_json(&sidecar_path) {
             debug!(
                 path = %sidecar_path.display(),
                 "Sidecar already exists, skipping"
             );
             return Ok(None);
         }
-        Err(err) => return Err(err.into()),
-    };
-    let write_result = {
-        let writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(writer, &article)
-    };
-    if let Err(err) = write_result {
-        // Best-effort cleanup so a partially written file does not block retries.
-        let _ = fs::remove_file(&sidecar_path);
-        return Err(err.into());
+        let quarantine_path = quarantine_invalid_sidecar(&sidecar_path)?;
+        debug!(
+            original = %sidecar_path.display(),
+            quarantined = %quarantine_path.display(),
+            "Existing sidecar was invalid and has been quarantined"
+        );
     }
+
+    let article = build_scholarly_article(item);
+    atomic_write_json(&sidecar_path, &article)?;
 
     debug!(path = %sidecar_path.display(), "Sidecar created");
     Ok(Some(sidecar_path))
@@ -149,6 +146,49 @@ fn derive_sidecar_path(downloaded_path: &Path) -> PathBuf {
     let mut p = downloaded_path.to_path_buf();
     p.set_extension("json");
     p
+}
+
+fn sidecar_is_valid_json(path: &Path) -> bool {
+    match fs::read_to_string(path) {
+        Ok(content) => serde_json::from_str::<serde_json::Value>(&content).is_ok(),
+        Err(err) if err.kind() == ErrorKind::NotFound => false,
+        Err(_) => false,
+    }
+}
+
+fn quarantine_invalid_sidecar(path: &Path) -> Result<PathBuf, SidecarError> {
+    for _ in 0..8 {
+        let quarantine_path = sidecar_quarantine_path(path);
+        match fs::rename(path, &quarantine_path) {
+            Ok(()) => return Ok(quarantine_path),
+            Err(err) if err.kind() == ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    Err(std::io::Error::new(
+        ErrorKind::AlreadyExists,
+        format!(
+            "failed to quarantine corrupt sidecar after multiple attempts: {}",
+            path.display()
+        ),
+    )
+    .into())
+}
+
+fn sidecar_quarantine_path(path: &Path) -> PathBuf {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    let seq = QUARANTINE_SEQ.fetch_add(1, Ordering::Relaxed);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("sidecar");
+    let filename = format!("{stem}.corrupt.{ts}.{pid}.{seq}.json");
+    path.with_file_name(filename)
 }
 
 /// Builds a `ScholarlyArticle` from `QueueItem` metadata.
@@ -307,6 +347,7 @@ mod tests {
             url: url.to_string(),
             source_type: "direct_url".to_string(),
             original_input: None,
+            project: None,
             status_str: "completed".to_string(),
             priority: 0,
             retry_count: 0,
@@ -591,6 +632,53 @@ mod tests {
             content, sentinel,
             "existing sidecar content should not be overwritten"
         );
+    }
+
+    #[test]
+    fn test_generate_sidecar_quarantines_invalid_existing_sidecar_and_regenerates() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let pdf_path = tmp.path().join("paper.pdf");
+        std::fs::write(&pdf_path, b"fake pdf").unwrap();
+
+        let sidecar_path = tmp.path().join("paper.json");
+        std::fs::write(&sidecar_path, b"{\"broken\":").unwrap();
+
+        let item = make_item(
+            Some(pdf_path.to_str().unwrap()),
+            Some("Recovered Paper"),
+            None,
+            None,
+            None,
+            "https://example.com/paper.pdf",
+        );
+
+        let result = generate_sidecar(&item).unwrap();
+        assert_eq!(result.as_deref(), Some(sidecar_path.as_path()));
+
+        let content = std::fs::read_to_string(&sidecar_path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(value["@type"], "ScholarlyArticle");
+        assert_eq!(value["name"], "Recovered Paper");
+
+        let quarantined = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .filter(|name| name.starts_with("paper.corrupt.") && name.ends_with(".json"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            quarantined.len(),
+            1,
+            "one invalid sidecar should be quarantined"
+        );
+    }
+
+    #[test]
+    fn test_sidecar_quarantine_path_is_unique_across_calls() {
+        let path = Path::new("/tmp/paper.json");
+        let first = sidecar_quarantine_path(path);
+        let second = sidecar_quarantine_path(path);
+        assert_ne!(first, second);
     }
 
     #[test]

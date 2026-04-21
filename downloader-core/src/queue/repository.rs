@@ -18,6 +18,8 @@ use super::{
 pub trait QueueRepository {
     /// Claims the next pending queue item.
     async fn dequeue(&self) -> Result<Option<QueueItem>>;
+    /// Claims the next pending queue item under an optional project scope.
+    async fn dequeue_in_project(&self, project: Option<&str>) -> Result<Option<QueueItem>>;
 
     /// Requeues a claimed item back to pending.
     async fn requeue(&self, id: i64) -> Result<()>;
@@ -38,12 +40,26 @@ pub trait QueueRepository {
 
     /// Returns the count of queue items in a status.
     async fn count_by_status(&self, status: QueueStatus) -> Result<i64>;
+    /// Returns the count of queue items in a status under an optional project scope.
+    async fn count_by_status_in_project(
+        &self,
+        status: QueueStatus,
+        project: Option<&str>,
+    ) -> Result<i64>;
 
     /// Returns all queue items currently in progress.
     async fn get_in_progress(&self) -> Result<Vec<QueueItem>>;
+    /// Returns all queue items currently in progress under an optional project scope.
+    async fn get_in_progress_in_project(&self, project: Option<&str>) -> Result<Vec<QueueItem>>;
 
     /// Returns all queue items for a status.
     async fn list_by_status(&self, status: QueueStatus) -> Result<Vec<QueueItem>>;
+    /// Returns all queue items for a status under an optional project scope.
+    async fn list_by_status_in_project(
+        &self,
+        status: QueueStatus,
+        project: Option<&str>,
+    ) -> Result<Vec<QueueItem>>;
 
     /// Persists a terminal download attempt history row.
     async fn log_download_attempt(&self, attempt: &NewDownloadAttempt<'_>) -> Result<i64>;
@@ -65,6 +81,10 @@ pub trait QueueRepository {
 impl QueueRepository for Queue {
     async fn dequeue(&self) -> Result<Option<QueueItem>> {
         Queue::dequeue(self).await
+    }
+
+    async fn dequeue_in_project(&self, project: Option<&str>) -> Result<Option<QueueItem>> {
+        Queue::dequeue_in_project(self, project).await
     }
 
     async fn requeue(&self, id: i64) -> Result<()> {
@@ -92,12 +112,32 @@ impl QueueRepository for Queue {
         Queue::count_by_status(self, status).await
     }
 
+    async fn count_by_status_in_project(
+        &self,
+        status: QueueStatus,
+        project: Option<&str>,
+    ) -> Result<i64> {
+        Queue::count_by_status_in_project(self, status, project).await
+    }
+
     async fn get_in_progress(&self) -> Result<Vec<QueueItem>> {
         Queue::get_in_progress(self).await
     }
 
+    async fn get_in_progress_in_project(&self, project: Option<&str>) -> Result<Vec<QueueItem>> {
+        Queue::get_in_progress_in_project(self, project).await
+    }
+
     async fn list_by_status(&self, status: QueueStatus) -> Result<Vec<QueueItem>> {
         Queue::list_by_status(self, status).await
+    }
+
+    async fn list_by_status_in_project(
+        &self,
+        status: QueueStatus,
+        project: Option<&str>,
+    ) -> Result<Vec<QueueItem>> {
+        Queue::list_by_status_in_project(self, status, project).await
     }
 
     async fn log_download_attempt(&self, attempt: &NewDownloadAttempt<'_>) -> Result<i64> {

@@ -7,9 +7,10 @@ use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use downloader_core::{
-    InputType, Queue, QueueMetadata, ResolveContext, TopicExtractor,
-    build_default_resolver_registry, build_preferred_filename, extract_reference_confidence,
-    load_custom_topics, match_custom_topics, normalize_topics, parse_input,
+    DownloadAttemptStatus, DownloadedRegistry, InputType, NewDownloadAttempt, Queue, QueueMetadata,
+    RegistryLookup, ResolveContext, TopicExtractor, build_default_resolver_registry,
+    build_preferred_filename, extract_reference_confidence, load_custom_topics,
+    match_custom_topics, normalize_topics, parse_input,
 };
 use tracing::{debug, info, warn};
 
@@ -19,8 +20,60 @@ use crate::output;
 /// Outcome of the resolution phase: counts and first error for runtime to decide bails.
 pub(crate) struct ResolutionOutcome {
     pub(crate) parsed_item_count: usize,
-    pub(crate) resolution_failed_count: usize,
+    pub(crate) enqueued_count: usize,
+    pub(crate) duplicate_skipped_count: usize,
+    pub(crate) resolution_failed_auth_count: usize,
+    pub(crate) resolution_failed_other_count: usize,
+    pub(crate) enqueue_failed_count: usize,
     pub(crate) first_resolution_error: Option<String>,
+    pub(crate) first_enqueue_error: Option<String>,
+}
+
+impl ResolutionOutcome {
+    pub(crate) fn has_failures(&self) -> bool {
+        self.resolution_failed_auth_count > 0
+            || self.resolution_failed_other_count > 0
+            || self.enqueue_failed_count > 0
+    }
+}
+
+async fn log_skipped_attempt(
+    queue: &Queue,
+    project_key: &str,
+    url: &str,
+    original_input: &str,
+    metadata: &QueueMetadata,
+    reason_code: &'static str,
+) {
+    let attempt = NewDownloadAttempt {
+        url,
+        final_url: Some(url),
+        status: DownloadAttemptStatus::Skipped,
+        file_path: None,
+        file_size: None,
+        content_type: None,
+        error_message: Some(reason_code),
+        error_type: None,
+        retry_count: 0,
+        project: Some(project_key),
+        original_input: Some(original_input),
+        http_status: None,
+        duration_ms: Some(0),
+        title: metadata.title.as_deref(),
+        authors: metadata.authors.as_deref(),
+        doi: metadata.doi.as_deref(),
+        topics: None,
+        parse_confidence: metadata.parse_confidence.as_deref(),
+        parse_confidence_factors: metadata.parse_confidence_factors.as_deref(),
+    };
+    if let Err(err) = queue.log_download_attempt(&attempt).await {
+        warn!(
+            url = %url,
+            reason = reason_code,
+            error = %err,
+            "Failed to persist skipped resolution attempt"
+        );
+    }
 }
 
 /// Parses input text, resolves each item to a URL, enqueues with metadata.
@@ -31,13 +84,20 @@ pub(crate) struct ResolutionOutcome {
 pub(crate) async fn run_resolution(
     ctx: &RunContext,
     queue: Arc<Queue>,
+    project_key: &str,
+    registry: &mut DownloadedRegistry,
 ) -> Result<ResolutionOutcome> {
     // When there is neither text input nor pre-parsed bibliography items, there is nothing to do.
     if ctx.input_text.is_none() && ctx.bibliography_items.is_empty() {
         return Ok(ResolutionOutcome {
             parsed_item_count: 0,
-            resolution_failed_count: 0,
+            enqueued_count: 0,
+            duplicate_skipped_count: 0,
+            resolution_failed_auth_count: 0,
+            resolution_failed_other_count: 0,
+            enqueue_failed_count: 0,
             first_resolution_error: None,
+            first_enqueue_error: None,
         });
     }
 
@@ -70,8 +130,13 @@ pub(crate) async fn run_resolution(
         .collect();
     let parsed_item_count = all_items.len();
 
-    let mut resolution_failed_count = 0usize;
+    let mut resolution_failed_auth_count = 0usize;
+    let mut resolution_failed_other_count = 0usize;
+    let mut duplicate_skipped_count = 0usize;
+    let mut enqueued_count = 0usize;
+    let mut enqueue_failed_count = 0usize;
     let mut first_resolution_error: Option<String> = None;
+    let mut first_enqueue_error: Option<String> = None;
 
     if !ctx.bibliography_items.is_empty() {
         info!(
@@ -83,8 +148,13 @@ pub(crate) async fn run_resolution(
     if all_items.is_empty() {
         return Ok(ResolutionOutcome {
             parsed_item_count,
-            resolution_failed_count: 0,
+            enqueued_count: 0,
+            duplicate_skipped_count: 0,
+            resolution_failed_auth_count: 0,
+            resolution_failed_other_count: 0,
+            enqueue_failed_count: 0,
             first_resolution_error: None,
+            first_enqueue_error: None,
         });
     }
 
@@ -140,7 +210,12 @@ pub(crate) async fn run_resolution(
                 Some(resolved)
             }
             Err(error) => {
-                resolution_failed_count += 1;
+                match error {
+                    downloader_core::ResolveError::AuthRequired { .. } => {
+                        resolution_failed_auth_count += 1;
+                    }
+                    _ => resolution_failed_other_count += 1,
+                }
                 if first_resolution_error.is_none() {
                     first_resolution_error = Some(error.to_string());
                 }
@@ -167,34 +242,6 @@ pub(crate) async fn run_resolution(
         };
         let queue_value = resolved.url;
 
-        if queue.has_active_url(&queue_value).await? {
-            debug!("Skipping duplicate URL already in queue");
-            continue;
-        }
-
-        let topics = topic_extractor.as_ref().and_then(|extractor| {
-            let title = resolved.metadata.get("title")?;
-            let raw_keywords = extractor.extract_from_metadata(title, None);
-            if raw_keywords.is_empty() {
-                return None;
-            }
-            let final_topics = if custom_topics.is_empty() {
-                normalize_topics(raw_keywords)
-            } else {
-                match_custom_topics(raw_keywords, custom_topics.clone())
-            };
-            if final_topics.is_empty() {
-                None
-            } else {
-                debug!(
-                    count = final_topics.len(),
-                    topics = ?final_topics,
-                    "Extracted topics from metadata"
-                );
-                Some(final_topics)
-            }
-        });
-
         let reference_confidence = (item.input_type == InputType::Reference)
             .then(|| extract_reference_confidence(&item.raw));
 
@@ -204,20 +251,97 @@ pub(crate) async fn run_resolution(
             authors: resolved.metadata.get("authors").cloned(),
             year: resolved.metadata.get("year").cloned(),
             doi: resolved.metadata.get("doi").cloned(),
-            topics,
+            topics: topic_extractor.as_ref().and_then(|extractor| {
+                let title = resolved.metadata.get("title")?;
+                let raw_keywords = extractor.extract_from_metadata(title, None);
+                if raw_keywords.is_empty() {
+                    return None;
+                }
+                let final_topics = if custom_topics.is_empty() {
+                    normalize_topics(raw_keywords)
+                } else {
+                    match_custom_topics(raw_keywords, custom_topics.clone())
+                };
+                if final_topics.is_empty() {
+                    None
+                } else {
+                    debug!(
+                        count = final_topics.len(),
+                        topics = ?final_topics,
+                        "Extracted topics from metadata"
+                    );
+                    Some(final_topics)
+                }
+            }),
             parse_confidence: reference_confidence.map(|details| details.level.to_string()),
             parse_confidence_factors: reference_confidence
                 .and_then(|details| serde_json::to_string(&details.factors).ok()),
         };
 
-        queue
-            .enqueue_with_metadata(
+        if queue
+            .has_active_url_in_project(&queue_value, Some(project_key))
+            .await?
+        {
+            debug!("Skipping duplicate URL already in queue");
+            duplicate_skipped_count += 1;
+            log_skipped_attempt(
+                queue.as_ref(),
+                project_key,
+                &queue_value,
+                &item.raw,
+                &queue_metadata,
+                "duplicate_active",
+            )
+            .await;
+            continue;
+        }
+
+        match registry.lookup(&ctx.output_dir, &queue_value, queue_metadata.doi.as_deref()) {
+            RegistryLookup::Hit { .. } => {
+                duplicate_skipped_count += 1;
+                log_skipped_attempt(
+                    queue.as_ref(),
+                    project_key,
+                    &queue_value,
+                    &item.raw,
+                    &queue_metadata,
+                    "duplicate_existing",
+                )
+                .await;
+                continue;
+            }
+            RegistryLookup::StaleRecovered => {
+                log_skipped_attempt(
+                    queue.as_ref(),
+                    project_key,
+                    &queue_value,
+                    &item.raw,
+                    &queue_metadata,
+                    "stale_mapping_recovered",
+                )
+                .await;
+            }
+            RegistryLookup::Miss => {}
+        }
+
+        if let Err(err) = queue
+            .enqueue_with_metadata_in_project(
                 &queue_value,
                 item.input_type.queue_source_type(),
                 Some(&item.raw),
                 Some(&queue_metadata),
+                Some(project_key),
             )
-            .await?;
+            .await
+        {
+            enqueue_failed_count += 1;
+            if first_enqueue_error.is_none() {
+                first_enqueue_error = Some(err.to_string());
+            }
+            warn!(error = %err, "Failed to enqueue parsed item");
+            continue;
+        }
+        enqueued_count += 1;
         debug!(
             input_type = %item.input_type,
             source_type = item.input_type.queue_source_type(),
@@ -225,17 +349,24 @@ pub(crate) async fn run_resolution(
         );
     }
 
-    if resolution_failed_count > 0 {
+    if resolution_failed_auth_count + resolution_failed_other_count > 0 {
         warn!(
-            routing_skipped = resolution_failed_count,
+            routing_skipped = resolution_failed_auth_count + resolution_failed_other_count,
             "Skipped parsed items that could not be resolved"
         );
     }
 
+    registry.save_if_dirty()?;
+
     Ok(ResolutionOutcome {
         parsed_item_count,
-        resolution_failed_count,
+        enqueued_count,
+        duplicate_skipped_count,
+        resolution_failed_auth_count,
+        resolution_failed_other_count,
+        enqueue_failed_count,
         first_resolution_error,
+        first_enqueue_error,
     })
 }
 
@@ -246,7 +377,9 @@ mod tests {
     use crate::app::context::RunContext;
     use crate::cli::Cli;
     use clap::Parser;
-    use downloader_core::{Database, DatabaseOptions, Queue};
+    use downloader_core::{
+        Database, DatabaseOptions, DownloadedRegistry, Queue, project_history_key,
+    };
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -267,10 +400,15 @@ mod tests {
             bibliography_items: Vec::new(),
         };
 
-        let outcome = run_resolution(&ctx, queue).await.unwrap();
+        let project_key = project_history_key(&ctx.output_dir);
+        let mut registry = DownloadedRegistry::load(&ctx.output_dir, &project_key).unwrap();
+        let outcome = run_resolution(&ctx, queue, &project_key, &mut registry)
+            .await
+            .unwrap();
 
         assert_eq!(outcome.parsed_item_count, 0);
-        assert_eq!(outcome.resolution_failed_count, 0);
+        assert_eq!(outcome.resolution_failed_auth_count, 0);
+        assert_eq!(outcome.resolution_failed_other_count, 0);
         assert_eq!(outcome.first_resolution_error, None);
     }
 }

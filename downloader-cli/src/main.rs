@@ -316,8 +316,12 @@ async fn append_project_index(
 ///
 /// Returns the count of sidecar files newly written (skipped items not counted).
 #[cfg(test)]
-async fn generate_sidecars_for_completed(queue: &Queue, completed_before: &HashSet<i64>) -> usize {
-    project::generate_sidecars_for_completed(queue, completed_before).await
+async fn generate_sidecars_for_completed(
+    queue: &Queue,
+    output_dir: &Path,
+    completed_before: &HashSet<i64>,
+) -> usize {
+    project::generate_sidecars_for_completed(queue, output_dir, completed_before).await
 }
 
 #[cfg(test)]
@@ -1102,6 +1106,7 @@ mod tests {
         let db = Database::new_in_memory().await.unwrap();
         let queue = Queue::new(db);
         let output_dir = TempDir::new().unwrap();
+        let project_key = project::project_history_key(output_dir.path());
 
         let metadata = QueueMetadata {
             suggested_filename: Some("Smith_2024_Climate_Study.pdf".to_string()),
@@ -1114,11 +1119,12 @@ mod tests {
             parse_confidence_factors: None,
         };
         let id = queue
-            .enqueue_with_metadata(
+            .enqueue_with_metadata_in_project(
                 "https://example.com/paper.pdf",
                 "doi",
                 Some("10.1000/test"),
                 Some(&metadata),
+                Some(&project_key),
             )
             .await
             .unwrap();
@@ -1146,6 +1152,7 @@ mod tests {
         let db = Database::new_in_memory().await.unwrap();
         let queue = Queue::new(db);
         let output_dir = TempDir::new().unwrap();
+        let project_key = project::project_history_key(output_dir.path());
         let index_path = output_dir.path().join("index.md");
         std::fs::write(
             &index_path,
@@ -1164,11 +1171,12 @@ mod tests {
             parse_confidence_factors: None,
         };
         let id = queue
-            .enqueue_with_metadata(
+            .enqueue_with_metadata_in_project(
                 "https://example.org/energy.pdf",
                 "doi",
                 Some("10.1000/energy"),
                 Some(&metadata),
+                Some(&project_key),
             )
             .await
             .unwrap();
@@ -1194,6 +1202,7 @@ mod tests {
         let db = Database::new_in_memory().await.unwrap();
         let queue = Queue::new(db);
         let output_dir = TempDir::new().unwrap();
+        let project_key = project::project_history_key(output_dir.path());
 
         let old_metadata = QueueMetadata {
             suggested_filename: Some("Old_2023_Item.pdf".to_string()),
@@ -1206,11 +1215,12 @@ mod tests {
             parse_confidence_factors: None,
         };
         let old_id = queue
-            .enqueue_with_metadata(
+            .enqueue_with_metadata_in_project(
                 "https://example.com/old.pdf",
                 "doi",
                 Some("10.1000/old"),
                 Some(&old_metadata),
+                Some(&project_key),
             )
             .await
             .unwrap();
@@ -1235,11 +1245,12 @@ mod tests {
             parse_confidence_factors: None,
         };
         let new_id = queue
-            .enqueue_with_metadata(
+            .enqueue_with_metadata_in_project(
                 "https://example.com/new.pdf",
                 "doi",
                 Some("10.1000/new"),
                 Some(&new_metadata),
+                Some(&project_key),
             )
             .await
             .unwrap();
@@ -1379,9 +1390,15 @@ mod tests {
         let db = Database::new_in_memory().await.unwrap();
         let queue = Queue::new(db);
         let output_dir = TempDir::new().unwrap();
+        let project_key = project::project_history_key(output_dir.path());
 
         let id = queue
-            .enqueue("https://example.com/historical.pdf", "direct_url", None)
+            .enqueue_in_project(
+                "https://example.com/historical.pdf",
+                "direct_url",
+                None,
+                Some(&project_key),
+            )
             .await
             .unwrap();
         let saved_path = output_dir.path().join("historical.pdf");
@@ -1394,7 +1411,8 @@ mod tests {
         let mut completed_before = HashSet::new();
         completed_before.insert(id);
 
-        let created = generate_sidecars_for_completed(&queue, &completed_before).await;
+        let created =
+            generate_sidecars_for_completed(&queue, output_dir.path(), &completed_before).await;
         assert_eq!(created, 0, "historical-only items should be skipped");
         assert!(
             !output_dir.path().join("historical.json").exists(),
@@ -1407,9 +1425,15 @@ mod tests {
         let db = Database::new_in_memory().await.unwrap();
         let queue = Queue::new(db);
         let output_dir = TempDir::new().unwrap();
+        let project_key = project::project_history_key(output_dir.path());
 
         let bad_id = queue
-            .enqueue("https://example.com/bad.pdf", "direct_url", None)
+            .enqueue_in_project(
+                "https://example.com/bad.pdf",
+                "direct_url",
+                None,
+                Some(&project_key),
+            )
             .await
             .unwrap();
         let bad_saved_path = output_dir.path().join("missing-dir").join("bad.pdf");
@@ -1419,7 +1443,12 @@ mod tests {
             .unwrap();
 
         let good_id = queue
-            .enqueue("https://example.com/good.pdf", "direct_url", None)
+            .enqueue_in_project(
+                "https://example.com/good.pdf",
+                "direct_url",
+                None,
+                Some(&project_key),
+            )
             .await
             .unwrap();
         let good_saved_path = output_dir.path().join("good.pdf");
@@ -1429,7 +1458,8 @@ mod tests {
             .await
             .unwrap();
 
-        let created = generate_sidecars_for_completed(&queue, &HashSet::new()).await;
+        let created =
+            generate_sidecars_for_completed(&queue, output_dir.path(), &HashSet::new()).await;
         assert_eq!(created, 1, "one valid sidecar should still be created");
         assert!(
             output_dir.path().join("good.json").exists(),
@@ -1443,9 +1473,15 @@ mod tests {
         let db = Database::new_in_memory().await.unwrap();
         let queue = Queue::new(db);
         let output_dir = TempDir::new().unwrap();
+        let project_key = project::project_history_key(output_dir.path());
 
         let historical_id = queue
-            .enqueue("https://example.com/historical.pdf", "direct_url", None)
+            .enqueue_in_project(
+                "https://example.com/historical.pdf",
+                "direct_url",
+                None,
+                Some(&project_key),
+            )
             .await
             .unwrap();
         let historical_saved = output_dir.path().join("historical.pdf");
@@ -1456,7 +1492,12 @@ mod tests {
             .unwrap();
 
         let new_id = queue
-            .enqueue("https://example.com/new.pdf", "direct_url", None)
+            .enqueue_in_project(
+                "https://example.com/new.pdf",
+                "direct_url",
+                None,
+                Some(&project_key),
+            )
             .await
             .unwrap();
         let new_saved = output_dir.path().join("new.pdf");
@@ -1470,7 +1511,8 @@ mod tests {
         completed_before.insert(historical_id);
 
         // WHEN: generating sidecars only for items completed in this run
-        let created = generate_sidecars_for_completed(&queue, &completed_before).await;
+        let created =
+            generate_sidecars_for_completed(&queue, output_dir.path(), &completed_before).await;
 
         // THEN: only the new item gets a sidecar
         assert_eq!(created, 1);

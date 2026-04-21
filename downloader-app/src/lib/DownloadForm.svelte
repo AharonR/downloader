@@ -56,7 +56,12 @@
 
       summary = result;
       status = 'done';
-      message = `Downloaded ${result.completed} file${result.completed !== 1 ? 's' : ''} to ${result.output_dir}`;
+      const skippedDuplicates = result.skipped_duplicates ?? 0;
+      if (result.completed === 0 && result.failed === 0 && skippedDuplicates > 0) {
+        message = `No new downloads were needed. ${skippedDuplicates} item${skippedDuplicates !== 1 ? 's' : ''} already existed in ${result.output_dir}`;
+      } else {
+        message = `Downloaded ${result.completed} file${result.completed !== 1 ? 's' : ''} to ${result.output_dir}`;
+      }
     } catch (err) {
       status = 'error';
       message = typeof err === 'string' ? err : String(err);
