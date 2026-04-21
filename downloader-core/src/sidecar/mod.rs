@@ -179,8 +179,7 @@ fn quarantine_invalid_sidecar(path: &Path) -> Result<PathBuf, SidecarError> {
 fn sidecar_quarantine_path(path: &Path) -> PathBuf {
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |duration| duration.as_nanos());
     let pid = std::process::id();
     let seq = QUARANTINE_SEQ.fetch_add(1, Ordering::Relaxed);
     let stem = path
