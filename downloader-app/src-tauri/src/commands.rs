@@ -640,11 +640,17 @@ pub async fn start_download(
 
     let project_key = project_history_key(&output_dir);
     let mut registry = DownloadedRegistry::load(&output_dir, &project_key).map_err(|e| {
+        let fix = if e.kind() == std::io::ErrorKind::WouldBlock {
+            "Another Downloader process is already running in this project folder. \
+             Wait for it to finish and retry."
+                .to_string()
+        } else {
+            format!("Check that '{}' is writable.", output_dir.display())
+        };
         format!(
             "What: Failed to initialize dedup registry.\n\
              Why: {e}\n\
-             Fix: Check that '{dir}' is writable.",
-            dir = output_dir.display()
+             Fix: {fix}"
         )
     })?;
 
@@ -854,11 +860,17 @@ pub async fn start_download_with_progress(
 
     let project_key = project_history_key(&output_dir);
     let mut registry = DownloadedRegistry::load(&output_dir, &project_key).map_err(|e| {
+        let fix = if e.kind() == std::io::ErrorKind::WouldBlock {
+            "Another Downloader process is already running in this project folder. \
+             Wait for it to finish and retry."
+                .to_string()
+        } else {
+            format!("Check that '{}' is writable.", output_dir.display())
+        };
         format!(
             "What: Failed to initialize dedup registry.\n\
              Why: {e}\n\
-             Fix: Check that '{dir}' is writable.",
-            dir = output_dir.display()
+             Fix: {fix}"
         )
     })?;
 

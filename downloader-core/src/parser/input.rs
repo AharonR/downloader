@@ -13,7 +13,7 @@ pub enum InputType {
     Reference,
     /// BibTeX entry (@article, @book, @inproceedings)
     BibTex,
-    /// Could not determine type
+    /// Could not determine type, or a known structured identifier (PMC ID, PMID, arXiv ID).
     Unknown,
 }
 

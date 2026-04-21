@@ -55,25 +55,43 @@ use tracing::{debug, info};
 // Matched against whole trimmed lines so that fragments inside longer sentences
 // (e.g. an arXiv URL) are never double-extracted.
 
-#[allow(clippy::expect_used)]
-static PMC_ID_LINE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^PMC\d{4,}$").expect("PMC ID line regex valid"));
+/// Shared PMC bare-ID pattern used by the parser and `PubMedResolver`.
+pub const BARE_PMC_ID_PATTERN: &str = r"(?i)^PMC\d{4,}$";
 
 #[allow(clippy::expect_used)]
+static PMC_ID_LINE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(BARE_PMC_ID_PATTERN).expect("PMC ID line regex valid"));
+
+/// Matches a bare arXiv ID (new-style `YYMM.NNNNN` or old-style `cat/NNNNNNN`).
+/// Pattern is aligned with `ArxivResolver::ARXIV_ID_RE` to ensure consistent handling.
+#[allow(clippy::expect_used)]
 static ARXIV_ID_LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(?:\d{4}\.\d{4,5}|[a-z][a-z\-]*(?:\.[a-z]{2})?/\d{7})(?:v\d+)?$")
+    Regex::new(r"(?i)^(?:\d{4}\.\d{4,5}|[a-z\-]+(?:\.[a-z]{2})?/\d{7})(?:v\d+)?$")
         .expect("arXiv bare ID line regex valid")
 });
 
+/// Matches an arXiv ID with an explicit `arXiv:` prefix (e.g. `arXiv:2301.01234v2`).
+/// Capture group 1 is the bare ID (without the prefix).
 #[allow(clippy::expect_used)]
-static PMID_PREFIX_LINE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^PMID:?\s*\d{1,9}$").expect("PMID prefix line regex valid"));
+static ARXIV_PREFIX_LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^arXiv:((?:\d{4}\.\d{4,5}|[a-z\-]+(?:\.[a-z]{2})?/\d{7})(?:v\d+)?)$")
+        .expect("arXiv prefix line regex valid")
+});
+
+#[allow(clippy::expect_used)]
+static PMID_PREFIX_LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // Requires at least one separator (colon or whitespace) between "PMID" and the digits
+    // so that "PMID12345678" (no separator) is not matched.
+    Regex::new(r"(?i)^PMID[:\s]\s*\d{1,9}$").expect("PMID prefix line regex valid")
+});
 
 /// Extracts known structured identifiers (PMC IDs, arXiv IDs, PMIDs) from
 /// whole-line matches.  Returns `ParsedItem`s with `InputType::Unknown` and
-/// the normalized identifier as the value.
+/// the normalized identifier as the value.  Duplicate normalized values are
+/// silently dropped so repeated lines don't enqueue the same item twice.
 fn extract_known_ids(input: &str) -> Vec<ParsedItem> {
     let mut items = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
     for line in input.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -81,18 +99,29 @@ fn extract_known_ids(input: &str) -> Vec<ParsedItem> {
         }
         if PMC_ID_LINE_RE.is_match(trimmed) {
             let normalized = trimmed.to_ascii_uppercase();
-            items.push(ParsedItem::new(trimmed, InputType::Unknown, normalized));
+            if seen.insert(normalized.clone()) {
+                items.push(ParsedItem::new(trimmed, InputType::Unknown, normalized));
+            }
+        } else if let Some(caps) = ARXIV_PREFIX_LINE_RE.captures(trimmed) {
+            // `arXiv:2301.01234` — emit the bare ID (capture group 1) as the value.
+            if let Some(id_match) = caps.get(1) {
+                let normalized = id_match.as_str().to_string();
+                if seen.insert(normalized.clone()) {
+                    items.push(ParsedItem::new(trimmed, InputType::Unknown, normalized));
+                }
+            }
         } else if ARXIV_ID_LINE_RE.is_match(trimmed) {
-            items.push(ParsedItem::new(
-                trimmed,
-                InputType::Unknown,
-                trimmed.to_string(),
-            ));
+            let normalized = trimmed.to_string();
+            if seen.insert(normalized.clone()) {
+                items.push(ParsedItem::new(trimmed, InputType::Unknown, normalized));
+            }
         } else if PMID_PREFIX_LINE_RE.is_match(trimmed) {
             // Normalize to "PMID:<digits>" so resolvers can detect it unambiguously.
             let digits: String = trimmed.chars().filter(char::is_ascii_digit).collect();
             let normalized = format!("PMID:{digits}");
-            items.push(ParsedItem::new(trimmed, InputType::Unknown, normalized));
+            if seen.insert(normalized.clone()) {
+                items.push(ParsedItem::new(trimmed, InputType::Unknown, normalized));
+            }
         }
     }
     items
@@ -771,7 +800,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_input_pmid_colon_optional() {
+    fn test_parse_input_pmid_space_separator_accepted() {
         let result = parse_input("PMID 99999");
         let id = result
             .items
@@ -779,6 +808,21 @@ mod tests {
             .find(|i| i.input_type == InputType::Unknown)
             .unwrap();
         assert_eq!(id.value, "PMID:99999");
+    }
+
+    #[test]
+    fn test_parse_input_pmid_without_separator_not_matched() {
+        // "PMID12345678" has no separator — must not be treated as a PMID.
+        let result = parse_input("PMID12345678");
+        let unknowns: Vec<_> = result
+            .items
+            .iter()
+            .filter(|i| i.input_type == InputType::Unknown)
+            .collect();
+        assert!(
+            unknowns.is_empty(),
+            "bare PMID without separator should not be extracted as a known ID"
+        );
     }
 
     #[test]

@@ -72,6 +72,11 @@ impl DownloadedRegistry {
     /// Loads a project registry from disk or creates an empty in-memory registry.
     ///
     /// Corrupt or incompatible files are ignored and replaced on the next `save_if_dirty`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `io::Error` if the exclusive lock cannot be acquired (e.g. another process
+    /// holds it — `ErrorKind::WouldBlock`) or if the `.downloader` directory cannot be created.
     pub fn load(output_dir: &Path, project_key: &str) -> std::io::Result<Self> {
         let lock_file = Self::acquire_project_lock(output_dir)?;
         let path = Self::path_for_output_dir(output_dir);
@@ -148,6 +153,7 @@ impl DownloadedRegistry {
             .create(true)
             .read(true)
             .write(true)
+            .truncate(false)
             .open(&lock_path)?;
 
         if let Err(err) = lock_file.try_lock_exclusive() {
@@ -221,8 +227,10 @@ impl DownloadedRegistry {
             .strip_prefix(output_dir)
             .ok()
             .and_then(|p| p.to_str())
-            .map(ToString::to_string)
-            .unwrap_or_else(|| saved_path.to_string_lossy().to_string());
+            .map_or_else(
+                || saved_path.to_string_lossy().to_string(),
+                ToString::to_string,
+            );
 
         let canonical_doi = normalize_doi(doi.unwrap_or_default());
         let canonical_url = canonicalize_url(url);
@@ -239,10 +247,10 @@ impl DownloadedRegistry {
                     first_seen_at: now.clone(),
                     last_seen_at: now.clone(),
                 });
-            item.canonical_doi = canonical_doi.clone();
-            item.canonical_url = canonical_url.clone();
-            item.relative_path = relative_path.clone();
-            item.last_seen_at = now.clone();
+            item.canonical_doi.clone_from(&canonical_doi);
+            item.canonical_url.clone_from(&canonical_url);
+            item.relative_path.clone_from(&relative_path);
+            item.last_seen_at.clone_from(&now);
         };
 
         upsert(dedup_key_for(None, Some(url)).unwrap_or_else(|| format!("url:{canonical_url}")));
@@ -259,6 +267,11 @@ impl DownloadedRegistry {
         }
     }
 
+    /// Persists the registry to disk if any changes were made since load or last save.
+    ///
+    /// # Errors
+    ///
+    /// Returns `io::Error` if the registry file cannot be written atomically.
     pub fn save_if_dirty(&mut self) -> std::io::Result<()> {
         if !self.dirty {
             return Ok(());
@@ -279,6 +292,7 @@ impl DownloadedRegistry {
 
 impl Drop for DownloadedRegistry {
     fn drop(&mut self) {
+        #[allow(clippy::incompatible_msrv)]
         let _ = self.lock_file.unlock();
     }
 }
@@ -293,10 +307,10 @@ fn resolve_mapped_path(output_dir: &Path, relative_or_abs: &str) -> PathBuf {
 }
 
 fn unix_timestamp_string() -> String {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs().to_string())
-        .unwrap_or_else(|_| "0".to_string())
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or_else(
+        |_| "0".to_string(),
+        |duration| duration.as_secs().to_string(),
+    )
 }
 
 #[must_use]
@@ -325,7 +339,7 @@ pub fn normalize_doi(raw: &str) -> Option<String> {
         doi = doi[4..].trim_start();
     }
 
-    let decoded = urlencoding::decode(doi).map_or_else(|_| doi.to_string(), |value| value.into());
+    let decoded = urlencoding::decode(doi).map_or_else(|_| doi.to_string(), Into::into);
     let normalized = decoded.trim().to_ascii_lowercase();
     if normalized.is_empty() {
         None

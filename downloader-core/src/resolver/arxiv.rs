@@ -206,6 +206,11 @@ mod tests {
         match step {
             ResolveStep::Url(resolved) => {
                 assert_eq!(resolved.url, "https://arxiv.org/pdf/2301.01234.pdf");
+                assert_eq!(
+                    resolved.metadata.get("doi").unwrap(),
+                    "10.48550/arXiv.2301.01234"
+                );
+                assert_eq!(resolved.metadata.get("source_url").unwrap(), "2301.01234");
             }
             other => panic!("expected Url, got {other:?}"),
         }
@@ -219,6 +224,11 @@ mod tests {
         match step {
             ResolveStep::Url(resolved) => {
                 assert_eq!(resolved.url, "https://arxiv.org/pdf/2301.01234v2.pdf");
+                assert_eq!(
+                    resolved.metadata.get("doi").unwrap(),
+                    "10.48550/arXiv.2301.01234v2"
+                );
+                assert_eq!(resolved.metadata.get("source_url").unwrap(), "2301.01234v2");
             }
             other => panic!("expected Url, got {other:?}"),
         }

@@ -19,7 +19,7 @@ use windows_sys::Win32::Storage::FileSystem::ReplaceFileW;
 
 static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
-fn temp_path_for(target: &Path) -> io::Result<PathBuf> {
+fn temp_path_for(target: &Path) -> PathBuf {
     let parent = target.parent().unwrap_or_else(|| Path::new("."));
     let filename = target
         .file_name()
@@ -27,7 +27,7 @@ fn temp_path_for(target: &Path) -> io::Result<PathBuf> {
         .unwrap_or("artifact");
     let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    Ok(parent.join(format!(".{filename}.tmp-{pid}-{seq}")))
+    parent.join(format!(".{filename}.tmp-{pid}-{seq}"))
 }
 
 #[cfg(unix)]
@@ -136,17 +136,24 @@ fn flush_replaced_target(path: &Path) -> io::Result<()> {
 }
 
 #[cfg(not(windows))]
+#[allow(clippy::unnecessary_wraps)]
 fn flush_replaced_target(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Atomically writes `bytes` to `path` using a write-to-temp-then-rename strategy.
+///
+/// # Errors
+///
+/// Returns `io::Error` if the temp file cannot be created, written, fsynced, or
+/// renamed/replaced into place.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
 
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let temp_path = temp_path_for(path)?;
+    let temp_path = temp_path_for(path);
 
     // Retry a few times if a stale temp file exists from an interrupted run.
     let mut file = None;
@@ -167,14 +174,11 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
         }
     }
 
-    let mut file = match file {
-        Some(file) => file,
-        None => {
-            return Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "failed to allocate atomic temp file",
-            ));
-        }
+    let Some(mut file) = file else {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "failed to allocate atomic temp file",
+        ));
     };
 
     if let Err(err) = (|| -> io::Result<()> {
@@ -196,6 +200,11 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     fsync_dir(parent)
 }
 
+/// Serializes `value` as pretty-printed JSON and atomically writes it to `path`.
+///
+/// # Errors
+///
+/// Returns `io::Error` if JSON serialization fails or the underlying [`atomic_write`] fails.
 pub fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
     let bytes = serde_json::to_vec_pretty(value).map_err(io::Error::other)?;
     atomic_write(path, &bytes)

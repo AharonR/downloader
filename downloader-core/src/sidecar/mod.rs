@@ -161,7 +161,7 @@ fn quarantine_invalid_sidecar(path: &Path) -> Result<PathBuf, SidecarError> {
         let quarantine_path = sidecar_quarantine_path(path);
         match fs::rename(path, &quarantine_path) {
             Ok(()) => return Ok(quarantine_path),
-            Err(err) if err.kind() == ErrorKind::AlreadyExists => continue,
+            Err(err) if err.kind() == ErrorKind::AlreadyExists => {}
             Err(err) => return Err(err.into()),
         }
     }

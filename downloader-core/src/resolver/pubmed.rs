@@ -11,7 +11,7 @@ use reqwest::cookie::Jar;
 use reqwest::header::ACCEPT;
 use url::Url;
 
-use crate::parser::InputType;
+use crate::parser::{BARE_PMC_ID_PATTERN, InputType};
 
 use super::http_client::{build_resolver_http_client, standard_user_agent};
 use super::utils::{
@@ -24,7 +24,7 @@ const DEFAULT_PMC_BASE_URL: &str = "https://pmc.ncbi.nlm.nih.gov";
 
 static PMCID_RE: LazyLock<Regex> = LazyLock::new(|| compile_static_regex(r"(?i)\b(PMC\d{4,})\b"));
 /// Matches a bare PMC identifier as the whole input (e.g. "PMC1234567").
-static BARE_PMCID_RE: LazyLock<Regex> = LazyLock::new(|| compile_static_regex(r"(?i)^PMC\d{4,}$"));
+static BARE_PMCID_RE: LazyLock<Regex> = LazyLock::new(|| compile_static_regex(BARE_PMC_ID_PATTERN));
 /// Matches the normalised PMID form emitted by the parser ("PMID:12345678").
 static BARE_PMID_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_static_regex(r"(?i)^PMID:(\d{1,9})$"));
