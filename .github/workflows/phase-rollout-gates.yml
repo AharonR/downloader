@@ -93,9 +93,14 @@ jobs:
         # localhost socket binding to run in strict mode. Without this env var set, those
         # tests are silently skipped, producing false-positive green results locally.
         # Always set this in CI where socket binding is available.
+        # Retried once to absorb known parallel-isolation flakes (registry lock contention,
+        # e2e cwd collisions) — same SHA passed in PR run but flaked on the main push run.
+        # A persistent failure still fails the gate after the retry.
         env:
           DOWNLOADER_REQUIRE_SOCKET_TESTS: "1"
-        run: cargo test --workspace --all-targets
+        run: |
+          cargo test --workspace --all-targets \
+            || { echo "::warning::Core test gate flaked; retrying once"; cargo test --workspace --all-targets; }
 
       - name: Critical regression tests
         env:
@@ -103,12 +108,17 @@ jobs:
         run: cargo test --test critical -p downloader-core
 
       - name: Targeted integration gate
+        # Same single-retry policy as the core gate.
         env:
           DOWNLOADER_REQUIRE_SOCKET_TESTS: "1"
         run: |
-          cargo test --test queue_integration -p downloader-core
-          cargo test --test download_engine_integration -p downloader-core
-          cargo test --test cli_e2e -p downloader-cli
+          retry() {
+            "$@" || { echo "::warning::$* flaked; retrying once"; "$@"; }
+          }
+          set -e
+          retry cargo test --test queue_integration -p downloader-core
+          retry cargo test --test download_engine_integration -p downloader-core
+          retry cargo test --test cli_e2e -p downloader-cli
 
   nonfunctional-gates:
     name: nonfunctional-gates
