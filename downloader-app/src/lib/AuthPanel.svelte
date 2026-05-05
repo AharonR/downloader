@@ -2,10 +2,15 @@
   import { invoke } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
 
+  interface DomainCookieStatus {
+    domain: string;
+    validity: 'valid' | 'session' | 'expired';
+  }
+
   interface CookieStatus {
     has_cookies: boolean;
     domain_count: number;
-    domains: string[];
+    domains: DomainCookieStatus[];
   }
 
   interface CookieImportResult {
@@ -109,9 +114,25 @@
     <div class="auth-body">
       {#if cookieStatus?.has_cookies}
         <div class="auth-status">
-          <p class="auth-status-text">
-            Cookies saved for: {cookieStatus.domains.join(', ')}
-          </p>
+          <ul class="auth-domain-list">
+            {#each cookieStatus.domains as d}
+              <li class="auth-domain-row">
+                <span
+                  class="auth-domain-dot"
+                  class:auth-domain-dot--session={d.validity === 'session'}
+                  class:auth-domain-dot--expired={d.validity === 'expired'}
+                ></span>
+                <span class="auth-domain-name">{d.domain}</span>
+                {#if d.validity === 'valid'}
+                  <span class="auth-domain-badge auth-domain-badge--valid">valid</span>
+                {:else if d.validity === 'session'}
+                  <span class="auth-domain-badge auth-domain-badge--session">session</span>
+                {:else}
+                  <span class="auth-domain-badge auth-domain-badge--expired">expired</span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
           <button type="button" class="auth-clear-btn" onclick={handleClear} disabled={importing}>
             Clear cookies
           </button>
@@ -229,7 +250,7 @@
 
   .auth-status {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.55rem 0.75rem;
@@ -238,11 +259,64 @@
     border: 1px solid rgba(53, 91, 70, 0.15);
   }
 
-  .auth-status-text {
+  .auth-domain-list {
+    list-style: none;
     margin: 0;
-    color: var(--accent-primary);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .auth-domain-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .auth-domain-dot {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    flex-shrink: 0;
+  }
+
+  .auth-domain-dot--session {
+    background: #b08020;
+  }
+
+  .auth-domain-dot--expired {
+    background: var(--state-error);
+  }
+
+  .auth-domain-name {
     font-size: 0.82rem;
     font-weight: 500;
+    color: var(--accent-primary);
+    font-family: var(--font-mono);
+  }
+
+  .auth-domain-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+  }
+
+  .auth-domain-badge--valid {
+    background: rgba(53, 91, 70, 0.1);
+    color: var(--accent-primary);
+  }
+
+  .auth-domain-badge--session {
+    background: rgba(176, 128, 32, 0.1);
+    color: #7a5a10;
+  }
+
+  .auth-domain-badge--expired {
+    background: rgba(143, 68, 54, 0.1);
+    color: var(--state-error);
   }
 
   .auth-clear-btn {

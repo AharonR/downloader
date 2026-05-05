@@ -1,4 +1,8 @@
 [advisories]
+# cargo-audit suppresses only advisory warnings intentionally accepted for its
+# CLI output. cargo-deny keeps a separate active allowlist based on advisories
+# it currently detects, so the two lists are not expected to be identical.
+#
 # RUSTSEC-2023-0071: rsa Marvin Attack timing sidechannel (medium, 5.9).
 # No patched version available. Transitive via sqlx-mysql which is unused at
 # runtime in this project; rsa is never invoked in any execution path.
@@ -7,8 +11,38 @@
 # Transitive via indicatif progress bars. No security impact; maintenance concern only.
 #
 # RUSTSEC-2026-0097: rand unsoundness with custom logger calling rand::rng().
-# rand 0.7.3 and 0.8.5 remain in the tree as Tauri build-time dependencies
-# (phf_generator/phf_macros for compile-time hash table generation). These
-# crates never call rand::rng() from a logger context and are not invoked at
-# runtime. The fixed rand 0.9.3 is used by all runtime code paths.
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2025-0119", "RUSTSEC-2026-0097"]
+# rand 0.7.3 remains in the tree as a build-only transitive dep via phf_codegen.
+# Runtime code uses rand >=0.8.6 which is patched for this advisory.
+#
+# Tauri Linux transitive advisories (GTK3 bindings + urlpattern unic-* + glib unsound).
+# All are transitive through wry/tao/webkit2gtk/tauri which vendor these on Linux.
+# They are not present in our code and cannot be upgraded without a Tauri version bump.
+# Primary target is macOS; Linux GTK3 path is not in scope for this project.
+#   RUSTSEC-2024-0429: glib VariantStrIter unsound (Linux GTK3, not reachable on macOS)
+#   RUSTSEC-2024-0411..0420: gtk-rs GTK3 bindings unmaintained (no patched versions exist)
+#   RUSTSEC-2024-0370: proc-macro-error unmaintained (via gtk3-macros)
+#   RUSTSEC-2025-0057: fxhash unmaintained (via selectors/kuchikiki in tauri-utils)
+#   RUSTSEC-2025-0075..0100: unic-* unmaintained (via urlpattern in tauri-utils)
+ignore = [
+  "RUSTSEC-2023-0071",
+  "RUSTSEC-2025-0119",
+  "RUSTSEC-2026-0097",
+  "RUSTSEC-2024-0429",
+  "RUSTSEC-2024-0411",
+  "RUSTSEC-2024-0412",
+  "RUSTSEC-2024-0413",
+  "RUSTSEC-2024-0414",
+  "RUSTSEC-2024-0415",
+  "RUSTSEC-2024-0416",
+  "RUSTSEC-2024-0417",
+  "RUSTSEC-2024-0418",
+  "RUSTSEC-2024-0419",
+  "RUSTSEC-2024-0420",
+  "RUSTSEC-2024-0370",
+  "RUSTSEC-2025-0057",
+  "RUSTSEC-2025-0075",
+  "RUSTSEC-2025-0080",
+  "RUSTSEC-2025-0081",
+  "RUSTSEC-2025-0098",
+  "RUSTSEC-2025-0100",
+]

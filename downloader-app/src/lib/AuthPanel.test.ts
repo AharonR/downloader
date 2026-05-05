@@ -80,7 +80,10 @@ describe('AuthPanel', () => {
         return Promise.resolve({
           has_cookies: true,
           domain_count: 2,
-          domains: ['emerald.com', 'wiley.com'],
+          domains: [
+            { domain: 'emerald.com', valid: true },
+            { domain: 'wiley.com', valid: true },
+          ],
         });
       }
       return Promise.resolve(undefined);
@@ -98,7 +101,7 @@ describe('AuthPanel', () => {
         return Promise.resolve({
           has_cookies: true,
           domain_count: 1,
-          domains: ['emerald.com'],
+          domains: [{ domain: 'emerald.com', valid: true }],
         });
       }
       return Promise.resolve(undefined);
@@ -120,7 +123,10 @@ describe('AuthPanel', () => {
         return Promise.resolve({
           has_cookies: true,
           domain_count: 2,
-          domains: ['emerald.com', 'wiley.com'],
+          domains: [
+            { domain: 'emerald.com', validity: 'valid' },
+            { domain: 'wiley.com', validity: 'valid' },
+          ],
         });
       }
       return Promise.resolve(undefined);
@@ -132,8 +138,66 @@ describe('AuthPanel', () => {
     });
 
     await fireEvent.click(screen.getByRole('button', { name: /publisher authentication/i }));
-    expect(screen.getByText(/emerald\.com, wiley\.com/)).toBeDefined();
+    expect(screen.getByText('emerald.com')).toBeDefined();
+    expect(screen.getByText('wiley.com')).toBeDefined();
     expect(screen.getByRole('button', { name: /clear cookies/i })).toBeDefined();
+  });
+
+  it('shows expired badge and dot for domains with expired cookies', async () => {
+    invokeMock.mockImplementation((command) => {
+      if (command === 'get_cookie_status') {
+        return Promise.resolve({
+          has_cookies: true,
+          domain_count: 2,
+          domains: [
+            { domain: 'wiley.com', validity: 'valid' },
+            { domain: 'acm.org', validity: 'expired' },
+          ],
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(AuthPanel);
+    await waitFor(() => {
+      expect(screen.getByText('2 domains')).toBeDefined();
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /publisher authentication/i }));
+
+    expect(screen.getByText('wiley.com')).toBeDefined();
+    expect(screen.getByText('acm.org')).toBeDefined();
+    expect(screen.getByText('valid')).toBeDefined();
+    expect(screen.getByText('expired')).toBeDefined();
+  });
+
+  it('shows session badge for domains with only session cookies', async () => {
+    invokeMock.mockImplementation((command) => {
+      if (command === 'get_cookie_status') {
+        return Promise.resolve({
+          has_cookies: true,
+          domain_count: 3,
+          domains: [
+            { domain: 'wiley.com', validity: 'valid' },
+            { domain: 'springer.com', validity: 'session' },
+            { domain: 'acm.org', validity: 'expired' },
+          ],
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(AuthPanel);
+    await waitFor(() => {
+      expect(screen.getByText('3 domains')).toBeDefined();
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /publisher authentication/i }));
+
+    expect(screen.getByText('springer.com')).toBeDefined();
+    expect(screen.getByText('session')).toBeDefined();
+    expect(screen.getByText('valid')).toBeDefined();
+    expect(screen.getByText('expired')).toBeDefined();
   });
 
   it('does not show status bar when no cookies are saved', async () => {
@@ -257,7 +321,7 @@ describe('AuthPanel', () => {
         return Promise.resolve({
           has_cookies: true,
           domain_count: 1,
-          domains: ['emerald.com'],
+          domains: [{ domain: 'emerald.com', valid: true }],
         });
       }
       if (command === 'import_cookies') {
@@ -370,7 +434,7 @@ describe('AuthPanel', () => {
         return Promise.resolve({
           has_cookies: true,
           domain_count: 1,
-          domains: ['emerald.com'],
+          domains: [{ domain: 'emerald.com', valid: true }],
         });
       }
       if (command === 'clear_cookies') {

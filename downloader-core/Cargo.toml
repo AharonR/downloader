@@ -46,7 +46,7 @@ urlencoding = "2"
 regex = "1"
 
 # Random number generation - required for retry jitter
-rand = "0.8"
+rand = ">=0.8.6, <0.9"
 
 # Thread-safe concurrent HashMap - required for per-domain rate limiting (Story 1.7)
 dashmap = "5.5"

@@ -1195,12 +1195,22 @@ pub struct CookieImportResult {
     pub storage_path: String,
 }
 
+/// Per-domain cookie validity, included in [`CookieStatus`].
+#[derive(Debug, Serialize, Clone)]
+pub struct DomainCookieStatus {
+    pub domain: String,
+    /// "valid"   — at least one persistent cookie (expires > 0) is not yet expired.
+    /// "session" — cookies present but all are session cookies (expires == 0); freshness unknown.
+    /// "expired" — all persistent cookies are expired; no non-expired persistent cookie found.
+    pub validity: String,
+}
+
 /// Current cookie storage status, returned to the frontend.
 #[derive(Debug, Serialize, Clone)]
 pub struct CookieStatus {
     pub has_cookies: bool,
     pub domain_count: usize,
-    pub domains: Vec<String>,
+    pub domains: Vec<DomainCookieStatus>,
 }
 
 /// Parse cookie text (Netscape or JSON format) and persist to encrypted storage.
@@ -1287,17 +1297,56 @@ pub async fn import_cookies_from_file(
 #[tracing::instrument]
 #[tauri::command]
 pub async fn get_cookie_status() -> Result<CookieStatus, String> {
-    use downloader_core::auth::{load_persisted_cookies, unique_domain_count};
-    use std::collections::BTreeSet;
+    use downloader_core::auth::load_persisted_cookies;
+    use std::collections::BTreeMap;
 
     match load_persisted_cookies() {
         Ok(Some(cookies)) if !cookies.is_empty() => {
-            let domain_count = unique_domain_count(&cookies);
-            let domains: Vec<String> = cookies
-                .iter()
-                .map(|c| c.domain.strip_prefix('.').unwrap_or(&c.domain).to_string())
-                .collect::<BTreeSet<_>>()
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            // Aggregate per domain into three buckets.
+            let mut domain_has_valid_persistent: BTreeMap<String, bool> = BTreeMap::new();
+            let mut domain_has_session: BTreeMap<String, bool> = BTreeMap::new();
+            let mut domain_has_expired: BTreeMap<String, bool> = BTreeMap::new();
+            for c in &cookies {
+                let key = c.domain.strip_prefix('.').unwrap_or(&c.domain).to_string();
+                if c.expires == 0 {
+                    *domain_has_session.entry(key).or_insert(false) = true;
+                } else if c.expires > now_secs {
+                    *domain_has_valid_persistent.entry(key).or_insert(false) = true;
+                } else {
+                    *domain_has_expired.entry(key).or_insert(false) = true;
+                }
+            }
+            // Collect all domains seen across any bucket.
+            let all_domains: std::collections::BTreeSet<String> = domain_has_valid_persistent
+                .keys()
+                .chain(domain_has_session.keys())
+                .chain(domain_has_expired.keys())
+                .cloned()
+                .collect();
+            let domain_count = all_domains.len();
+            let domains: Vec<DomainCookieStatus> = all_domains
                 .into_iter()
+                .map(|domain| {
+                    let validity = if domain_has_valid_persistent
+                        .get(&domain)
+                        .copied()
+                        .unwrap_or(false)
+                    {
+                        "valid"
+                    } else if domain_has_session.get(&domain).copied().unwrap_or(false) {
+                        "session"
+                    } else {
+                        "expired"
+                    };
+                    DomainCookieStatus {
+                        domain,
+                        validity: validity.to_string(),
+                    }
+                })
                 .collect();
             Ok(CookieStatus {
                 has_cookies: true,

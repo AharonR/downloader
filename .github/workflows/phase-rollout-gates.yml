@@ -53,7 +53,7 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Security audit
-        run: cargo audit
+        run: cargo audit --deny warnings
 
       - name: Socket bind preflight
         env:
