@@ -21,7 +21,9 @@ Use this template for every phase PR. A phase cannot be closed until all require
 ## Execution checks
 
 - [ ] `cargo test` passed (required suites).
-- [ ] `cargo clippy -- -D warnings` passed.
+- [ ] `cargo clippy --workspace -- -D warnings` passed.
+- [ ] `cargo audit --deny warnings` passed.
+- [ ] `cargo deny check` passed.
 - [ ] New/updated regression tests included for touched invariants.
 - [ ] Public behavior parity validated (CLI output/contracts).
 
