@@ -6,16 +6,13 @@
 # ---------------------------------------------------------------------------
 [advisories]
 version = 2
-# Accepted advisories with rationale (mirrors .cargo/audit.toml):
-#
-# RUSTSEC-2023-0071: rsa Marvin Attack timing sidechannel (medium, 5.9).
-# No patched version available. Transitive via sqlx-mysql which is unused at
-# runtime; rsa is never invoked in any execution path.
+# Accepted advisories with cargo-deny-specific rationale. Keep this list limited
+# to advisories cargo-deny currently detects; cargo-audit may classify or match
+# advisory warnings differently.
 #
 # RUSTSEC-2025-0119: number_prefix unmaintained (warning only, no CVE).
 # Transitive via indicatif progress bars. No security impact.
 ignore = [
-    { id = "RUSTSEC-2023-0071", reason = "Transitive via sqlx-mysql (unused at runtime); no rsa invocation path exists" },
     { id = "RUSTSEC-2025-0119", reason = "Unmaintained warning only — transitive via indicatif; no CVE, no security impact" },
     # Tauri transitive deps — GTK3 bindings unmaintained, no replacements available upstream
     { id = "RUSTSEC-2024-0411", reason = "Unmaintained — gdkwayland-sys transitive via Tauri/tao; no replacement available" },
@@ -28,7 +25,6 @@ ignore = [
     { id = "RUSTSEC-2024-0418", reason = "Unmaintained — gdk-sys transitive via Tauri; no replacement available" },
     { id = "RUSTSEC-2024-0419", reason = "Unmaintained — gtk3-macros transitive via Tauri; no replacement available" },
     { id = "RUSTSEC-2024-0420", reason = "Unmaintained — gtk-sys transitive via Tauri; no replacement available" },
-    { id = "RUSTSEC-2024-0429", reason = "Unsoundness in glib VariantStrIter — transitive via Tauri; VariantStrIter not used in any app code path" },
     { id = "RUSTSEC-2024-0370", reason = "Unmaintained — proc-macro-error transitive via gtk3-macros/Tauri; no CVE, no security impact" },
     # Tauri transitive deps — unic crates unmaintained, no replacements available
     { id = "RUSTSEC-2025-0057", reason = "Unmaintained — fxhash transitive via Tauri/kuchikiki; no CVE, no security impact" },
@@ -37,10 +33,6 @@ ignore = [
     { id = "RUSTSEC-2025-0081", reason = "Unmaintained — unic-char-property transitive via Tauri; no CVE, no security impact" },
     { id = "RUSTSEC-2025-0098", reason = "Unmaintained — unic-ucd-version transitive via Tauri; no CVE, no security impact" },
     { id = "RUSTSEC-2025-0100", reason = "Unmaintained — unic-ucd-ident transitive via Tauri; no CVE, no security impact" },
-    # rand 0.7.3 / 0.8.5 remain as Tauri build-time deps (phf_generator/phf_macros for compile-time
-    # hash tables). They never call rand::rng() from a logger context and are not invoked at runtime.
-    # All runtime paths use rand >= 0.9.3 which is patched.
-    { id = "RUSTSEC-2026-0097", reason = "Affected rand 0.7.3/0.8.5 are Tauri build-time deps only; no runtime exposure. Runtime code uses patched rand 0.9.3." },
 ]
 
 # ---------------------------------------------------------------------------

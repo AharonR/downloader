@@ -174,12 +174,13 @@ The Downloader ships as two interfaces that share the same core library (`downlo
 | Output directory | `--output-dir` flag or `config.toml` `output_dir` | Settings → Output Directory |
 | Concurrency | `--concurrency` flag or `config.toml` | Settings → Concurrency |
 | Projects | `--project` flag | Project input field |
-| Download history | Shared SQLite DB (`.downloader/queue.db`) | Same shared DB |
+| Download history | Shared SQLite DB (`.downloader/queue.db`) plus dedup registry (`.downloader/downloaded-registry.v1.json` + `.lock`) | Same shared runtime state |
 | Sidecar files | Written to project folder | Written to same folder |
 
 Both interfaces produce the same folder structure: `<output_dir>/<project>/` with
 `index.md`, `download.log`, and JSON-LD sidecar files. Downloads made by the CLI
-are visible in the app's history and vice versa.
+are visible in the app's history and vice versa through the shared `.downloader`
+queue DB and dedup registry files.
 
 ## Building
 
@@ -193,7 +194,9 @@ The binary will be at `target/release/downloader`.
 
 ```bash
 cargo test
-cargo clippy -- -D warnings
+cargo clippy --workspace -- -D warnings
+cargo audit
+cargo deny check
 ```
 
 ### Coverage (cargo-llvm-cov)

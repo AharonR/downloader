@@ -27,7 +27,7 @@ downloader \
   < url_lists/qa-automation-links.txt
 ```
 
-Downloaded files land in `~/research/QA Automation Survey/`. A SQLite history database is created at `~/research/.downloader/queue.db`.
+Downloaded files land in `~/research/QA Automation Survey/`. Runtime state is created under `~/research/.downloader/`, including the SQLite history database (`queue.db`) and dedup registry files (`downloaded-registry.v1.json` and `.lock`).
 
 **Step 3: Review what happened**
 

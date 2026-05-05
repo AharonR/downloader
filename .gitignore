@@ -25,6 +25,8 @@
 *.db
 *.db-shm
 *.db-wal
+**/.downloader/downloaded-registry.v1.json
+**/.downloader/downloaded-registry.v1.lock
 
 # Logs
 *.log
@@ -38,3 +40,10 @@
 .codex/
 .claude/settings.local.json
 .claude/projects/
+
+# Codebase map / repomix tooling output (generated, not source of truth)
+CODEBASE_MAP.md
+.codebase-map.extract.json
+.codebase-map.meta
+.repomix-context.txt
+.repomixignore
