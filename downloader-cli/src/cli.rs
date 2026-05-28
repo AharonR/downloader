@@ -46,6 +46,8 @@ pub enum Command {
     },
     /// Export a corpus directory's sidecar metadata to BibTeX or RIS bibliography format.
     Export(ExportArgs),
+    /// Convert HTML files in a corpus directory to PDF using headless Chrome.
+    Convert(ConvertArgs),
 }
 
 /// Export format selection for `downloader export`.
@@ -80,6 +82,27 @@ pub struct ExportArgs {
     /// Output file path. Use `-` to write to stdout (default: `bibliography.bib` or `bibliography.ris`).
     #[arg(short = 'o', long = "output", value_name = "FILE")]
     pub output: Option<PathBuf>,
+}
+
+/// Arguments for `downloader convert`.
+#[derive(ClapArgs, Debug, Clone, PartialEq, Eq)]
+pub struct ConvertArgs {
+    /// Corpus directory containing downloaded `.html` files.
+    #[arg(value_name = "CORPUS_DIR")]
+    pub corpus_dir: PathBuf,
+
+    /// Path to Chrome or Chromium binary (overrides auto-detection).
+    /// Also settable via the `DOWNLOADER_CHROME_BINARY` environment variable.
+    #[arg(long = "chrome-binary", value_name = "PATH")]
+    pub chrome_binary: Option<PathBuf>,
+
+    /// Convert even HTML files from known-useless hosts (paywall stubs, abstract pages).
+    #[arg(long = "no-skip")]
+    pub no_skip: bool,
+
+    /// List eligible files without invoking Chrome.
+    #[arg(long = "dry-run")]
+    pub dry_run: bool,
 }
 
 /// Auth command variants.
