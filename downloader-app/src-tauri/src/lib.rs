@@ -20,6 +20,7 @@ pub fn run() {
             commands::import_cookies_from_file,
             commands::get_cookie_status,
             commands::clear_cookies,
+            commands::convert_html_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

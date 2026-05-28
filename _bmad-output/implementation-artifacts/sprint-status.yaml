@@ -135,6 +135,7 @@ development_status:
   # Epic 11: Backlog Cleanup - "Rough edges filed down, docs complete"
   epic-11: done
   11-1-bug-fixes-micro-improvements: done
+  11-1-convert-html-to-pdf-ui: done
   11-2-code-quality-convention-documentation: done
   11-3-ci-hardening: done
   11-4-youtube-shorts-ui-enhancements: done

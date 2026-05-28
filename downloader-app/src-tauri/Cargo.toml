@@ -34,6 +34,7 @@ tokio = { version = "1", features = ["full"] }
 # Serialization (for DownloadSummary sent to frontend)
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+url = "2"
 
 # Filesystem paths for home dir resolution
 dirs = "5"

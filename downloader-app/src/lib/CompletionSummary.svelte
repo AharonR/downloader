@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
 
   export interface FailedItem {
     input: string;
@@ -36,6 +38,25 @@
   const skippedDuplicates = $derived(summary.skipped_duplicates ?? 0);
   const warnings = $derived(summary.warnings ?? []);
 
+  // Convert state machine
+  type ConvertState = 'idle' | 'running' | 'done' | 'error';
+  let convertState = $state<ConvertState>('idle');
+  let convertResult = $state<{ converted: number; skipped: number; failed: number; total: number } | null>(null);
+  let convertError = $state<string | null>(null);
+  let convertProgress = $state<{ converted: number; totalEligible: number } | null>(null);
+
+  // Register convert-progress event listener; cleaned up on component destroy.
+  onMount(() => {
+    let cleanup: (() => void) | undefined;
+    listen<{ converted: number; total_eligible: number }>('convert-progress', (event) => {
+      convertProgress = {
+        converted: event.payload.converted,
+        totalEligible: event.payload.total_eligible,
+      };
+    }).then((fn) => { cleanup = fn; });
+    return () => cleanup?.();
+  });
+
   async function handleOpenFolder() {
     openFolderError = null;
     try {
@@ -43,6 +64,32 @@
     } catch (err) {
       openFolderError = typeof err === 'string' ? err : 'Could not open folder';
     }
+  }
+
+  async function handleConvertHtml() {
+    convertState = 'running';
+    convertError = null;
+    convertResult = null;
+    convertProgress = null;
+    try {
+      const result = await invoke<{ converted: number; skipped: number; failed: number; total: number }>(
+        'convert_html_files',
+        { corpusDir: summary.output_dir, noSkip: false },
+      );
+      convertResult = result;
+      convertState = 'done';
+    } catch (err) {
+      convertError = typeof err === 'string' ? err : 'Conversion failed';
+      convertState = 'error';
+    }
+  }
+
+  function handleReset() {
+    convertState = 'idle';
+    convertResult = null;
+    convertError = null;
+    convertProgress = null;
+    onReset();
   }
 
   function toggleExpandAll() {
@@ -114,9 +161,37 @@
         <p class="output-label">Project output</p>
         <code class="output-dir">{summary.output_dir}</code>
       </div>
-      <button class="open-folder-btn" onclick={handleOpenFolder} type="button">
-        Open output folder
-      </button>
+      <div class="output-actions">
+        <button class="open-folder-btn" onclick={handleOpenFolder} type="button">
+          Open output folder
+        </button>
+
+        {#if convertState === 'idle'}
+          <button class="convert-btn" onclick={handleConvertHtml} type="button">
+            Convert HTML → PDF
+          </button>
+        {:else if convertState === 'running'}
+          <button class="convert-btn convert-btn--running" disabled type="button">
+            {#if convertProgress}
+              Converting… {convertProgress.converted} / {convertProgress.totalEligible}
+            {:else}
+              Converting…
+            {/if}
+          </button>
+        {:else if convertState === 'done'}
+          <p class="convert-result">
+            {#if convertResult && convertResult.converted === 0 && convertResult.failed === 0}
+              Nothing to convert
+            {:else if convertResult}
+              Converted {convertResult.converted} file{convertResult.converted !== 1 ? 's' : ''}
+              {#if convertResult.skipped > 0}({convertResult.skipped} skipped){/if}
+              {#if convertResult.failed > 0}· {convertResult.failed} failed{/if}
+            {/if}
+          </p>
+        {:else if convertState === 'error'}
+          <p class="convert-error" role="alert">{convertError}</p>
+        {/if}
+      </div>
     </div>
   {/if}
 
@@ -170,7 +245,7 @@
   {/if}
 
   <div class="action-row">
-    <button class="reset-btn" onclick={onReset} type="button">
+    <button class="reset-btn" onclick={handleReset} type="button">
       Download more
     </button>
   </div>
@@ -452,6 +527,50 @@
     margin: 0;
   }
 
+  .output-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-end;
+    flex-shrink: 0;
+  }
+
+  .convert-btn {
+    background: rgba(255, 255, 255, 0.7);
+    color: var(--accent-primary);
+    border: 1px solid rgba(53, 91, 70, 0.32);
+    border-radius: 999px;
+    padding: 0.58rem 1rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .convert-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.92);
+  }
+
+  .convert-btn--running {
+    opacity: 0.65;
+    cursor: default;
+  }
+
+  .convert-result {
+    margin: 0;
+    color: var(--state-success);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: right;
+  }
+
+  .convert-error {
+    margin: 0;
+    color: var(--state-error);
+    font-size: 0.82rem;
+    text-align: right;
+  }
+
   @media (max-width: 680px) {
     .summary-metrics {
       grid-template-columns: 1fr;
@@ -459,6 +578,10 @@
 
     .output-block {
       flex-direction: column;
+      align-items: stretch;
+    }
+
+    .output-actions {
       align-items: stretch;
     }
   }
