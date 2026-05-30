@@ -199,6 +199,10 @@ cargo audit
 cargo deny check
 ```
 
+> **Note:** keep clippy at `--workspace` (no `--all-targets`) — see
+> [`docs/development.md`](docs/development.md) for why, plus the full set of CI
+> quality gates and disk/worktree hygiene notes.
+
 ### Coverage (cargo-llvm-cov)
 
 Coverage is collected in a dedicated CI workflow (`.github/workflows/coverage.yml`) and is
