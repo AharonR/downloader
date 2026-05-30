@@ -6,6 +6,10 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+}));
+
 describe('CompletionSummary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -202,6 +206,125 @@ describe('CompletionSummary', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeTruthy();
       expect(screen.getByText(/Permission denied/)).toBeTruthy();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Convert HTML → PDF button
+  // -------------------------------------------------------------------------
+
+  it('shows "Convert HTML → PDF" button when output_dir is set and files completed', () => {
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ output_dir: '/tmp/out', completed: 3 }), onReset: vi.fn() },
+    });
+    expect(screen.getByRole('button', { name: /convert html → pdf/i })).toBeTruthy();
+  });
+
+  it('does not show convert button when no files completed or skipped', () => {
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ output_dir: '/tmp/out', completed: 0, failed: 2 }), onReset: vi.fn() },
+    });
+    expect(screen.queryByRole('button', { name: /convert html/i })).toBeNull();
+  });
+
+  it('convert button transitions to "Converting…" and is disabled after click', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockReturnValueOnce(new Promise(() => {})); // never resolves
+
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ output_dir: '/tmp/out', completed: 3 }), onReset: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /convert html → pdf/i }));
+
+    await waitFor(() => {
+      const btn = screen.getByRole('button', { name: /converting/i });
+      expect(btn).toBeTruthy();
+      expect((btn as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
+  it('shows converted count when invoke resolves with results', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockResolvedValueOnce({ converted: 3, skipped: 1, failed: 0, total: 4 });
+
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ output_dir: '/tmp/out', completed: 4 }), onReset: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /convert html → pdf/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Converted 3 files/)).toBeTruthy();
+      expect(screen.getByText(/1 skipped/)).toBeTruthy();
+    });
+  });
+
+  it('shows "Nothing to convert" when converted and failed are both zero', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockResolvedValueOnce({ converted: 0, skipped: 0, failed: 0, total: 0 });
+
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ output_dir: '/tmp/out', completed: 3 }), onReset: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /convert html → pdf/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Nothing to convert/)).toBeTruthy();
+    });
+  });
+
+  it('shows failed count alongside converted when some files failed', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockResolvedValueOnce({ converted: 2, skipped: 0, failed: 1, total: 3 });
+
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ output_dir: '/tmp/out', completed: 3 }), onReset: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /convert html → pdf/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Converted 2 files/)).toBeTruthy();
+      expect(screen.getByText(/1 failed/)).toBeTruthy();
+    });
+  });
+
+  it('shows inline error when Chrome is not found', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockRejectedValueOnce('Chrome not found. Install Google Chrome or set DOWNLOADER_CHROME_BINARY.');
+
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ output_dir: '/tmp/out', completed: 3 }), onReset: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /convert html → pdf/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.getByText(/Chrome not found/)).toBeTruthy();
+    });
+  });
+
+  it('resets convert state when "Download more" is clicked after conversion', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockResolvedValueOnce({ converted: 2, skipped: 0, failed: 0, total: 2 });
+
+    const onReset = vi.fn();
+    render(CompletionSummary, {
+      props: { summary: makeSummary({ output_dir: '/tmp/out', completed: 2 }), onReset },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /convert html → pdf/i }));
+    await waitFor(() => expect(screen.getByText(/Converted 2 files/)).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole('button', { name: /download more/i }));
+    expect(onReset).toHaveBeenCalledOnce();
+
+    // convertState should be back to 'idle' — the "Convert HTML → PDF" button is the evidence.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /convert html → pdf/i })).toBeTruthy();
     });
   });
 });

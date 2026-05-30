@@ -3,7 +3,7 @@
 //! Bridges the Svelte frontend to `downloader_core` via Tauri's IPC layer.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -21,7 +21,9 @@ use downloader_core::{
 };
 use serde::Serialize;
 use tauri::Emitter;
+use tokio::process::Command as TokioCommand;
 use tracing::warn;
+use url::Url;
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -70,6 +72,23 @@ pub struct ProgressPayload {
     pub failed: usize,
     pub total: usize,
     pub in_progress: Vec<InProgressItem>,
+}
+
+/// Final result returned to the frontend after HTML → PDF conversion completes.
+#[derive(Debug, Serialize, Clone)]
+pub struct ConvertResult {
+    pub converted: usize,
+    pub skipped: usize,
+    pub failed: usize,
+    pub total: usize,
+}
+
+/// Per-file progress payload emitted as `"convert-progress"` events during conversion.
+#[derive(Debug, Serialize, Clone)]
+pub struct ConvertProgress {
+    pub file: String,
+    pub converted: usize,
+    pub total_eligible: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -1386,6 +1405,201 @@ pub async fn clear_cookies() -> Result<bool, String> {
 }
 
 // ---------------------------------------------------------------------------
+// HTML → PDF conversion command
+// ---------------------------------------------------------------------------
+
+/// Hosts whose HTML outputs are known-useless for conversion (same list as the CLI).
+const KNOWN_USELESS_HOST_SUFFIXES: &[&str] =
+    &["sciencedirect.com", "pubmed.ncbi.nlm.nih.gov", "doi.org"];
+
+/// Locates the Chrome/Chromium binary.
+///
+/// Resolution order: `override_path` → `DOWNLOADER_CHROME_BINARY` env →
+/// macOS default path → PATH names.
+pub(crate) fn find_chrome_binary_in_app(override_path: Option<&str>) -> Result<PathBuf, String> {
+    if let Some(p) = override_path {
+        return Ok(PathBuf::from(p));
+    }
+    if let Ok(env_val) = std::env::var("DOWNLOADER_CHROME_BINARY") {
+        return Ok(PathBuf::from(env_val));
+    }
+    let macos_path = PathBuf::from("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+    if macos_path.exists() {
+        return Ok(macos_path);
+    }
+    for name in [
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+    ] {
+        if let Ok(output) = std::process::Command::new("which").arg(name).output() {
+            if output.status.success() {
+                let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path_str.is_empty() {
+                    return Ok(PathBuf::from(path_str));
+                }
+            }
+        }
+    }
+    Err("Chrome not found. Install Google Chrome or set DOWNLOADER_CHROME_BINARY.".to_string())
+}
+
+/// Collects all `.html` files in `dir` (non-recursive), sorted for determinism.
+pub(crate) fn collect_html_files_for_convert(dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map_err(|e| format!("failed to read directory {}: {e}", dir.display()))?
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            if path.is_file() {
+                let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+                if ext == "html" {
+                    return Some(path);
+                }
+            }
+            None
+        })
+        .collect();
+    files.sort();
+    Ok(files)
+}
+
+/// Returns the host string if the sidecar JSON records a URL from a known-useless host.
+pub(crate) fn useless_host_for_convert(json_path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(json_path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let url_str = value.get("url")?.as_str()?;
+    let host = Url::parse(url_str).ok()?.host_str()?.to_owned();
+    for suffix in KNOWN_USELESS_HOST_SUFFIXES {
+        if host == *suffix || host.ends_with(&format!(".{suffix}")) {
+            return Some(host);
+        }
+    }
+    None
+}
+
+/// Inner conversion loop — extracted for unit-testability (no AppHandle required).
+///
+/// Scans `corpus_dir` for `.html` files, applies skip filters, invokes headless Chrome
+/// for each eligible file, and calls `on_progress` after each attempt.
+pub(crate) async fn run_convert_inner(
+    corpus_dir: PathBuf,
+    no_skip: bool,
+    chrome: PathBuf,
+    on_progress: impl Fn(ConvertProgress),
+) -> Result<ConvertResult, String> {
+    let html_files = collect_html_files_for_convert(&corpus_dir)?;
+    let total = html_files.len();
+
+    let mut skipped = 0usize;
+
+    // Pre-compute the eligible set so `total_eligible` is known for progress events.
+    let mut eligible: Vec<PathBuf> = Vec::new();
+    for html_path in &html_files {
+        if html_path.with_extension("pdf").exists() {
+            skipped += 1;
+            continue;
+        }
+        if !no_skip && useless_host_for_convert(&html_path.with_extension("json")).is_some() {
+            skipped += 1;
+            continue;
+        }
+        eligible.push(html_path.clone());
+    }
+
+    let total_eligible = eligible.len();
+    let mut converted = 0usize;
+    let mut failed = 0usize;
+
+    for html_path in &eligible {
+        let pdf_path = html_path.with_extension("pdf");
+        let basename = html_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        let abs_html = html_path
+            .canonicalize()
+            .map_err(|e| format!("failed to resolve {}: {e}", html_path.display()))?;
+        let file_url = format!("file://{}", abs_html.display());
+
+        let result = TokioCommand::new(&chrome)
+            .args([
+                "--headless=new",
+                "--disable-gpu",
+                "--no-sandbox",
+                "--print-to-pdf-no-header",
+                &format!("--print-to-pdf={}", pdf_path.display()),
+                &file_url,
+            ])
+            .output()
+            .await;
+
+        match result {
+            Ok(output) if output.status.success() => converted += 1,
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                warn!(
+                    path = %html_path.display(),
+                    status = %output.status,
+                    stderr = %stderr.trim(),
+                    "Chrome exited non-zero; file not converted"
+                );
+                failed += 1;
+            }
+            Err(e) => {
+                warn!(
+                    path = %html_path.display(),
+                    error = %e,
+                    "Failed to spawn Chrome for conversion"
+                );
+                failed += 1;
+            }
+        }
+
+        on_progress(ConvertProgress {
+            file: basename,
+            converted,
+            total_eligible,
+        });
+    }
+
+    Ok(ConvertResult {
+        converted,
+        skipped,
+        failed,
+        total,
+    })
+}
+
+/// Converts `.html` files in `corpus_dir` to `.pdf` using headless Chrome.
+///
+/// Emits `"convert-progress"` events to the frontend after each eligible file is processed.
+#[tracing::instrument(skip(app_handle))]
+#[tauri::command]
+pub async fn convert_html_files(
+    corpus_dir: String,
+    no_skip: bool,
+    app_handle: tauri::AppHandle,
+) -> Result<ConvertResult, String> {
+    let dir = PathBuf::from(&corpus_dir);
+    if !dir.is_dir() {
+        return Err(format!(
+            "What: Corpus directory not found.\n\
+             Why: '{corpus_dir}' does not exist or is not a directory.\n\
+             Fix: Verify the output path is correct."
+        ));
+    }
+
+    let chrome = find_chrome_binary_in_app(None)?;
+
+    run_convert_inner(dir, no_skip, chrome, |progress| {
+        app_handle.emit("convert-progress", progress).ok();
+    })
+    .await
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -2229,5 +2443,122 @@ mod tests {
         // clear_cookies should not panic regardless of whether cookies exist.
         // It may fail with a storage error in CI, but it must not panic.
         let _result = clear_cookies().await;
+    }
+
+    // -----------------------------------------------------------------------
+    // HTML → PDF conversion helpers
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_find_chrome_binary_in_app_returns_override_path() {
+        let result = find_chrome_binary_in_app(Some("/usr/bin/fake-chrome"));
+        assert_eq!(result.unwrap(), PathBuf::from("/usr/bin/fake-chrome"));
+    }
+
+    #[test]
+    fn test_find_chrome_binary_in_app_reads_env_var() {
+        let _guard = env_test_lock().lock().unwrap();
+        // SAFETY: serialized by env_test_lock.
+        unsafe { std::env::set_var("DOWNLOADER_CHROME_BINARY", "/tmp/env-chrome") };
+        let result = find_chrome_binary_in_app(None);
+        unsafe { std::env::remove_var("DOWNLOADER_CHROME_BINARY") };
+        assert_eq!(result.unwrap(), PathBuf::from("/tmp/env-chrome"));
+    }
+
+    #[test]
+    fn test_collect_html_files_for_convert_returns_only_html_sorted() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("b.html"), "").unwrap();
+        std::fs::write(tmp.path().join("a.html"), "").unwrap();
+        std::fs::write(tmp.path().join("c.pdf"), "").unwrap();
+        std::fs::write(tmp.path().join("d.json"), "").unwrap();
+
+        let files = collect_html_files_for_convert(tmp.path()).unwrap();
+        let names: Vec<_> = files
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap())
+            .collect();
+        assert_eq!(names, &["a.html", "b.html"]);
+    }
+
+    fn make_sidecar_url(url: &str) -> String {
+        format!(r#"{{"@context":"https://schema.org","url":"{url}"}}"#)
+    }
+
+    #[test]
+    fn test_useless_host_for_convert_detects_sciencedirect() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let json = tmp.path().join("paper.json");
+        std::fs::write(
+            &json,
+            make_sidecar_url("https://www.sciencedirect.com/science/article/pii/S000"),
+        )
+        .unwrap();
+        assert!(useless_host_for_convert(&json).is_some());
+    }
+
+    #[test]
+    fn test_useless_host_for_convert_passes_real_host() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let json = tmp.path().join("paper.json");
+        std::fs::write(
+            &json,
+            make_sidecar_url("https://openreview.net/forum?id=abc123"),
+        )
+        .unwrap();
+        assert!(useless_host_for_convert(&json).is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_run_convert_inner_creates_pdf_and_fires_progress_once_per_eligible() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::sync::{Arc, Mutex};
+
+        let tmp_bin = tempfile::TempDir::new().unwrap();
+        let stub = tmp_bin.path().join("fake-chrome");
+        std::fs::write(
+            &stub,
+            "#!/bin/sh\nfor a in \"$@\"; do case \"$a\" in --print-to-pdf=*) \
+             out=\"${a#--print-to-pdf=}\"; printf '%%PDF-stub' > \"$out\" ;; esac; done\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let corpus = tempfile::TempDir::new().unwrap();
+        // eligible: article.html (no sibling pdf, real host)
+        std::fs::write(corpus.path().join("article.html"), "<html/>").unwrap();
+        std::fs::write(
+            corpus.path().join("article.json"),
+            make_sidecar_url("https://openreview.net/forum?id=xyz"),
+        )
+        .unwrap();
+        // skipped: already-done.html (sibling pdf exists)
+        std::fs::write(corpus.path().join("already-done.html"), "<html/>").unwrap();
+        std::fs::write(corpus.path().join("already-done.pdf"), b"%PDF").unwrap();
+
+        let call_count = Arc::new(Mutex::new(0usize));
+        let call_count_clone = Arc::clone(&call_count);
+
+        let result =
+            run_convert_inner(corpus.path().to_path_buf(), false, stub, move |_progress| {
+                *call_count_clone.lock().unwrap() += 1;
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result.converted, 1);
+        assert_eq!(result.skipped, 1);
+        assert_eq!(result.failed, 0);
+        assert_eq!(result.total, 2);
+        assert!(
+            corpus.path().join("article.pdf").exists(),
+            "PDF must be created"
+        );
+        assert_eq!(
+            *call_count.lock().unwrap(),
+            1,
+            "progress fires once per eligible file, not for skipped"
+        );
     }
 }

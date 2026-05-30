@@ -49,6 +49,9 @@ pub(crate) async fn try_dispatch(
         Command::Export(export_args) => {
             commands::run_export_command(export_args).await?;
         }
+        Command::Convert(convert_args) => {
+            commands::run_convert_command(convert_args).await?;
+        }
     }
 
     Ok(Some(ProcessExit::Success))
