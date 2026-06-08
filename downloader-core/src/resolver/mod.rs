@@ -47,6 +47,7 @@ mod error;
 mod http_client;
 mod ieee;
 mod mdpi;
+mod meta;
 mod oxford;
 mod pubmed;
 mod registry;
@@ -98,87 +99,72 @@ pub fn build_default_resolver_registry(
 
     registry.register(Box::new(ArxivResolver::new()));
 
-    match PubMedResolver::new(cookie_jar.clone()) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "PubMed resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
+    register_or_warn(
+        &mut registry,
+        PubMedResolver::new(cookie_jar.clone()),
+        "PubMed resolver unavailable; continuing with remaining resolvers",
+    );
+    register_or_warn(
+        &mut registry,
+        IeeeResolver::new(cookie_jar.clone()),
+        "IEEE resolver unavailable; continuing with remaining resolvers",
+    );
+    register_or_warn(
+        &mut registry,
+        OxfordAcademicResolver::new(cookie_jar.clone()),
+        "Oxford Academic resolver unavailable; continuing with remaining resolvers",
+    );
+    register_or_warn(
+        &mut registry,
+        SpringerResolver::new(cookie_jar.clone()),
+        "Springer resolver unavailable; continuing with remaining resolvers",
+    );
+    register_or_warn(
+        &mut registry,
+        ScienceDirectResolver::new(cookie_jar),
+        "ScienceDirect resolver unavailable; continuing with generic resolvers",
+    );
+    register_or_warn(
+        &mut registry,
+        AcmResolver::new(),
+        "ACM resolver unavailable; continuing with remaining resolvers",
+    );
+    register_or_warn(
+        &mut registry,
+        WileyResolver::new(),
+        "Wiley resolver unavailable; continuing with remaining resolvers",
+    );
+    register_or_warn(
+        &mut registry,
+        MdpiResolver::new(crossref_mailto),
+        "MDPI resolver unavailable; continuing with remaining resolvers",
+    );
+    register_or_warn(
+        &mut registry,
+        YouTubeResolver::new(),
+        "YouTube resolver unavailable; continuing with remaining resolvers",
+    );
+    register_or_warn(
+        &mut registry,
+        CrossrefResolver::new(crossref_mailto),
+        "Crossref resolver unavailable; continuing with direct fallback only",
+    );
 
-    match IeeeResolver::new(cookie_jar.clone()) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "IEEE resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match OxfordAcademicResolver::new(cookie_jar.clone()) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "Oxford Academic resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match SpringerResolver::new(cookie_jar.clone()) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "Springer resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match ScienceDirectResolver::new(cookie_jar) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "ScienceDirect resolver unavailable; continuing with generic resolvers"
-        ),
-    }
-
-    match AcmResolver::new() {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "ACM resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match WileyResolver::new() {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "Wiley resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match MdpiResolver::new(crossref_mailto) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "MDPI resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match YouTubeResolver::new() {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "YouTube resolver unavailable; continuing with remaining resolvers"
-        ),
-    }
-
-    match CrossrefResolver::new(crossref_mailto) {
-        Ok(resolver) => registry.register(Box::new(resolver)),
-        Err(error) => warn!(
-            error = %error,
-            "Crossref resolver unavailable; continuing with direct fallback only"
-        ),
-    }
     registry.register(Box::new(DirectResolver::new()));
     registry
+}
+
+/// Registers a fallibly-constructed resolver, logging a warning (and skipping
+/// it) when construction fails so the registry can continue with the rest.
+fn register_or_warn(
+    registry: &mut ResolverRegistry,
+    resolver: Result<impl Resolver + 'static, ResolveError>,
+    unavailable_message: &str,
+) {
+    match resolver {
+        Ok(resolver) => registry.register(Box::new(resolver)),
+        Err(error) => warn!(error = %error, "{unavailable_message}"),
+    }
 }
 
 /// Priority level for resolver ordering.
