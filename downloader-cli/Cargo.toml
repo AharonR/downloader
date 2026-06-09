@@ -22,7 +22,9 @@ path = "src/bin/stress_sidecar_flaky.rs"
 downloader-core = { path = "../downloader-core" }
 
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", default-features = false, features = [
+    "rt-multi-thread", "macros", "time", "process", "signal",
+] }
 
 # Error handling
 anyhow = "1"

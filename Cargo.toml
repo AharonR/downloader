@@ -5,3 +5,10 @@ members = [
     "downloader-app/src-tauri",
 ]
 resolver = "2"
+
+[profile.release]
+opt-level = "s"      # optimize for size while keeping autovectorization (unlike "z")
+lto = "thin"         # cross-crate inlining + dead-code elimination, CI-friendly build cost
+codegen-units = 1    # smaller output at the cost of compile time
+strip = "symbols"    # drop the symbol table from shipped binaries
+panic = "unwind"     # explicit: do not use "abort" (production code relies on catch_unwind)

@@ -12,7 +12,9 @@ path = "src/lib.rs"
 
 [dependencies]
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", default-features = false, features = [
+    "rt-multi-thread", "macros", "sync", "time", "fs", "io-util",
+] }
 
 # HTTP client
 reqwest = { version = "0.13", features = ["json", "cookies", "stream", "gzip"] }

@@ -20,6 +20,7 @@ use url::Url;
 use crate::parser::InputType;
 
 use super::http_client::{build_resolver_http_client, standard_user_agent};
+use super::meta::{MetaTag, all_meta_values, collect_meta_tags, first_meta_value};
 use super::utils::{
     absolutize_url, auth_requirement, canonical_host, compile_static_regex, extract_year_from_str,
     hosts_match, is_auth_required_status, looks_like_doi, parse_host_or_fallback,
@@ -31,11 +32,6 @@ const DEFAULT_DOI_BASE_URL: &str = "https://doi.org";
 const SCIENCE_DIRECT_DOI_PREFIX: &str = "10.1016/";
 const ADDITIONAL_ELSEVIER_HOSTS: &[&str] = &["linkinghub.elsevier.com"];
 
-static META_TAG_RE: LazyLock<Regex> =
-    LazyLock::new(|| compile_static_regex(r"(?is)<meta\s+[^>]*>"));
-static META_ATTR_RE: LazyLock<Regex> = LazyLock::new(|| {
-    compile_static_regex(r#"([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')"#)
-});
 static JSON_PDF_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(r#""(?:pdfUrl|pdfDownloadUrl|linkToPdf)"\s*:\s*"([^"]+)""#)
 });
@@ -300,51 +296,6 @@ fn normalize_input_url(input: &str, doi_base_url: &str) -> String {
     }
 }
 
-#[derive(Debug, Clone)]
-struct MetaTag {
-    name: String,
-    content: String,
-}
-
-fn collect_meta_tags(html: &str) -> Vec<MetaTag> {
-    let mut tags = Vec::new();
-
-    for tag_match in META_TAG_RE.find_iter(html) {
-        let mut tag_name: Option<String> = None;
-        let mut content: Option<String> = None;
-
-        for attr in META_ATTR_RE.captures_iter(tag_match.as_str()) {
-            let key = attr
-                .get(1)
-                .map_or("", |m| m.as_str())
-                .trim()
-                .to_ascii_lowercase();
-            let value = attr
-                .get(2)
-                .or_else(|| attr.get(3))
-                .map_or("", |m| m.as_str())
-                .trim()
-                .to_string();
-
-            if value.is_empty() {
-                continue;
-            }
-
-            if key == "name" || key == "property" {
-                tag_name = Some(value.to_ascii_lowercase());
-            } else if key == "content" {
-                content = Some(value);
-            }
-        }
-
-        if let (Some(name), Some(content)) = (tag_name, content) {
-            tags.push(MetaTag { name, content });
-        }
-    }
-
-    tags
-}
-
 fn resolve_pdf_url(
     meta_tags: &[MetaTag],
     html: &str,
@@ -372,27 +323,6 @@ fn extract_pdf_url_from_json(html: &str) -> Option<String> {
 
 fn decode_json_url_field(value: &str) -> String {
     value.replace(r"\u002F", "/").replace(r"\/", "/")
-}
-
-fn first_meta_value(meta_tags: &[MetaTag], keys: &[&str]) -> Option<String> {
-    meta_tags.iter().find_map(|tag| {
-        keys.iter()
-            .any(|key| tag.name.eq_ignore_ascii_case(key))
-            .then(|| html_unescape_basic(&tag.content))
-    })
-}
-
-fn all_meta_values(meta_tags: &[MetaTag], keys: &[&str]) -> Vec<String> {
-    let mut values = Vec::new();
-    for tag in meta_tags {
-        if keys.iter().any(|key| tag.name.eq_ignore_ascii_case(key)) {
-            let value = html_unescape_basic(&tag.content);
-            if !value.is_empty() && !values.contains(&value) {
-                values.push(value);
-            }
-        }
-    }
-    values
 }
 
 fn extract_metadata(meta_tags: &[MetaTag]) -> HashMap<String, String> {
@@ -456,26 +386,10 @@ fn is_auth_page(html: &str, final_url: &Url) -> bool {
     marker_hits >= 3
 }
 
-fn html_unescape_basic(value: &str) -> String {
-    value
-        .replace("&amp;", "&")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&ndash;", "\u{2013}")
-        .replace("&mdash;", "\u{2014}")
-        .replace("&nbsp;", "\u{00a0}")
-        .replace("&#8211;", "\u{2013}")
-        .replace("&#8212;", "\u{2014}")
-        .replace("&#160;", "\u{00a0}")
-        .trim()
-        .to_string()
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use super::super::meta::html_unescape_basic;
     use super::*;
 
     #[test]
