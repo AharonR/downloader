@@ -28,12 +28,6 @@ pub async fn run_convert_command(args: &ConvertArgs) -> Result<()> {
         );
     }
 
-    let chrome = if args.dry_run {
-        PathBuf::new() // not needed for dry-run
-    } else {
-        find_chrome_binary(args.chrome_binary.as_deref())?
-    };
-
     let html_files = collect_html_files(corpus_dir)?;
     let total = html_files.len();
 
@@ -44,6 +38,14 @@ pub async fn run_convert_command(args: &ConvertArgs) -> Result<()> {
         );
         return Ok(());
     }
+
+    // Resolved after the empty-corpus exit: with nothing to convert there is no browser
+    // dependency, so an empty corpus must not fail on a machine without Chrome installed.
+    let chrome = if args.dry_run {
+        PathBuf::new() // not needed for dry-run
+    } else {
+        find_chrome_binary(args.chrome_binary.as_deref())?
+    };
 
     let mut converted = 0usize;
     let mut skipped = 0usize;

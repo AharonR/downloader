@@ -39,6 +39,10 @@ All notable changes to this project will be documented in this file.
 - **Sidecar quarantine collision risk** — corrupt sidecar quarantine filenames now
   include high-entropy suffixes (`nanos`, process id, sequence) and retry on
   `AlreadyExists` collisions.
+- **`convert` on an empty corpus no longer requires a browser** — `downloader convert`
+  resolved the Chrome/Chromium binary before scanning the corpus, so an empty directory
+  failed with "Chrome/Chromium binary not found" instead of printing the zero-file
+  summary. The binary is now resolved only once there is a file to convert.
 
 ## [Phase 1 — Wedge Hardening] — 2026-03-09/10
 
