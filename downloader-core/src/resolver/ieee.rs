@@ -228,8 +228,7 @@ fn has_arnumber_query(url: &Url) -> bool {
 
 fn is_direct_stamp_url(value: &str) -> bool {
     Url::parse(value)
-        .ok()
-        .is_some_and(|url| path_looks_like_ieee_resource(url.path()) && has_arnumber_query(&url))
+        .is_ok_and(|url| path_looks_like_ieee_resource(url.path()) && has_arnumber_query(&url))
 }
 
 fn extract_document_id(path: &str) -> Option<String> {

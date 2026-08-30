@@ -244,7 +244,7 @@ fn is_springer_resource_path(path: &str) -> bool {
 }
 
 fn looks_like_direct_pdf_url(value: &str) -> bool {
-    Url::parse(value).ok().is_some_and(|url| {
+    Url::parse(value).is_ok_and(|url| {
         url.path().to_ascii_lowercase().starts_with("/content/pdf/")
             && url.path().to_ascii_lowercase().contains(".pdf")
     })
