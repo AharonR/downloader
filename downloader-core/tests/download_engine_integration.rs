@@ -1383,14 +1383,24 @@ async fn test_rate_limiter_disabled_allows_fast_parallel() -> Result<(), Box<dyn
 
     let mock_server = require_mock_server!();
 
-    // Setup 3 endpoints with 50ms delay each
+    // Each endpoint sleeps for REQUEST_DELAY before responding. With rate limiting
+    // disabled and a concurrency limit of 10 the three requests overlap, so the queue
+    // drains in about one REQUEST_DELAY; serialized it would take three. The threshold
+    // sits between those outcomes, so a serializing regression still fails while a full
+    // REQUEST_DELAY of scheduler noise is tolerated. The previous 50ms/200ms pair had
+    // neither property: 200ms sat above the 150ms serialized floor (so serialized runs
+    // could pass), and CI measured 460ms elapsed against a 50ms ideal under load.
+    const REQUEST_DELAY: Duration = Duration::from_millis(1000);
+    const PARALLEL_THRESHOLD: Duration = Duration::from_millis(2000);
+
+    // Setup 3 endpoints, each delayed by REQUEST_DELAY
     for i in 1..=3 {
         Mock::given(method("GET"))
             .and(path(format!("/fast{}.txt", i)))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_bytes(b"content")
-                    .set_delay(Duration::from_millis(50)),
+                    .set_delay(REQUEST_DELAY),
             )
             .mount(&mock_server)
             .await;
@@ -1417,10 +1427,10 @@ async fn test_rate_limiter_disabled_allows_fast_parallel() -> Result<(), Box<dyn
     // All should complete
     assert_eq!(stats.completed(), 3);
 
-    // With disabled rate limiting and concurrency 10, all 3 should run in parallel
-    // Each takes 50ms, so total should be ~50-150ms (not 150ms sequential)
+    // With disabled rate limiting and concurrency 10, all 3 overlap: ~1x REQUEST_DELAY
+    // rather than the ~3x a serialized run would take.
     assert!(
-        elapsed < Duration::from_millis(200),
+        elapsed < PARALLEL_THRESHOLD,
         "Disabled rate limiter should allow parallel requests, elapsed: {:?}",
         elapsed
     );

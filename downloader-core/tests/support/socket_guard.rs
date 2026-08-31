@@ -6,8 +6,7 @@ use wiremock::MockServer;
 #[must_use]
 pub fn socket_tests_required() -> bool {
     std::env::var("DOWNLOADER_REQUIRE_SOCKET_TESTS")
-        .ok()
-        .is_some_and(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+        .is_ok_and(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
 }
 
 #[track_caller]
